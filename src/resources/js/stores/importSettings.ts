@@ -1,47 +1,39 @@
+import axios from "axios";
 import { defineStore } from "pinia";
-import { PRODUCT_MASTER } from "@/constants/masterData";
-
-const DEFAULT_SELECTED_CODES = PRODUCT_MASTER.slice(0, 10).map((p) => p.productCode);
+import type { Product } from "@/types";
 
 export const MAX_TARGET_PRODUCTS = 50;
 
 export const useImportSettingsStore = defineStore("importSettings", {
     state: () => ({
-        selectedProductCodes: [...DEFAULT_SELECTED_CODES] as string[],
-        lastSyncedAt: new Date().toISOString() as string | null,
+        selectedProductCodes: [] as string[],
+        products: [] as Product[],
+        lastSyncedAt: null as string | null,
+        loaded: false,
     }),
     getters: {
         isConfigured: (state) => state.selectedProductCodes.length > 0,
         count: (state) => state.selectedProductCodes.length,
     },
     actions: {
-        addProduct(productCode: string) {
-            if (this.selectedProductCodes.includes(productCode)) return;
-            if (this.selectedProductCodes.length >= MAX_TARGET_PRODUCTS) return;
-            this.selectedProductCodes.push(productCode);
+        findProduct(productCode: string): Product | undefined {
+            return this.products.find((product) => product.productCode === productCode);
         },
-        removeProduct(productCode: string) {
-            this.selectedProductCodes = this.selectedProductCodes.filter((c) => c !== productCode);
+        async load() {
+            const { data } = await axios.get<{ productCodes: string[]; products: Product[]; lastSyncedAt: string | null }>("/api/import-targets");
+            this.selectedProductCodes = data.productCodes;
+            this.products = data.products;
+            this.lastSyncedAt = data.lastSyncedAt;
+            this.loaded = true;
         },
-        moveUp(productCode: string) {
-            const idx = this.selectedProductCodes.indexOf(productCode);
-            if (idx <= 0) return;
-            const arr = this.selectedProductCodes;
-            [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+        async save(productCodes: string[]) {
+            const { data } = await axios.put<{ productCodes: string[]; products: Product[]; lastSyncedAt: string | null }>("/api/import-targets", {
+                product_codes: productCodes,
+            });
+            this.selectedProductCodes = data.productCodes;
+            this.products = data.products;
+            this.lastSyncedAt = data.lastSyncedAt;
+            this.loaded = true;
         },
-        moveDown(productCode: string) {
-            const idx = this.selectedProductCodes.indexOf(productCode);
-            if (idx === -1 || idx >= this.selectedProductCodes.length - 1) return;
-            const arr = this.selectedProductCodes;
-            [arr[idx + 1], arr[idx]] = [arr[idx], arr[idx + 1]];
-        },
-        resyncFromApi() {
-            // ダミー: 商品識別子管理システムからの再取得をシミュレートする。
-            this.lastSyncedAt = new Date().toISOString();
-        },
-    },
-    persist: {
-        key: "zsv-import-settings",
-        storage: localStorage,
     },
 });

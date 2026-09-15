@@ -15,11 +15,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'login_id' => 'admin',
-            'password' => 'password1234',
-        ]);
+        User::query()->firstOrCreate(
+            ['login_id' => 'admin'],
+            ['password' => 'password1234'],
+        );
     }
 }

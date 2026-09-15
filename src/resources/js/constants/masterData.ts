@@ -562,51 +562,6 @@ export const PRODUCT_MASTER: Product[] = CROSSWALKER_ITEMS.map((item) => ({
     })),
 }));
 
-export const BRAND_LIST: string[] = Array.from(new Set(PRODUCT_MASTER.map((p) => p.brand)));
-export const CATEGORY_LIST: string[] = Array.from(new Set(PRODUCT_MASTER.map((p) => p.category)));
-
 export function findProduct(productCode: string): Product | undefined {
     return PRODUCT_MASTER.find((p) => p.productCode === productCode);
-}
-
-export interface ProductPageRequest {
-    query: string;
-    brand: string | null;
-    category: string | null;
-    page: number;
-    perPage: number;
-    excludedProductCodes: string[];
-}
-
-export interface ProductPageResponse {
-    products: Product[];
-    page: number;
-    perPage: number;
-    total: number;
-    totalPages: number;
-}
-
-/** 実API接続時にHTTPクライアントへ置き換える、ページ取得の非同期境界。 */
-export async function fetchProductPage(request: ProductPageRequest): Promise<ProductPageResponse> {
-    await Promise.resolve();
-
-    const query = request.query.trim().toLowerCase();
-    const excludedCodes = new Set(request.excludedProductCodes);
-    const products = PRODUCT_MASTER.filter((product) => !excludedCodes.has(product.productCode))
-        .filter((product) => !request.brand || product.brand === request.brand)
-        .filter((product) => !request.category || product.category === request.category)
-        .filter((product) => !query || product.productCode.toLowerCase().includes(query));
-
-    const total = products.length;
-    const totalPages = Math.max(1, Math.ceil(total / request.perPage));
-    const page = Math.min(Math.max(request.page, 1), totalPages);
-    const start = (page - 1) * request.perPage;
-
-    return {
-        products: products.slice(start, start + request.perPage),
-        page,
-        perPage: request.perPage,
-        total,
-        totalPages,
-    };
 }

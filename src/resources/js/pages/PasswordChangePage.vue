@@ -24,13 +24,9 @@ const rules = computed(() => [
     { label: "半角英数字記号のみ", valid: newPassword.value.length > 0 && VALID_PATTERN.test(newPassword.value) },
 ]);
 
-function submit() {
+async function submit() {
     errorMessage.value = "";
 
-    if (currentPassword.value !== auth.password) {
-        errorMessage.value = "現在のパスワードが正しくありません。";
-        return;
-    }
     if (newPassword.value.length < MIN_LENGTH || !VALID_PATTERN.test(newPassword.value)) {
         errorMessage.value = "新しいパスワードは半角英数字記号12文字以上で入力してください。";
         return;
@@ -40,7 +36,12 @@ function submit() {
         return;
     }
 
-    auth.changePassword(newPassword.value);
+    try {
+        await auth.changePassword(currentPassword.value, newPassword.value);
+    } catch {
+        errorMessage.value = "現在のパスワードが正しくありません。";
+        return;
+    }
     toast.push("パスワードを変更しました");
     currentPassword.value = "";
     newPassword.value = "";

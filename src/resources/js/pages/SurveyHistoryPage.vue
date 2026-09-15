@@ -41,9 +41,9 @@ function requestDelete(id: string) {
     pendingDeleteId.value = id;
 }
 
-function confirmDelete() {
+async function confirmDelete() {
     if (!pendingDeleteId.value) return;
-    surveys.removeSurvey(pendingDeleteId.value);
+    await surveys.removeSurvey(pendingDeleteId.value);
     toast.push("調査履歴を削除しました");
     pendingDeleteId.value = null;
 }

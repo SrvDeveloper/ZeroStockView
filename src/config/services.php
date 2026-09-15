@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'crosswalker' => [
+        'base_url' => env('CROSSWALKER_API_URL') ?: env('CROSSWALKER_BASE_URL') ?: env('API_URL'),
+        'api_key' => env('CROSSWALKER_API_KEY') ?: env('CROSSWALKER_TOKEN') ?: env('API_KEY'),
+        'timeout' => env('CROSSWALKER_TIMEOUT', 10),
+    ],
+
 ];

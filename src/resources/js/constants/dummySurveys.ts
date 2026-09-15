@@ -37,6 +37,7 @@ function buildProductResults(surveyId: string, productCodes: string[], memoSeedA
             const skus: SurveySkuResult[] = product.skus.map((sku, skuIndex) => {
                 const memo = memoSeedActive && seededChance(`${surveyId}-${sku.skuCode}-memo`, 0.12) ? SAMPLE_MEMOS[(productIndex + skuIndex) % SAMPLE_MEMOS.length] : "";
                 return {
+                    id: `${surveyId}-sku-${skuIndex}`,
                     skuCode: sku.skuCode,
                     colorName: sku.colorName,
                     size: sku.size,
@@ -50,6 +51,7 @@ function buildProductResults(surveyId: string, productCodes: string[], memoSeedA
             });
             const productMemo = memoSeedActive && seededChance(`${surveyId}-${product.productCode}-memo`, 0.15) ? SAMPLE_MEMOS[productIndex % SAMPLE_MEMOS.length] : "";
             return {
+                id: `${surveyId}-product-${productIndex}`,
                 productCode: product.productCode,
                 brand: product.brand,
                 category: product.category,

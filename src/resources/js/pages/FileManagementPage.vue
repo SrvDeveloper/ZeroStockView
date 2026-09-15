@@ -23,12 +23,11 @@ const groups = computed(() =>
 );
 
 function downloadFile(file: SurveyFile) {
-    toast.push(`ダウンロードしました（デモ）: ${file.fileName}`);
+    window.location.assign(`/api/survey-files/${file.id}/download`);
 }
 
 function downloadZip(surveyId: string) {
-    toast.push("取込ファイル一式をZIPダウンロードしました（デモ）");
-    void surveyId;
+    window.location.assign(`/api/surveys/${surveyId}/files/download`);
 }
 
 const pendingSingleDelete = ref<{ surveyId: string; file: SurveyFile } | null>(null);
@@ -38,10 +37,10 @@ function requestDeleteFile(surveyId: string, file: SurveyFile) {
     pendingSingleDelete.value = { surveyId, file };
 }
 
-function confirmDeleteFile() {
+async function confirmDeleteFile() {
     if (!pendingSingleDelete.value) return;
     const { surveyId, file } = pendingSingleDelete.value;
-    surveysStore.removeFile(surveyId, file.id);
+    await surveysStore.removeFile(surveyId, file.id);
     toast.push("ファイルを削除しました");
     pendingSingleDelete.value = null;
 }
@@ -50,16 +49,10 @@ function requestBulkDelete(surveyId: string, count: number) {
     pendingBulkDelete.value = { surveyId, count };
 }
 
-function confirmBulkDelete() {
+async function confirmBulkDelete() {
     if (!pendingBulkDelete.value) return;
     const { surveyId } = pendingBulkDelete.value;
-    const group = groups.value.find((g) => g.survey.id === surveyId);
-    if (group) {
-        surveysStore.removeFiles(
-            surveyId,
-            group.files.map((f) => f.id),
-        );
-    }
+    await surveysStore.removeFiles(surveyId);
     toast.push("ファイルを一括削除しました");
     pendingBulkDelete.value = null;
 }

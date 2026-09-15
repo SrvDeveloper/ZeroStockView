@@ -8,7 +8,11 @@ import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import { useAuthStore } from "@/stores/auth";
 
+import { useImportSettingsStore } from "@/stores/importSettings";
+import { useSurveysStore } from "@/stores/surveys";
 const auth = useAuthStore();
+const importSettings = useImportSettingsStore();
+const surveys = useSurveysStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -17,23 +21,23 @@ const password = ref("");
 const errorMessage = ref("");
 const submitting = ref(false);
 
-function submit() {
+async function submit() {
     errorMessage.value = "";
     if (!loginId.value || !password.value) {
         errorMessage.value = "ログインIDとパスワードを入力してください。";
         return;
     }
     submitting.value = true;
-    setTimeout(() => {
-        const ok = auth.login(loginId.value, password.value);
+    const ok = await auth.login(loginId.value, password.value);
+    if (!ok) {
         submitting.value = false;
-        if (!ok) {
-            errorMessage.value = "ログインIDまたはパスワードが正しくありません。";
-            return;
-        }
-        const redirect = typeof route.query.redirect === "string" ? route.query.redirect : undefined;
-        router.push(redirect ?? { name: "data-import" });
-    }, 400);
+        errorMessage.value = "ログインIDまたはパスワードが正しくありません。";
+        return;
+    }
+    await Promise.allSettled([importSettings.load(), surveys.load()]);
+    submitting.value = false;
+    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : undefined;
+    await router.push(redirect ?? { name: "data-import" });
 }
 </script>
 

@@ -1,31 +1,52 @@
+import axios from "axios";
 import { defineStore } from "pinia";
 
-const DEFAULT_LOGIN_ID = "admin";
-const DEFAULT_PASSWORD = "password1234";
+interface AuthUser {
+    id: string;
+    loginId: string;
+}
 
 export const useAuthStore = defineStore("auth", {
     state: () => ({
-        isLoggedIn: false,
-        loginId: DEFAULT_LOGIN_ID,
-        password: DEFAULT_PASSWORD,
+        user: null as AuthUser | null,
+        initialized: false,
     }),
-    actions: {
-        login(loginId: string, password: string): boolean {
-            if (loginId === this.loginId && password === this.password) {
-                this.isLoggedIn = true;
-                return true;
-            }
-            return false;
-        },
-        logout() {
-            this.isLoggedIn = false;
-        },
-        changePassword(newPassword: string) {
-            this.password = newPassword;
-        },
+    getters: {
+        isLoggedIn: (state) => state.user !== null,
     },
-    persist: {
-        key: "zsv-auth",
-        storage: localStorage,
+    actions: {
+        async initialize() {
+            if (this.initialized) return;
+            try {
+                const { data } = await axios.get<{ user: AuthUser }>("/api/user");
+                this.user = data.user;
+            } catch {
+                this.user = null;
+            } finally {
+                this.initialized = true;
+            }
+        },
+        async login(loginId: string, password: string): Promise<boolean> {
+            try {
+                const { data } = await axios.post<{ user: AuthUser }>("/api/login", { login_id: loginId, password });
+                this.user = data.user;
+                this.initialized = true;
+                return true;
+            } catch {
+                this.user = null;
+                return false;
+            }
+        },
+        async logout() {
+            await axios.post("/api/logout");
+            this.user = null;
+        },
+        async changePassword(currentPassword: string, newPassword: string) {
+            await axios.put("/api/password", {
+                current_password: currentPassword,
+                password: newPassword,
+                password_confirmation: newPassword,
+            });
+        },
     },
 });

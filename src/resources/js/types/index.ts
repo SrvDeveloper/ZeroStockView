@@ -36,6 +36,7 @@ export const STOCK_FIELDS: { key: keyof StockQuantities; label: string; group: "
 
 export interface SurveySkuResult {
     skuCode: string;
+    id: string;
     colorName: string;
     size: string;
     asin: string;
@@ -48,6 +49,7 @@ export interface SurveySkuResult {
 
 export interface SurveyProductResult {
     productCode: string;
+    id: string;
     brand: string;
     category: string;
     parentAsin: string;

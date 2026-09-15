@@ -1,19 +1,13 @@
+import axios from "axios";
 import { defineStore } from "pinia";
 import type { Survey } from "@/types";
-import { createDummySurveys, createSurveyRecord } from "@/constants/dummySurveys";
-import { useImportSettingsStore } from "@/stores/importSettings";
 
 export const MAX_SURVEY_HISTORY = 100;
-
-// SurveyProductResult/SurveySkuResultの項目を追加・変更した際はインクリメントする。
-// 既存ブラウザに永続化された古い形状のダミーデータを破棄し、再生成させるための版数。
-const SURVEY_DATA_VERSION = 2;
 
 export const useSurveysStore = defineStore("surveys", {
     state: () => ({
         surveys: [] as Survey[],
-        initialized: false,
-        dataVersion: 0,
+        loaded: false,
     }),
     getters: {
         sortedSurveys: (state) => [...state.surveys].sort((a, b) => new Date(b.executedAt).getTime() - new Date(a.executedAt).getTime()),
@@ -22,61 +16,55 @@ export const useSurveysStore = defineStore("surveys", {
         },
     },
     actions: {
-        ensureSeeded() {
-            if (this.dataVersion !== SURVEY_DATA_VERSION) {
-                this.surveys = [];
-                this.initialized = false;
-                this.dataVersion = SURVEY_DATA_VERSION;
-            }
-            if (this.initialized && this.surveys.length > 0) return;
-            const importSettings = useImportSettingsStore();
-            this.surveys = createDummySurveys(importSettings.selectedProductCodes);
-            this.initialized = true;
+        async load() {
+            const { data } = await axios.get<{ data: Survey[] }>("/api/surveys");
+            this.surveys = data.data;
+            this.loaded = true;
         },
         getSurvey(id: string): Survey | undefined {
             return this.surveys.find((s) => s.id === id);
         },
-        runImport(productCodes: string[]): Survey {
-            const id = `SV-${Date.now()}`;
-            const survey = createSurveyRecord(id, new Date().toISOString(), productCodes, false);
+        async runImport(formData: FormData): Promise<Survey> {
+            const { data } = await axios.post<{ data: Survey }>("/api/surveys", formData);
+            const survey = data.data;
             this.surveys.unshift(survey);
-            if (this.surveys.length > MAX_SURVEY_HISTORY) {
-                this.surveys = this.surveys.slice(0, MAX_SURVEY_HISTORY);
-            }
+            this.surveys = this.surveys.slice(0, MAX_SURVEY_HISTORY);
             return survey;
         },
-        removeSurvey(id: string) {
+        async removeSurvey(id: string) {
+            await axios.delete(`/api/surveys/${id}`);
             this.surveys = this.surveys.filter((s) => s.id !== id);
         },
-        updateProductMemo(surveyId: string, productCode: string, memo: string) {
+        async updateProductMemo(surveyId: string, productCode: string, memo: string) {
             const survey = this.getSurvey(surveyId);
             const product = survey?.products.find((p) => p.productCode === productCode);
-            if (product) product.memo = memo;
+            if (!product) return;
+            await axios.put(`/api/surveys/${surveyId}/products/${product.id}/memo`, { memo });
+            product.memo = memo;
         },
-        updateSkuMemo(surveyId: string, skuCode: string, memo: string) {
+        async updateSkuMemo(surveyId: string, skuCode: string, memo: string) {
             const survey = this.getSurvey(surveyId);
             if (!survey) return;
             for (const product of survey.products) {
                 const sku = product.skus.find((s) => s.skuCode === skuCode);
                 if (sku) {
+                    await axios.put(`/api/surveys/${surveyId}/skus/${sku.id}/memo`, { memo });
                     sku.memo = memo;
                     return;
                 }
             }
         },
-        removeFile(surveyId: string, fileId: string) {
+        async removeFile(surveyId: string, fileId: string) {
+            await axios.delete(`/api/survey-files/${fileId}`);
             const survey = this.getSurvey(surveyId);
             if (!survey) return;
             survey.files = survey.files.filter((f) => f.id !== fileId);
         },
-        removeFiles(surveyId: string, fileIds: string[]) {
+        async removeFiles(surveyId: string) {
+            await axios.delete(`/api/surveys/${surveyId}/files`);
             const survey = this.getSurvey(surveyId);
             if (!survey) return;
-            survey.files = survey.files.filter((f) => !fileIds.includes(f.id));
+            survey.files = [];
         },
-    },
-    persist: {
-        key: "zsv-surveys",
-        storage: localStorage,
     },
 });

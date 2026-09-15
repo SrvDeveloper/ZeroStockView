@@ -6,7 +6,10 @@ import { useAuthStore } from "@/stores/auth";
 describe("router", () => {
     beforeEach(async () => {
         setActivePinia(createPinia());
-        useAuthStore().isLoggedIn = true;
+        useAuthStore().$patch({
+            user: { id: "1", loginId: "admin" },
+            initialized: true,
+        });
         await router.replace("/import");
     });
 

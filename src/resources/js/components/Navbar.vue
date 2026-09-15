@@ -16,11 +16,11 @@ function isActive(name: string): boolean {
     return route.name === name || (name === "survey-history" && route.name === "survey-result");
 }
 
-function logout() {
+async function logout() {
     userMenuOpen.value = false;
     mobileOpen.value = false;
-    auth.logout();
-    router.push({ name: "login" });
+    await auth.logout();
+    window.location.assign(router.resolve({ name: "login" }).href);
 }
 </script>
 

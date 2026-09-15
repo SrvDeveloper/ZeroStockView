@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import axios from "axios";
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "@/components/ui/AppIcon.vue";
@@ -121,9 +122,26 @@ function isGroupZero(stock: StockQuantities, group: "Amazon" | "BOSS"): boolean 
     return group === "Amazon" ? stock.amazonOwn === 0 && stock.amazonFba === 0 : stock.bossOwn === 0 && stock.bossRfc === 0;
 }
 
-function exportExcel(scope: "all" | "filtered") {
+async function exportExcel(scope: "all" | "filtered") {
     if (!survey.value) return;
-    toast.push(scope === "all" ? "全件の在庫調査結果をExcel出力しました（デモ）" : `絞込結果（${matchedSkuCount.value}件）をExcel出力しました（デモ）`);
+    const hasTextQuery = Boolean(skuQuery.value.trim() || asinQuery.value.trim());
+    const skuIds = scope === "filtered" ? filteredProducts.value.flatMap((product) => product.skus.filter((sku) => !hasTextQuery || sku.skuMatched).map((sku) => Number(sku.id))) : undefined;
+
+    try {
+        const response = await axios.get(`/api/surveys/${survey.value.id}/export`, {
+            params: skuIds ? { sku_ids: skuIds } : undefined,
+            responseType: "blob",
+        });
+        const url = URL.createObjectURL(response.data);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${formatDateTime(survey.value.executedAt).replace(/\D/g, "").slice(0, 12)}_在庫調査結果.xlsx`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast.push(scope === "all" ? "全件の在庫調査結果をExcel出力しました" : `絞込結果（${matchedSkuCount.value}件）をExcel出力しました`);
+    } catch {
+        toast.push("Excel出力に失敗しました", "error");
+    }
 }
 </script>
 

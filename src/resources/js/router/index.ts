@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { setRouteLoading } from "./loading";
 
 const router = createRouter({
     history: createWebHistory(),
@@ -51,8 +52,10 @@ const router = createRouter({
     ],
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+    setRouteLoading(true);
     const auth = useAuthStore();
+    await auth.initialize();
     if (!auth.isLoggedIn && !to.meta.public) {
         return { name: "login", query: { redirect: to.fullPath } };
     }
@@ -60,6 +63,14 @@ router.beforeEach((to) => {
         return { name: "data-import" };
     }
     return true;
+});
+
+router.afterEach(() => {
+    setRouteLoading(false);
+});
+
+router.onError(() => {
+    setRouteLoading(false);
 });
 
 export default router;

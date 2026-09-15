@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
+import axios from "axios";
 import { useRouter } from "vue-router";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
-import BaseToggle from "@/components/ui/BaseToggle.vue";
 import FileDropzone from "@/components/ui/FileDropzone.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
@@ -38,31 +38,42 @@ const canRun = computed(() => importSettings.isConfigured && allFilesReady.value
 
 const running = ref(false);
 const errorMessage = ref("");
-const simulateError = ref(false);
 
 function setFile(type: ImportFileType, file: File | null) {
     files[type] = file;
 }
 
-function runImport() {
+async function runImport() {
     if (!canRun.value || running.value) return;
     errorMessage.value = "";
     running.value = true;
 
-    setTimeout(() => {
-        running.value = false;
+    const formData = new FormData();
+    const keys: Record<ImportFileType, string> = {
+        在庫商品レポート: "amazon_own",
+        FBA在庫管理レポート: "amazon_fba",
+        倉庫毎の在庫数レポート: "boss",
+        KEEP一覧表: "ec_stock",
+        在庫一覧照会表: "free_stock",
+    };
+    for (const [type, file] of Object.entries(files) as [ImportFileType, File | null][]) {
+        if (file) formData.append(keys[type], file);
+    }
 
-        if (simulateError.value) {
-            errorMessage.value = "「FBA在庫管理レポート」に必須列「Amazon出荷在庫(出荷可)」が見つかりません。ファイルの形式を確認し、差し替えてから再実行してください。";
-            toast.push("取込に失敗しました", "error");
-            return;
-        }
-
-        importSettings.resyncFromApi();
-        const survey = surveys.runImport(importSettings.selectedProductCodes);
+    try {
+        const survey = await surveys.runImport(formData);
         toast.push("取込・調査が完了しました");
-        router.push({ name: "survey-result", params: { id: survey.id } });
-    }, 1100);
+        await router.push({ name: "survey-result", params: { id: survey.id } });
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            const errors = error.response?.data?.errors as Record<string, string[]> | undefined;
+            errorMessage.value = errors ? (Object.values(errors).flat()[0] ?? error.response?.data?.message) : error.response?.data?.message;
+        }
+        errorMessage.value ||= "取込に失敗しました。ファイルを確認して再実行してください。";
+        toast.push("取込に失敗しました", "error");
+    } finally {
+        running.value = false;
+    }
 }
 </script>
 
@@ -114,7 +125,5 @@ function runImport() {
                 </BaseButton>
             </div>
         </BaseCard>
-
-        <BaseToggle v-model="simulateError" label="（確認用）エラー表示のデモを有効にする" />
     </div>
 </template>
