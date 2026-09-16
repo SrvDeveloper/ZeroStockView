@@ -41,6 +41,7 @@ const running = ref(false);
 const errorMessage = ref("");
 const folderInputRef = ref<HTMLInputElement | null>(null);
 const folderSelectionMessage = ref("");
+const bulkDragging = ref(false);
 
 function setFile(type: ImportFileType, file: File | null) {
     files[type] = file;
@@ -51,22 +52,15 @@ function openFolderPicker() {
     folderInputRef.value?.click();
 }
 
-function onFolderInputChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const selectedFiles = Array.from(input.files ?? []);
-
+function assignImportFiles(selectedFiles: File[]) {
     if (selectedFiles.length === 0) {
-        input.value = "";
         return;
     }
-
     const missingFileNames: string[] = [];
     const duplicateFileNames: string[] = [];
-
     for (const fileType of IMPORT_FILE_TYPES) {
         const expectedFileName = expectedFileNames[fileType.type];
         const matches = selectedFiles.filter((file) => file.name === expectedFileName);
-
         files[fileType.type] = matches.length === 1 ? matches[0] : null;
         if (matches.length === 0) {
             missingFileNames.push(expectedFileName);
@@ -74,7 +68,6 @@ function onFolderInputChange(event: Event) {
             duplicateFileNames.push(expectedFileName);
         }
     }
-
     const problems: string[] = [];
     if (missingFileNames.length > 0) {
         problems.push(`見つからないファイル: ${missingFileNames.join("、")}`);
@@ -83,7 +76,17 @@ function onFolderInputChange(event: Event) {
         problems.push(`同名ファイルが複数あります: ${duplicateFileNames.join("、")}`);
     }
     folderSelectionMessage.value = problems.join(" ");
+}
+
+function onFolderInputChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    assignImportFiles(Array.from(input.files ?? []));
     input.value = "";
+}
+
+function onBulkDrop(event: DragEvent) {
+    bulkDragging.value = false;
+    assignImportFiles(Array.from(event.dataTransfer?.files ?? []));
 }
 
 async function runImport() {
@@ -142,13 +145,23 @@ async function runImport() {
         </BaseAlert>
 
         <BaseCard>
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <p class="text-sm font-semibold text-slate-900">フォルダから一括選択</p>
-                    <p class="mt-1 text-xs text-slate-500">フォルダ内から規定のファイル名を検索し、5種類の取込ファイルへ自動設定します。</p>
+            <div
+                data-testid="bulk-file-dropzone"
+                class="rounded-lg border-2 border-dashed p-4 transition"
+                :class="bulkDragging ? 'border-primary-500 bg-primary-50 ring-4 ring-primary-100' : 'border-slate-300 bg-slate-50/60'"
+                @dragenter.prevent="bulkDragging = true"
+                @dragover.prevent="bulkDragging = true"
+                @dragleave.self.prevent="bulkDragging = false"
+                @drop.prevent.stop="onBulkDrop"
+            >
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm font-semibold text-slate-900">5ファイルを一括選択</p>
+                        <p class="mt-1 text-xs text-slate-500">5ファイルをまとめてドラッグ＆ドロップ、またはフォルダを選択すると自動設定します。</p>
+                    </div>
+                    <BaseButton icon="folder_open" @click="openFolderPicker">フォルダを選択</BaseButton>
+                    <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />
                 </div>
-                <BaseButton icon="folder_open" @click="openFolderPicker">フォルダを選択</BaseButton>
-                <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />
             </div>
         </BaseCard>
         <BaseAlert v-if="folderSelectionMessage" tone="warning" title="フォルダを確認してください">{{ folderSelectionMessage }}</BaseAlert>
