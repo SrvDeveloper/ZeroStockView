@@ -41,7 +41,7 @@ onBeforeUnmount(() => {
         <a href="#main-content" class="skip-link">本文へ移動</a>
         <BaseToasts />
         <Navbar v-if="showChrome" />
-        <main id="main-content" :aria-busy="isPageLoading" :class="showChrome ? 'mx-auto w-full max-w-320 px-4 py-6 sm:px-6 sm:py-8 lg:px-8' : ''">
+        <main id="main-content" :aria-busy="isPageLoading" :class="showChrome ? 'mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8' : ''">
             <router-view />
         </main>
 

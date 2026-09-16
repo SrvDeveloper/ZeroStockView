@@ -145,8 +145,12 @@ class InventoryImportService
     {
         $seen = [];
         foreach ($this->rows($file, ['ASIN', $quantityHeader], $delimiter) as $rowNumber => $row) {
+            if (! isset($asinLookup[$row['ASIN']])) {
+                continue;
+            }
+
             $quantity = $this->quantity($row[$quantityHeader], $file, $rowNumber);
-            if ($quantity === null || ! isset($asinLookup[$row['ASIN']])) {
+            if ($quantity === null) {
                 continue;
             }
 
@@ -163,16 +167,25 @@ class InventoryImportService
     private function applyBoss(array &$stocks, array $skuLookup, UploadedFile $file): void
     {
         $seen = [];
-        foreach ($this->rows($file, ['倉庫', 'SKUコード', '販売可能数']) as $rowNumber => $row) {
+        foreach ($this->rows($file, ['倉庫', 'SKUコード', '実在庫 (倉庫毎)', '引当済 (倉庫毎)']) as $rowNumber => $row) {
             $stockField = match ($row['倉庫']) {
                 '自社倉庫' => 'boss_own_stock',
                 'RFC倉庫' => 'boss_rfc_stock',
                 default => null,
             };
-            $quantity = $this->quantity($row['販売可能数'], $file, $rowNumber);
-
-            if ($stockField === null || $quantity === null || ! isset($skuLookup[$row['SKUコード']])) {
+            if ($stockField === null || ! isset($skuLookup[$row['SKUコード']])) {
                 continue;
+            }
+
+            $physicalStock = $this->quantity($row['実在庫 (倉庫毎)'], $file, $rowNumber);
+            $allocatedStock = $this->quantity($row['引当済 (倉庫毎)'], $file, $rowNumber);
+            if ($physicalStock === null || $allocatedStock === null) {
+                continue;
+            }
+
+            $quantity = $physicalStock - $allocatedStock;
+            if ($quantity < 0) {
+                throw ValidationException::withMessages(['files' => ["{$file->getClientOriginalName()}の{$rowNumber}行目の数量がマイナスです。"]]);
             }
 
             $skuCode = $skuLookup[$row['SKUコード']];
@@ -191,11 +204,15 @@ class InventoryImportService
         $rows = $this->rows($file, ['品番', 'カラーNo', ['サイズ', 'ｻｲｽﾞ'], $quantityHeader]);
 
         foreach ($rows as $rowNumber => $row) {
-            $quantity = $this->quantity($row[$quantityHeader], $file, $rowNumber);
             $size = $row['サイズ'] ?? $row['ｻｲｽﾞ'] ?? '';
             $key = $this->tqKey($row['品番'], $row['カラーNo'], $size);
 
-            if ($quantity === null || $quantity === 0 || ! isset($tqLookup[$key])) {
+            if (! isset($tqLookup[$key])) {
+                continue;
+            }
+
+            $quantity = $this->quantity($row[$quantityHeader], $file, $rowNumber);
+            if ($quantity === null || $quantity === 0) {
                 continue;
             }
 
@@ -270,7 +287,7 @@ class InventoryImportService
         if ($value === '') {
             return null;
         }
-        if (! preg_match('/^-?\\d+$/', $value)) {
+        if (! preg_match('/^-?\\d+(?:\\.0+)?$/', $value)) {
             throw ValidationException::withMessages(['files' => ["{$file->getClientOriginalName()}の{$rowNumber}行目の数量が数値ではありません。"]]);
         }
         $quantity = (int) $value;

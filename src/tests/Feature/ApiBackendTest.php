@@ -133,7 +133,7 @@ class ApiBackendTest extends TestCase
             ),
             'boss' => UploadedFile::fake()->createWithContent(
                 '倉庫毎の在庫数レポート.csv',
-                "倉庫,SKUコード,販売可能数\n自社倉庫,A-1001-01-M,4\nRFC倉庫,A-1001-01-M,5\n",
+                "倉庫,SKUコード,販売可能数,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,99,10,6\nRFC倉庫,A-1001-01-M,99,7,2\n",
             ),
             'ec_stock' => UploadedFile::fake()->createWithContent(
                 'KEEP一覧表.csv',
