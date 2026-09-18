@@ -23,6 +23,7 @@ class RunSurveyRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'import_setting_id' => ['required', 'integer', 'exists:import_settings,id'],
             'amazon_own' => ['required', 'file', 'mimes:txt', 'max:20480'],
             'amazon_fba' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
             'boss' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],

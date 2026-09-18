@@ -82,6 +82,7 @@ export function createSurveyRecord(id: string, executedAt: string, productCodes:
     return {
         id,
         executedAt,
+        importSettingName: "売上TOP20",
         products: buildProductResults(id, productCodes, seedMemos),
         files: buildFiles(id, executedAt),
     };

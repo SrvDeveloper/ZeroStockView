@@ -1,9 +1,10 @@
-import { mount, type VueWrapper } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import FileDropzone from "@/components/ui/FileDropzone.vue";
 import DataImportPage from "@/pages/DataImportPage.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
+import { useSurveysStore } from "@/stores/surveys";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -14,7 +15,24 @@ vi.mock("vue-router", () => {
 function mountPage() {
     setActivePinia(createPinia());
     const settings = useImportSettingsStore();
-    settings.selectedProductCodes = ["A-1001"];
+    settings.settings = [
+        {
+            id: "1",
+            name: "売上TOP20",
+            productCodes: ["A-1001"],
+            products: [],
+            lastSyncedAt: null,
+        },
+        {
+            id: "2",
+            name: "サングラス",
+            productCodes: ["B-2001", "B-2002"],
+            products: [],
+            lastSyncedAt: null,
+        },
+    ];
+    settings.selectedSettingId = "1";
+    settings.loaded = true;
 
     return mount(DataImportPage, {
         global: {
@@ -44,6 +62,18 @@ describe("DataImportPage", () => {
         push.mockReset();
     });
 
+    it("places the settings button next to the selector without the old target summary", async () => {
+        const wrapper = mountPage();
+
+        expect(wrapper.text()).toContain("利用する取込設定");
+        expect(wrapper.text()).toContain("設定を変更");
+        expect(wrapper.text()).not.toContain("の取込対象");
+
+        await wrapper.get('[data-testid="settings-change-button"]').trigger("click");
+
+        expect(push).toHaveBeenCalledWith({ name: "import-settings" });
+    });
+
     it("assigns all import files by exact file name from a selected folder", async () => {
         const wrapper = mountPage();
         const selectedFiles = validImportFiles();
@@ -67,6 +97,30 @@ describe("DataImportPage", () => {
 
         expect(wrapper.text()).toContain("5 / 5");
         expect(dropzone.classes()).not.toContain("border-primary-500");
+    });
+
+    it("runs the import with the setting selected by the user", async () => {
+        const wrapper = mountPage();
+        const settings = useImportSettingsStore();
+        const runImport = vi.spyOn(useSurveysStore(), "runImport").mockResolvedValue({
+            id: "10",
+            executedAt: "2026-09-16T00:00:00Z",
+            products: [],
+            importSettingName: "サングラス",
+            files: [],
+        });
+
+        await wrapper.get("select").setValue("2");
+        await selectFolder(wrapper, validImportFiles());
+        const runButton = wrapper.findAll("button").at(-1)!;
+        await runButton.trigger("click");
+        await flushPromises();
+
+        expect(settings.selectedSettingId).toBe("2");
+        expect(wrapper.text()).toContain("サングラス");
+        expect(runImport).toHaveBeenCalledTimes(1);
+        const formData = runImport.mock.calls[0]![0];
+        expect(formData.get("import_setting_id")).toBe("2");
     });
 
     it("reports missing and duplicate files without retaining invalid selections", async () => {

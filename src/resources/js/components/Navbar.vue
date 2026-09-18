@@ -13,7 +13,11 @@ const mobileOpen = ref(false);
 const userMenuOpen = ref(false);
 
 function isActive(name: string): boolean {
-    return route.name === name || (name === "survey-history" && route.name === "survey-result");
+    return (
+        route.name === name ||
+        (name === "survey-history" && route.name === "survey-result") ||
+        (name === "import-settings" && (route.name === "import-setting-new" || route.name === "import-setting-edit"))
+    );
 }
 
 async function logout() {

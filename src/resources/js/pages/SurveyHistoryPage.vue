@@ -68,6 +68,7 @@ async function confirmDelete() {
                     <thead class="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
                         <tr>
                             <th class="px-5 py-2.5">調査日時</th>
+                            <th class="px-5 py-2.5">取込設定</th>
                             <th class="px-5 py-2.5">対象品番数</th>
                             <th class="px-5 py-2.5">SKU数</th>
                             <th class="px-5 py-2.5">取込ファイル数</th>
@@ -78,6 +79,7 @@ async function confirmDelete() {
                     <tbody class="divide-y divide-slate-100">
                         <tr v-for="survey in pagedList" :key="survey.id" class="hover:bg-slate-50">
                             <td class="px-5 py-3 font-medium text-slate-900">{{ formatDateTime(survey.executedAt) }}</td>
+                            <td class="px-5 py-3 text-slate-600">{{ survey.importSettingName || "記録なし" }}</td>
                             <td class="px-5 py-3 text-slate-600">{{ survey.products.length }}</td>
                             <td class="px-5 py-3 text-slate-600">{{ skuCount(survey.id) }}</td>
                             <td class="px-5 py-3 text-slate-600">{{ survey.files.length }}</td>

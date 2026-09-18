@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\ImportTarget;
+use App\Models\ImportSetting;
 use App\Models\Survey;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -24,9 +24,9 @@ class InventoryImportService
     public function __construct(private CrossWalkerClient $crossWalker) {}
 
     /** @param array<string, UploadedFile> $files */
-    public function import(array $files): Survey
+    public function import(array $files, ImportSetting $setting): Survey
     {
-        $targets = ImportTarget::query()
+        $targets = $setting->targets()
             ->with('product.skus')
             ->orderBy('sort_order')
             ->get();
@@ -38,8 +38,8 @@ class InventoryImportService
         }
 
         $this->crossWalker->refresh($targets);
-        $targets = ImportTarget::query()
-            ->with('product.skus')
+        $targets = $setting->targets()
+            ->with(['product.skus' => fn ($query) => $query->where('status', 'active')])
             ->orderBy('sort_order')
             ->get();
 
@@ -71,8 +71,8 @@ class InventoryImportService
         $storedFiles = [];
 
         try {
-            $survey = DB::transaction(function () use ($targets, $stocks, $files, &$storedFiles): Survey {
-                $survey = Survey::query()->create(['executed_at' => now()]);
+            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, &$storedFiles): Survey {
+                $survey = Survey::query()->create(['executed_at' => now(), 'import_setting_name' => $setting->name]);
 
                 foreach ($targets as $target) {
                     $product = $target->product;

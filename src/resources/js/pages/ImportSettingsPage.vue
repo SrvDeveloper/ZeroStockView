@@ -2,6 +2,7 @@
 import axios from "axios";
 import { computed, onMounted, ref, watch } from "vue";
 import { fetchCrossWalkerProducts } from "@/api/crossWalker";
+import { useRouter } from "vue-router";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
@@ -14,32 +15,52 @@ import { useUiStore } from "@/stores/ui";
 import type { Product } from "@/types";
 
 const store = useImportSettingsStore();
+const props = defineProps<{ id?: string }>();
+const router = useRouter();
+
 const toast = useUiStore();
 
-const workingCodes = ref<string[]>([...store.selectedProductCodes]);
-const initializedFromStore = ref(store.loaded);
+const workingSettingId = ref<string | null>(null);
+const settingName = ref("");
+const savedName = ref(settingName.value);
+const workingCodes = ref<string[]>([]);
 const fetchedProducts = ref<Product[]>([]);
 const draggedIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
-const dirty = computed(() => JSON.stringify(workingCodes.value) !== JSON.stringify(store.selectedProductCodes));
+const isNew = computed(() => workingSettingId.value === null);
+const dirty = computed(() => settingName.value.trim() !== savedName.value || JSON.stringify(workingCodes.value) !== JSON.stringify(store.selectedSetting?.productCodes ?? []));
 
 const knownProducts = computed(() => {
-    const products = new Map(store.products.map((product) => [product.productCode, product]));
+    const products = new Map(store.settings.flatMap((setting) => setting.products).map((product) => [product.productCode, product]));
     for (const product of fetchedProducts.value) products.set(product.productCode, product);
     return products;
 });
 const selectedProducts = computed(() => workingCodes.value.map((code) => knownProducts.value.get(code)).filter((product): product is Product => Boolean(product)));
 
-watch(
-    () => store.loaded,
-    (loaded) => {
-        if (loaded && !initializedFromStore.value) {
-            workingCodes.value = [...store.selectedProductCodes];
-            initializedFromStore.value = true;
-        }
-    },
-);
+function loadSetting(settingId: string | null) {
+    store.select(settingId);
+    workingSettingId.value = settingId;
+    settingName.value = store.selectedSetting?.name ?? "";
+    savedName.value = settingName.value;
+    workingCodes.value = [...store.selectedProductCodes];
+}
 
+watch(
+    [() => store.loaded, () => props.id],
+    ([loaded, settingId]) => {
+        if (!loaded) return;
+        if (settingId === undefined) {
+            loadSetting(null);
+            return;
+        }
+        if (store.settings.some((setting) => setting.id === settingId)) {
+            loadSetting(settingId);
+            return;
+        }
+        void router.replace({ name: "import-settings" });
+    },
+    { immediate: true },
+);
 const CANDIDATE_PER_PAGE = 20;
 
 const search = ref("");
@@ -134,21 +155,29 @@ function stopDragging() {
 }
 
 function resetChanges() {
-    workingCodes.value = [...store.selectedProductCodes];
+    if (isNew.value) loadSetting(null);
+    else loadSetting(workingSettingId.value);
 }
 
 const saving = ref(false);
 
 async function save() {
     if (saving.value) return;
+    const name = settingName.value.trim();
+    if (name === "") {
+        toast.push("設定名を入力してください。", "error");
+        return;
+    }
     if (workingCodes.value.length === 0) {
         toast.push("取込対象品番を1件以上選択してください。", "error");
         return;
     }
     saving.value = true;
     try {
-        await store.save([...workingCodes.value]);
+        if (isNew.value) await store.create(name, [...workingCodes.value]);
+        else await store.update(workingSettingId.value as string, name, [...workingCodes.value]);
         toast.push("取込設定を保存しました");
+        await router.push({ name: "import-settings" });
     } catch (error) {
         const message = (axios.isAxiosError<{ message?: string }>(error) && error.response?.data.message) || "取込設定の保存に失敗しました。時間をおいて再度お試しください。";
         toast.push(message, "error");
@@ -160,10 +189,12 @@ async function save() {
 
 <template>
     <div class="flex flex-col gap-6">
+        <BaseButton variant="ghost" size="sm" icon="arrow_back" class="w-fit" @click="router.push({ name: 'import-settings' })">一覧に戻る</BaseButton>
+
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-                <h1 class="text-xl font-semibold text-slate-900">取込設定</h1>
-                <p class="mt-1 text-sm text-slate-500">取込対象の品番を選択・削除し、並び順を設定します。</p>
+                <h1 class="text-xl font-semibold text-slate-900">{{ isNew ? "取込設定を新規作成" : "取込設定を編集" }}</h1>
+                <p class="mt-1 text-sm text-slate-500">用途ごとに名前を付けて、取込対象の品番と並び順を設定します。</p>
             </div>
             <div class="flex shrink-0 flex-col gap-2 sm:items-end">
                 <div class="flex flex-wrap gap-2">
@@ -176,8 +207,12 @@ async function save() {
             </div>
         </div>
 
+        <BaseCard title="基本情報">
+            <BaseInput v-model="settingName" class="max-w-xl" label="設定名" placeholder="例: 売上TOP20" required :disabled="saving" />
+        </BaseCard>
+
         <div class="grid items-start gap-6 lg:grid-cols-2">
-            <BaseCard title="取込済み品番" description="ドラッグして表示順を並び替えられます。" :padded="false" class="lg:order-2">
+            <BaseCard title="取込対象品番" description="ドラッグして表示順を並び替えられます。" :padded="false" class="lg:order-2">
                 <template #actions>
                     <span class="text-xs font-medium text-slate-500">{{ workingCodes.length }} / {{ MAX_TARGET_PRODUCTS }}</span>
                 </template>
@@ -237,12 +272,20 @@ async function save() {
                 <BaseEmpty v-else-if="candidateProducts.length === 0" icon="search_off" title="条件に一致する品番がありません" />
                 <div v-else class="flex max-h-122.25 flex-col">
                     <ul class="min-h-0 divide-y divide-slate-100 overflow-y-auto">
-                        <li v-for="product in candidateProducts" :key="product.productCode" class="flex items-center justify-between gap-3 px-5 py-2.5">
+                        <li
+                            v-for="product in candidateProducts"
+                            :key="product.productCode"
+                            data-testid="candidate-product-row"
+                            class="flex items-center justify-between gap-3 px-5 py-2.5 transition-colors"
+                            :class="workingCodes.includes(product.productCode) ? 'bg-slate-100' : 'bg-white'"
+                        >
                             <div class="min-w-0">
-                                <p class="truncate text-sm font-medium text-slate-900">
+                                <p class="truncate text-sm font-medium" :class="workingCodes.includes(product.productCode) ? 'text-slate-500' : 'text-slate-900'">
                                     {{ product.productCode }}
                                 </p>
-                                <p class="text-xs text-slate-400">{{ product.brand }} ／ {{ product.category }} ／ SKU {{ product.skus.length }}件</p>
+                                <p class="text-xs" :class="workingCodes.includes(product.productCode) ? 'text-slate-400' : 'text-slate-500'">
+                                    {{ product.brand }} ／ {{ product.category }} ／ SKU {{ product.skus.length }}件
+                                </p>
                             </div>
                             <BaseButton
                                 variant="secondary"

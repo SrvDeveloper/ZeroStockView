@@ -6,6 +6,7 @@ import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import FileDropzone from "@/components/ui/FileDropzone.vue";
+import BaseSelect from "@/components/ui/BaseSelect.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
@@ -36,6 +37,7 @@ const files = reactive<Record<ImportFileType, File | null>>({
 const readyFileCount = computed(() => Object.values(files).filter((f) => f !== null).length);
 const allFilesReady = computed(() => readyFileCount.value === IMPORT_FILE_TYPES.length);
 const canRun = computed(() => importSettings.isConfigured && allFilesReady.value);
+const settingOptions = computed(() => importSettings.settings.map((setting) => ({ value: setting.id, label: `${setting.name}（${setting.productCodes.length}件）` })));
 
 const running = ref(false);
 const errorMessage = ref("");
@@ -107,6 +109,7 @@ async function runImport() {
     }
 
     try {
+        formData.append("import_setting_id", importSettings.selectedSettingId as string);
         const survey = await surveys.runImport(formData);
         toast.push("取込・調査が完了しました");
         await router.push({ name: "survey-result", params: { id: survey.id } });
@@ -130,18 +133,27 @@ async function runImport() {
             <p class="mt-1 text-sm text-slate-500">5種類のファイルを添付し、取込・調査を実行します。実行前に取込対象品番の商品情報を最新化します。</p>
         </div>
 
-        <BaseAlert v-if="!importSettings.isConfigured" tone="warning">
+        <BaseCard v-if="importSettings.settings.length > 0">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <BaseSelect
+                    class="min-w-0 flex-1"
+                    :model-value="importSettings.selectedSettingId"
+                    :options="settingOptions"
+                    label="利用する取込設定"
+                    placeholder="取込設定を選択してください"
+                    required
+                    :disabled="running"
+                    @update:model-value="(value) => importSettings.select(value === null ? null : String(value))"
+                />
+                <BaseButton data-testid="settings-change-button" variant="secondary" icon="settings" :disabled="running" @click="router.push({ name: 'import-settings' })">設定を変更</BaseButton>
+            </div>
+        </BaseCard>
+
+        <BaseAlert v-if="importSettings.settings.length === 0" tone="warning">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span>取込対象品番が未設定です。先に取込設定で対象品番を選択してください。</span>
+                <span>取込設定がありません。先に名前と対象品番を設定してください。</span>
                 <BaseButton variant="primary" size="sm" @click="router.push({ name: 'import-settings' })">取込設定へ</BaseButton>
             </div>
-        </BaseAlert>
-        <BaseAlert v-else tone="info">
-            取込対象品番: <span class="font-semibold">{{ importSettings.count }}件</span> 設定済み（<RouterLink
-                :to="{ name: 'import-settings' }"
-                class="text-primary-700 underline hover:text-primary-800"
-                >変更する</RouterLink
-            >）
         </BaseAlert>
 
         <BaseCard>

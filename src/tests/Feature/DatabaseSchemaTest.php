@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ImportSetting;
 use App\Models\ImportTarget;
 use App\Models\Product;
 use App\Models\Sku;
@@ -23,8 +24,9 @@ class DatabaseSchemaTest extends TestCase
             'users' => ['id', 'login_id', 'password'],
             'products' => ['id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'synced_at'],
             'skus' => ['id', 'product_id', 'sku_code', 'child_asin', 'status', 'tq_item_no', 'tq_color_no', 'tq_size', 'sort_order'],
-            'import_targets' => ['id', 'product_id', 'sort_order'],
-            'surveys' => ['id', 'executed_at'],
+            'import_settings' => ['id', 'name'],
+            'import_targets' => ['id', 'import_setting_id', 'product_id', 'sort_order'],
+            'surveys' => ['id', 'executed_at', 'import_setting_name'],
             'survey_products' => ['id', 'survey_id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'sort_order', 'memo'],
             'survey_skus' => [
                 'id',
@@ -57,7 +59,8 @@ class DatabaseSchemaTest extends TestCase
     {
         $product = Product::factory()->create(['product_code' => 'A-1001']);
         $sku = Sku::factory()->for($product)->create(['sku_code' => 'A-1001-01-M']);
-        $target = ImportTarget::factory()->for($product)->create(['sort_order' => 1]);
+        $setting = ImportSetting::query()->create(['name' => '売上TOP20']);
+        $target = ImportTarget::factory()->for($setting, 'setting')->for($product)->create(['sort_order' => 1]);
 
         $survey = Survey::factory()->create();
         $surveyProduct = SurveyProduct::factory()->for($survey)->create([

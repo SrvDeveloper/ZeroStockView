@@ -67,12 +67,13 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('user.loginId', 'admin');
     }
 
-    public function test_import_targets_are_saved_with_product_and_sku_data(): void
+    public function test_named_import_setting_is_saved_with_product_and_sku_data(): void
     {
         $this->actingAs(User::factory()->create());
 
-        $this->putJson('/api/import-targets', $this->targetPayload())
-            ->assertOk()
+        $this->postJson('/api/import-settings', $this->targetPayload())
+            ->assertCreated()
+            ->assertJsonPath('name', '売上TOP20')
             ->assertJsonPath('productCodes.0', 'A-1001')
             ->assertJsonPath('products.0.skus.0.skuCode', 'A-1001-01-M');
 
@@ -84,6 +85,25 @@ class ApiBackendTest extends TestCase
             && str_ends_with(parse_url($request->url(), PHP_URL_PATH) ?: '', '/items/lookup')
             && $request->hasHeader('Authorization', 'Bearer test-api-key')
             && $request['item_nos'] === ['A-1001']);
+    }
+
+    public function test_multiple_import_settings_can_use_the_same_product(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $firstId = $this->postJson('/api/import-settings', $this->targetPayload('売上TOP20'))
+            ->assertCreated()
+            ->json('id');
+        $secondId = $this->postJson('/api/import-settings', $this->targetPayload('サングラス'))
+            ->assertCreated()
+            ->json('id');
+
+        $this->assertNotSame($firstId, $secondId);
+        $this->assertDatabaseCount('import_settings', 2);
+        $this->assertDatabaseCount('import_targets', 2);
+        $this->getJson('/api/import-settings')
+            ->assertOk()
+            ->assertJsonCount(2, 'settings');
     }
 
     public function test_crosswalker_items_are_searched_with_bearer_authentication_and_pagination(): void
@@ -120,9 +140,12 @@ class ApiBackendTest extends TestCase
     {
         Storage::fake('local');
         $this->actingAs(User::factory()->create());
-        $this->putJson('/api/import-targets', $this->targetPayload())->assertOk();
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())
+            ->assertCreated()
+            ->json('id');
 
         $response = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
             'amazon_own' => UploadedFile::fake()->createWithContent(
                 '在庫商品レポート.txt',
                 "出品者SKU\tASIN\t価格\t数量\nA-1001-01-M\tB000000001\t1000\t2\n",
@@ -146,7 +169,9 @@ class ApiBackendTest extends TestCase
         ]);
 
         $response->assertCreated()
+            ->assertJsonCount(1, 'data.products.0.skus')
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
+            ->assertJsonPath('data.importSettingName', '売上TOP20')
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 3)
             ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 4)
             ->assertJsonPath('data.products.0.skus.0.stock.bossRfc', 5)
@@ -162,18 +187,25 @@ class ApiBackendTest extends TestCase
             'ec_stock' => 7,
             'free_stock' => 8,
         ]);
+        $this->assertDatabaseMissing('survey_skus', ['sku_code' => 'A-1001-01-L']);
         $this->assertSame(5, $response->json('data.files') === null ? 0 : count($response->json('data.files')));
         $this->assertSame(1, SurveySku::query()->count());
 
         $this->get('/api/surveys/'.$response->json('data.id').'/export')
             ->assertOk()
             ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        $this->deleteJson('/api/import-settings/'.$settingId)->assertNoContent();
+        $this->getJson('/api/surveys/'.$response->json('data.id'))
+            ->assertOk()
+            ->assertJsonPath('data.importSettingName', '売上TOP20');
     }
 
     /** @return array<string, mixed> */
-    private function targetPayload(): array
+    private function targetPayload(string $name = '売上TOP20'): array
     {
         return [
+            'name' => $name,
             'product_codes' => ['A-1001'],
         ];
     }
@@ -194,6 +226,13 @@ class ApiBackendTest extends TestCase
                 'tq_item_no' => 'A1001',
                 'tq_color_no' => '01',
                 'tq_size' => 'M',
+            ], [
+                'sku_code' => 'A-1001-01-L',
+                'child_asin' => 'B000000002',
+                'status' => 'inactive',
+                'tq_item_no' => 'A1001',
+                'tq_color_no' => '01',
+                'tq_size' => 'L',
             ]],
             'updated_at' => '2026-09-02T00:00:00.000000Z',
         ];

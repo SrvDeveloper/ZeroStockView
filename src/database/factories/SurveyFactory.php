@@ -19,6 +19,7 @@ class SurveyFactory extends Factory
     {
         return [
             'executed_at' => now(),
+            'import_setting_name' => '売上TOP20',
         ];
     }
 }

@@ -6,13 +6,38 @@ import { PRODUCT_MASTER } from "@/constants/masterData";
 import ImportSettingsPage from "@/pages/ImportSettingsPage.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
 
+const { push, replace } = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+
+vi.mock("vue-router", () => ({
+    useRouter: () => ({ push, replace }),
+}));
+
 vi.mock("@/api/crossWalker", () => {
     return { fetchCrossWalkerProducts: vi.fn() };
 });
 
+function configureStore(productCodes: string[]) {
+    const store = useImportSettingsStore();
+    store.settings = [
+        {
+            id: "1",
+            name: "売上TOP20",
+            productCodes,
+            products: PRODUCT_MASTER.filter((product) => productCodes.includes(product.productCode)),
+            lastSyncedAt: null,
+        },
+    ];
+    store.selectedSettingId = "1";
+    store.loaded = true;
+
+    return store;
+}
+
 describe("ImportSettingsPage", () => {
     beforeEach(() => {
         vi.mocked(fetchCrossWalkerProducts).mockReset();
+        push.mockReset();
+        replace.mockReset();
         vi.mocked(fetchCrossWalkerProducts).mockResolvedValue({
             products: PRODUCT_MASTER.slice(0, 20),
             page: 1,
@@ -24,15 +49,16 @@ describe("ImportSettingsPage", () => {
 
     it("reorders selected products by dragging and dropping", async () => {
         setActivePinia(createPinia());
-        const store = useImportSettingsStore();
-        store.selectedProductCodes = ["A-1001", "A-1002", "B-2001"];
-        store.products = PRODUCT_MASTER.filter((product) => store.selectedProductCodes.includes(product.productCode));
-        store.loaded = true;
-        vi.spyOn(store, "save").mockImplementation(async (productCodes) => {
-            store.selectedProductCodes = productCodes;
+        const store = configureStore(["A-1001", "A-1002", "B-2001"]);
+        vi.spyOn(store, "update").mockImplementation(async (settingId, name, productCodes) => {
+            const setting = store.settings.find((candidate) => candidate.id === settingId)!;
+            setting.name = name;
+            setting.productCodes = productCodes;
+
+            return setting;
         });
 
-        const wrapper = mount(ImportSettingsPage);
+        const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
 
         const rows = wrapper.findAll('[draggable="true"]');
         await rows[0].trigger("dragstart");
@@ -47,12 +73,9 @@ describe("ImportSettingsPage", () => {
 
     it("uses a grabbing cursor until dragging ends", async () => {
         setActivePinia(createPinia());
-        const store = useImportSettingsStore();
-        store.selectedProductCodes = ["A-1001"];
-        store.products = PRODUCT_MASTER.filter((product) => store.selectedProductCodes.includes(product.productCode));
-        store.loaded = true;
+        configureStore(["A-1001"]);
 
-        const wrapper = mount(ImportSettingsPage);
+        const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
         const row = wrapper.find('[draggable="true"]');
 
         expect(row.classes()).toContain("cursor-grab");
@@ -63,8 +86,6 @@ describe("ImportSettingsPage", () => {
     });
     it("requests 20 products and applies the keyword only after search is submitted", async () => {
         setActivePinia(createPinia());
-        const store = useImportSettingsStore();
-        store.selectedProductCodes = [];
 
         const wrapper = mount(ImportSettingsPage);
         await flushPromises();
@@ -83,8 +104,7 @@ describe("ImportSettingsPage", () => {
     });
     it("requests the next API page from pagination", async () => {
         setActivePinia(createPinia());
-        const store = useImportSettingsStore();
-        store.selectedProductCodes = [];
+        configureStore(["A-1001"]);
         vi.mocked(fetchCrossWalkerProducts).mockResolvedValueOnce({
             products: PRODUCT_MASTER,
             page: 1,
@@ -93,7 +113,7 @@ describe("ImportSettingsPage", () => {
             totalPages: 2,
         });
 
-        const wrapper = mount(ImportSettingsPage);
+        const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
         await flushPromises();
         const nextButton = wrapper.find('button[aria-label="次のページ"]');
 
@@ -109,5 +129,10 @@ describe("ImportSettingsPage", () => {
         await flushPromises();
 
         expect(fetchCrossWalkerProducts).toHaveBeenLastCalledWith("", 2, 20);
+        expect(wrapper.text()).toContain("追加済み");
+        const addedRow = wrapper.get('[data-testid="candidate-product-row"]');
+        expect(addedRow.classes()).toContain("bg-slate-100");
+        expect(addedRow.get("p").classes()).toContain("text-slate-500");
+        expect(wrapper.find('button[aria-label="前のページ"]').exists()).toBe(true);
     });
 });

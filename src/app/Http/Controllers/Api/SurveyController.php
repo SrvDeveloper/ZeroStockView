@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\RunSurveyRequest;
 use App\Http\Requests\UpdateMemoRequest;
 use App\Http\Resources\SurveyResource;
+use App\Models\ImportSetting;
 use App\Models\Survey;
 use App\Models\SurveyFile;
 use App\Models\SurveyProduct;
@@ -37,7 +38,9 @@ class SurveyController extends Controller
     {
         $files = $request->allFiles();
 
-        return new SurveyResource($importer->import($files));
+        $setting = ImportSetting::query()->findOrFail($request->integer('import_setting_id'));
+
+        return new SurveyResource($importer->import($files, $setting));
     }
 
     public function show(Survey $survey): SurveyResource

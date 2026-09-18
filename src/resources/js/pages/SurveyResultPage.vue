@@ -170,7 +170,12 @@ async function exportExcel(scope: "all" | "filtered") {
                     <BaseButton variant="primary" icon="download" @click="exportExcel('all')">全件をExcel出力</BaseButton>
                 </div>
             </div>
-            <p class="text-sm text-slate-500">調査日時: {{ formatDateTime(survey.executedAt) }}</p>
+            <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
+                <p>調査日時: {{ formatDateTime(survey.executedAt) }}</p>
+                <p>
+                    取込設定: <span class="font-medium text-slate-700">{{ survey.importSettingName || "記録なし" }}</span>
+                </p>
+            </div>
         </div>
 
         <BaseCard>
@@ -178,9 +183,9 @@ async function exportExcel(scope: "all" | "filtered") {
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <BaseSelect v-model="brandFilter" :options="brandOptions" placeholder="すべてのブランド" />
                     <BaseSelect v-model="categoryFilter" :options="categoryOptions" placeholder="すべてのカテゴリ" />
-                    <BaseInput v-model="productCodeQuery" placeholder="品番で絞込" />
-                    <BaseInput v-model="skuQuery" placeholder="SKUで絞込" />
-                    <BaseInput v-model="asinQuery" placeholder="ASINで絞込" />
+                    <BaseInput v-model="productCodeQuery" placeholder="品番で絞込" clearable clear-label="品番の絞込をクリア" />
+                    <BaseInput v-model="skuQuery" placeholder="SKUで絞込" clearable clear-label="SKUの絞込をクリア" />
+                    <BaseInput v-model="asinQuery" placeholder="ASINで絞込" clearable clear-label="ASINの絞込をクリア" />
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">

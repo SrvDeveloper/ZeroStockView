@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CrossWalkerController;
-use App\Http\Controllers\Api\ImportTargetController;
+use App\Http\Controllers\Api\ImportSettingController;
 use App\Http\Controllers\Api\SurveyController;
 use App\Http\Controllers\Api\SurveyFileController;
 use Illuminate\Support\Facades\Route;
@@ -15,8 +15,10 @@ Route::prefix('api')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::put('/password', [AuthController::class, 'changePassword']);
 
-        Route::get('/import-targets', [ImportTargetController::class, 'index']);
-        Route::put('/import-targets', [ImportTargetController::class, 'store']);
+        Route::get('/import-settings', [ImportSettingController::class, 'index']);
+        Route::post('/import-settings', [ImportSettingController::class, 'store']);
+        Route::put('/import-settings/{importSetting}', [ImportSettingController::class, 'update']);
+        Route::delete('/import-settings/{importSetting}', [ImportSettingController::class, 'destroy']);
         Route::get('/crosswalker/items', [CrossWalkerController::class, 'index']);
 
         Route::get('/surveys', [SurveyController::class, 'index']);

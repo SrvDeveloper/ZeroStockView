@@ -20,7 +20,18 @@ const router = createRouter({
         {
             path: "/import/settings",
             name: "import-settings",
+            component: () => import("@/pages/ImportSettingsListPage.vue"),
+        },
+        {
+            path: "/import/settings/new",
+            name: "import-setting-new",
             component: () => import("@/pages/ImportSettingsPage.vue"),
+        },
+        {
+            path: "/import/settings/:id",
+            name: "import-setting-edit",
+            component: () => import("@/pages/ImportSettingsPage.vue"),
+            props: true,
         },
         {
             path: "/surveys",

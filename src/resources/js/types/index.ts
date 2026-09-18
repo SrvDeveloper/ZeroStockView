@@ -16,6 +16,14 @@ export interface Product {
     skus: Sku[];
 }
 
+export interface ImportSetting {
+    id: string;
+    name: string;
+    productCodes: string[];
+    products: Product[];
+    lastSyncedAt: string | null;
+}
+
 export interface StockQuantities {
     amazonOwn: number;
     amazonFba: number;
@@ -79,6 +87,7 @@ export interface Survey {
     id: string;
     executedAt: string;
     products: SurveyProductResult[];
+    importSettingName: string | null;
     files: SurveyFile[];
 }
 
