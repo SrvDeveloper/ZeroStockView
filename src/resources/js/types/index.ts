@@ -68,7 +68,7 @@ export interface SurveyProductResult {
 export type ImportFileType = "在庫商品レポート" | "FBA在庫管理レポート" | "倉庫毎の在庫数レポート" | "KEEP一覧表" | "在庫一覧照会表";
 
 export const IMPORT_FILE_TYPES: { type: ImportFileType; format: string; stockScope: string; extension: string; icon: string }[] = [
-    { type: "在庫商品レポート", format: "TXT（タブ区切り）", stockScope: "Amazon:自社", extension: "txt", icon: "inventory_2" },
+    { type: "在庫商品レポート", format: "TXT", stockScope: "Amazon:自社", extension: "txt", icon: "inventory_2" },
     { type: "FBA在庫管理レポート", format: "CSV", stockScope: "Amazon:FBA", extension: "csv", icon: "local_shipping" },
     { type: "倉庫毎の在庫数レポート", format: "CSV", stockScope: "BOSS:自社／BOSS:RFC", extension: "csv", icon: "warehouse" },
     { type: "KEEP一覧表", format: "CSV", stockScope: "ECストック", extension: "csv", icon: "description" },

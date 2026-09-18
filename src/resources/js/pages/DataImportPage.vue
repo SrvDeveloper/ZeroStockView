@@ -185,7 +185,7 @@ async function runImport() {
                 :accept="accepts[fileType.type]"
                 :model-value="files[fileType.type]"
                 :title="fileType.type"
-                :description="`${fileType.format} ／ ${fileType.stockScope}`"
+                :description="`${fileType.stockScope}`"
                 :icon="fileType.icon"
                 @update:model-value="(f) => setFile(fileType.type, f)"
             />

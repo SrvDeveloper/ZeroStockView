@@ -50,6 +50,11 @@ const router = createRouter({
             component: () => import("@/pages/FileManagementPage.vue"),
         },
         {
+            path: "/manual",
+            name: "manual",
+            component: () => import("@/pages/ManualPage.vue"),
+        },
+        {
             path: "/password",
             name: "password-change",
             component: () => import("@/pages/PasswordChangePage.vue"),

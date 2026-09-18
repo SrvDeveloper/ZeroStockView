@@ -229,7 +229,7 @@ async function exportExcel(scope: "all" | "filtered") {
                 <div>
                     <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                         <p class="text-sm font-semibold text-slate-900">{{ product.productCode }}</p>
-                        <span class="text-xs text-slate-400">親ASIN: {{ product.parentAsin || "—" }}</span>
+                        <span class="text-xs text-slate-400">{{ product.parentAsin || "—" }}</span>
                     </div>
                     <div class="mt-1 flex gap-1.5">
                         <BaseBadge>{{ product.brand }}</BaseBadge>

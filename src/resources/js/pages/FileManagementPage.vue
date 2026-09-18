@@ -87,7 +87,7 @@ async function confirmBulkDelete() {
             <ul v-else class="divide-y divide-slate-100">
                 <li v-for="file in group.files" :key="file.id" class="flex items-center justify-between gap-3 px-5 py-2.5">
                     <div class="flex min-w-0 items-center gap-3">
-                        <BaseBadge class="shrink-0">{{ file.type }}</BaseBadge>
+                        <BaseBadge class="shrink-0 w-36 justify-center">{{ file.type }}</BaseBadge>
                         <div class="min-w-0">
                             <p class="truncate text-sm text-slate-800">{{ file.fileName }}</p>
                             <p class="text-xs text-slate-400">{{ formatDateTime(file.uploadedAt) }} ／ {{ formatSizeKb(file.sizeKb) }}</p>

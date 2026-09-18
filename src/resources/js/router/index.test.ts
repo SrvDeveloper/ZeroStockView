@@ -26,4 +26,11 @@ describe("router", () => {
         expect(router.currentRoute.value.name).toBe("data-import");
         expect(router.currentRoute.value.path).toBe("/import");
     });
+
+    it("provides the operation manual route", async () => {
+        await router.push("/manual");
+
+        expect(router.currentRoute.value.name).toBe("manual");
+        expect(router.currentRoute.value.path).toBe("/manual");
+    });
 });
