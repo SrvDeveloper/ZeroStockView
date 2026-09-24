@@ -23,6 +23,7 @@ Route::prefix('api')->group(function (): void {
 
         Route::get('/surveys', [SurveyController::class, 'index']);
         Route::post('/surveys', [SurveyController::class, 'store']);
+        Route::post('/surveys/{survey}/rerun', [SurveyController::class, 'rerun']);
         Route::get('/surveys/{survey}', [SurveyController::class, 'show']);
         Route::get('/surveys/{survey}/export', [SurveyController::class, 'export']);
         Route::delete('/surveys/{survey}', [SurveyController::class, 'destroy']);

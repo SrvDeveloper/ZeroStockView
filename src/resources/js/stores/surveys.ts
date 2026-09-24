@@ -31,6 +31,15 @@ export const useSurveysStore = defineStore("surveys", {
             this.surveys = this.surveys.slice(0, MAX_SURVEY_HISTORY);
             return survey;
         },
+        async rerunImport(surveyId: string, importSettingId: string): Promise<Survey> {
+            const { data } = await axios.post<{ data: Survey }>(`/api/surveys/${surveyId}/rerun`, {
+                import_setting_id: importSettingId,
+            });
+            const survey = data.data;
+            this.surveys.unshift(survey);
+            this.surveys = this.surveys.slice(0, MAX_SURVEY_HISTORY);
+            return survey;
+        },
         async removeSurvey(id: string) {
             await axios.delete(`/api/surveys/${id}`);
             this.surveys = this.surveys.filter((s) => s.id !== id);

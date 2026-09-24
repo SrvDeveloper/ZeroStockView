@@ -195,6 +195,12 @@ class ApiBackendTest extends TestCase
             ->assertOk()
             ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
+        $rerunSettingId = $this->postJson('/api/import-settings', $this->targetPayload('再照合設定'))->assertCreated()->json('id');
+        $rerunResponse = $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId]);
+        $rerunResponse->assertCreated()->assertJsonPath('data.importSettingName', '再照合設定')->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)->assertJsonCount(5, 'data.files');
+        $this->assertSame(2, SurveySku::query()->count());
+        $this->deleteJson('/api/surveys/'.$response->json('data.id').'/files')->assertNoContent();
+        $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId])->assertUnprocessable()->assertJsonPath('errors.files.0', '取込ファイルが削除されているため、再照合できません。');
         $this->deleteJson('/api/import-settings/'.$settingId)->assertNoContent();
         $this->getJson('/api/surveys/'.$response->json('data.id'))
             ->assertOk()

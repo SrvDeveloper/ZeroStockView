@@ -17,7 +17,7 @@ withDefaults(
 
 <template>
     <section :id="id" class="scroll-mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" :aria-labelledby="`${id}-title`">
-        <header class="flex items-start gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
+        <header class="flex items-center gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
                 <AppIcon :name="icon" :size="20" />
             </span>

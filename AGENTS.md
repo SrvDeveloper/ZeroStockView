@@ -24,6 +24,10 @@ Use UTF-8, LF endings, four-space indentation, and a final newline; YAML uses tw
 
 Prettier formats frontend code; ESLint enforces frontend rules. Do not reformat unrelated files.
 
+## Workspace Editing Constraint
+
+In this workspace, `apply_patch` may fail with `bwrap: No permissions to create a new namespace` because unprivileged user namespaces are unavailable. When that exact environment error occurs, do not retry `apply_patch` repeatedly. After reading the target context, use narrowly scoped `sed -i` or `perl -0pi` substitutions as the fallback. Avoid whole-file rewrites and broad replacements; format the touched files, run `git diff --check`, and inspect the resulting diff immediately. Preserve unrelated user changes.
+
 ## Testing Guidelines
 
 Use PHPUnit for backend behavior and Vitest with Vue Test Utils for frontend behavior. Name PHP tests `*Test.php` with methods such as `test_import_rejects_invalid_quantity()`. Colocate frontend tests as `ComponentName.test.ts`. Cover changed branches, especially imports, validation, persistence, and API failures. Run focused tests first, then the full checks before submitting.

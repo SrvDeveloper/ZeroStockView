@@ -43,6 +43,16 @@ class SurveyController extends Controller
         return new SurveyResource($importer->import($files, $setting));
     }
 
+    public function rerun(Request $request, Survey $survey, InventoryImportService $importer): SurveyResource
+    {
+        $data = $request->validate([
+            'import_setting_id' => ['required', 'integer', 'exists:import_settings,id'],
+        ]);
+        $setting = ImportSetting::query()->findOrFail($data['import_setting_id']);
+
+        return new SurveyResource($importer->reimport($survey, $setting));
+    }
+
     public function show(Survey $survey): SurveyResource
     {
         return new SurveyResource($survey->load(['products.skus', 'files']));

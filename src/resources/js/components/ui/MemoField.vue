@@ -24,45 +24,70 @@ type SaveState = "idle" | "saving" | "saved";
 
 const text = ref(props.modelValue);
 const state = ref<SaveState>("idle");
-let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+const isEditing = ref(false);
+const isComposing = ref(false);
+const pendingValue = ref<string | null>(null);
 let savingTimer: ReturnType<typeof setTimeout> | undefined;
 let savedTimer: ReturnType<typeof setTimeout> | undefined;
 
 watch(
     () => props.modelValue,
     (v) => {
-        text.value = v;
+        if (pendingValue.value !== null) {
+            if (v === pendingValue.value) {
+                pendingValue.value = null;
+                if (!isEditing.value) text.value = v;
+            }
+            return;
+        }
+        if (!isEditing.value) text.value = v;
     },
 );
 
 function onInput(value: string) {
     text.value = value;
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(commit, 700);
 }
 
 function commit() {
-    if (text.value === props.modelValue) return;
+    if (isComposing.value || text.value === props.modelValue || text.value === pendingValue.value) return;
+    pendingValue.value = text.value;
     state.value = "saving";
     clearTimeout(savingTimer);
     clearTimeout(savedTimer);
+    emit("update:modelValue", text.value);
+    emit("save", text.value);
     savingTimer = setTimeout(() => {
-        emit("update:modelValue", text.value);
-        emit("save", text.value);
         state.value = "saved";
         savedTimer = setTimeout(() => (state.value = "idle"), 1600);
-    }, 450);
+    }, 300);
+}
+
+function beginEditing() {
+    isEditing.value = true;
+}
+
+function endEditing() {
+    isEditing.value = false;
+    commit();
+}
+
+function beginComposition() {
+    isComposing.value = true;
+}
+
+function endComposition() {
+    isComposing.value = false;
+    if (!isEditing.value) commit();
 }
 
 onBeforeUnmount(() => {
-    clearTimeout(debounceTimer);
     clearTimeout(savingTimer);
     clearTimeout(savedTimer);
 });
 </script>
 
 <template>
-    <div class="relative">
+    <div class="relative" @focusin="beginEditing" @focusout="endEditing" @compositionstart="beginComposition" @compositionend="endComposition">
         <BaseTextarea v-if="multiline" :model-value="text" :placeholder="placeholder" :rows="rows" :bordered="false" @update:model-value="onInput" />
         <BaseInput v-else :model-value="text" size="sm" :placeholder="placeholder" :bordered="false" @update:model-value="onInput" />
         <Transition name="fade">

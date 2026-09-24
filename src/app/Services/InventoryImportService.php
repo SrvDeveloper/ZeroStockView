@@ -23,6 +23,31 @@ class InventoryImportService
 
     public function __construct(private CrossWalkerClient $crossWalker) {}
 
+    public function reimport(Survey $source, ImportSetting $setting): Survey
+    {
+        $source->loadMissing('files');
+        $files = [];
+
+        foreach (self::FILE_TYPES as $key => $type) {
+            $file = $source->files->firstWhere('file_type', $type);
+            if ($file === null || $file->expires_at === null || $file->expires_at->isPast() || ! Storage::disk($file->disk)->exists($file->stored_path)) {
+                throw ValidationException::withMessages([
+                    'files' => ['取込ファイルが削除されているため、再照合できません。'],
+                ]);
+            }
+
+            $files[$key] = new UploadedFile(
+                Storage::disk($file->disk)->path($file->stored_path),
+                $file->original_name,
+                $file->mime_type,
+                null,
+                true,
+            );
+        }
+
+        return $this->import($files, $setting);
+    }
+
     /** @param array<string, UploadedFile> $files */
     public function import(array $files, ImportSetting $setting): Survey
     {

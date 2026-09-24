@@ -26,7 +26,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
     <Teleport to="body">
         <Transition enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0" leave-active-class="transition duration-100 ease-in" leave-to-class="opacity-0">
             <div v-if="open" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-4 py-10 backdrop-blur-[1px]" @click.self="emit('close')">
-                <div class="w-full rounded-xl border border-slate-200 bg-white shadow-xl" :class="widthClass[width]">
+                <div class="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" :class="widthClass[width]">
                     <header class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
                         <div>
                             <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
