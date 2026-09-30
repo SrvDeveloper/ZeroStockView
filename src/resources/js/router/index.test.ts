@@ -33,4 +33,11 @@ describe("router", () => {
         expect(router.currentRoute.value.name).toBe("manual");
         expect(router.currentRoute.value.path).toBe("/manual");
     });
+
+    it("provides the inventory trends route", async () => {
+        await router.push("/inventory-trends");
+
+        expect(router.currentRoute.value.name).toBe("inventory-trends");
+        expect(router.currentRoute.value.path).toBe("/inventory-trends");
+    });
 });

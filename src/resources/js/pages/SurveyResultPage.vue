@@ -176,6 +176,10 @@ function bossStockTotal(stock: StockQuantities): number {
     return stock.bossOwn + stock.bossRfc;
 }
 
+function stockTotal(stock: StockQuantities): number {
+    return stock.amazonOwn + stock.amazonFba + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
+}
+
 function isLowStock(quantity: number): boolean {
     return quantity > 0 && quantity <= 5;
 }
@@ -184,6 +188,11 @@ function groupedStockClass(quantity: number): string {
     if (quantity === 0) return "bg-rose-50 font-semibold text-rose-400";
     if (isLowStock(quantity)) return "bg-amber-50 font-semibold text-amber-700";
     return "font-semibold text-slate-900";
+}
+
+function amazonStockClass(quantity: number, asin: string): string {
+    if (!asin.trim()) return "text-slate-300";
+    return groupedStockClass(quantity);
 }
 
 function stockClass(quantity: number): string {
@@ -392,9 +401,10 @@ async function exportExcel(scope: "all" | "filtered") {
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full min-w-175 table-fixed text-left text-sm">
+                <table class="w-full min-w-200 table-fixed text-left text-sm">
                     <colgroup>
                         <col class="w-40" />
+                        <col class="w-24" />
                         <col class="w-24" />
                         <col class="w-24" />
                         <col class="w-24" />
@@ -408,6 +418,7 @@ async function exportExcel(scope: "all" | "filtered") {
                             <th class="border-l border-slate-200 px-3 py-2 text-center">BOSS</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">フリー在庫</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">ECストック</th>
+                            <th class="border-l border-slate-200 px-3 py-2 text-center">在庫総数</th>
                             <th class="border-l border-slate-200 px-3 py-2">メモ</th>
                         </tr>
                     </thead>
@@ -424,7 +435,7 @@ async function exportExcel(scope: "all" | "filtered") {
                                 tabindex="0"
                                 aria-label="Amazon在庫合計"
                                 class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="groupedStockClass(amazonStockTotal(sku.stock))"
+                                :class="amazonStockClass(amazonStockTotal(sku.stock), sku.asin)"
                             >
                                 <span class="stock-total-value">{{ amazonStockTotal(sku.stock) }}</span>
                                 <div class="stock-breakdown-tooltip" role="tooltip">
@@ -468,6 +479,9 @@ async function exportExcel(scope: "all" | "filtered") {
                             </td>
                             <td data-stock-field="ecStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.ecStock)">
                                 {{ sku.stock.ecStock }}
+                            </td>
+                            <td data-stock-field="total" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(stockTotal(sku.stock))">
+                                {{ stockTotal(sku.stock) }}
                             </td>
                             <td class="border-l border-slate-200 px-3 py-2.5">
                                 <MemoField :model-value="sku.memo" placeholder="メモを入力" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />

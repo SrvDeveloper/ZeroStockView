@@ -7,7 +7,7 @@ import ManualTableOfContents from "@/components/manual/ManualTableOfContents.vue
 
 const sections = [
     { id: "introduction", title: "はじめに" },
-    { id: "basic-operation", title: "事前準備①" },
+    { id: "basic-operation", title: "事前準備" },
     { id: "notes", title: "注意事項" },
     { id: "faq", title: "よくある質問" },
 ];

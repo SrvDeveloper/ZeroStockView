@@ -39,6 +39,11 @@ const router = createRouter({
             component: () => import("@/pages/SurveyHistoryPage.vue"),
         },
         {
+            path: "/inventory-trends",
+            name: "inventory-trends",
+            component: () => import("@/pages/InventoryTrendPage.vue"),
+        },
+        {
             path: "/surveys/:id",
             name: "survey-result",
             component: () => import("@/pages/SurveyResultPage.vue"),

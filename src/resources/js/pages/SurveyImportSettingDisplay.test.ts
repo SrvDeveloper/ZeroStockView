@@ -107,6 +107,7 @@ describe("survey import setting display", () => {
 
         const amazonCell = wrapper.get("[data-stock-field=amazon]");
         const bossCell = wrapper.get("[data-stock-field=boss]");
+        const totalStockCell = wrapper.get("[data-stock-field=total]");
         const amazonBreakdown = amazonCell.get(".stock-breakdown-tooltip");
         const bossBreakdown = bossCell.get(".stock-breakdown-tooltip");
         expect(wrapper.find("[role=switch][aria-label=内訳表示]").exists()).toBe(false);
@@ -139,6 +140,9 @@ describe("survey import setting display", () => {
         expect(bossCell.classes()).not.toContain("group-hover:bg-rose-100");
         expect(bossBreakdown.text()).toContain("BOSS内訳");
         expect(bossBreakdown.findAll("strong").map((value) => value.text())).toEqual(["0", "0"]);
+        expect(wrapper.get("thead").text()).toContain("在庫総数");
+        expect(totalStockCell.text()).toBe("14");
+        expect(totalStockCell.classes()).toContain("font-semibold");
         expect(wrapper.findAll("[role=tooltip]")).toHaveLength(2);
         expect(wrapper.get("[data-stock-field=freeStock]").classes()).not.toContain("bg-amber-50");
         expect(wrapper.get("[data-stock-field=ecStock]").classes()).not.toContain("bg-amber-50");
@@ -169,6 +173,49 @@ describe("survey import setting display", () => {
         await orOperator.trigger("click");
         expect(wrapper.find("tbody tr").exists()).toBe(true);
     });
+    it("dims Amazon stock when the SKU has no child ASIN", () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].products = [
+            {
+                id: "product-1",
+                productCode: "A-1001",
+                brand: "ブランドA",
+                category: "カテゴリA",
+                parentAsin: "PARENT-ASIN",
+                memo: "",
+                skus: [
+                    {
+                        id: "sku-1",
+                        skuCode: "A-1001-01-M",
+                        colorName: "黒",
+                        size: "M",
+                        asin: "",
+                        tqCode: "TQ-1",
+                        tqColorNo: "01",
+                        tqSize: "M",
+                        stock: { amazonOwn: 2, amazonFba: 3, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 },
+                        memo: "",
+                    },
+                ],
+            },
+        ];
+        const wrapper = mount(SurveyResultPage, {
+            props: { id: "1" },
+            global: { stubs: { RouterLink: true } },
+        });
+
+        const amazonCell = wrapper.get("[data-stock-field=amazon]");
+        const freeStockCell = wrapper.get("[data-stock-field=freeStock]");
+        const ecStockCell = wrapper.get("[data-stock-field=ecStock]");
+
+        expect(amazonCell.get(".stock-total-value").text()).toBe("5");
+        expect(amazonCell.classes()).toContain("text-slate-300");
+        expect(amazonCell.classes()).not.toContain("bg-amber-50");
+        expect(amazonCell.classes()).not.toContain("font-semibold");
+        expect(freeStockCell.classes()).toContain("text-slate-300");
+        expect(ecStockCell.classes()).toContain("text-slate-300");
+    });
+
     it("reruns a survey with another setting only while all source files remain", async () => {
         const surveys = useSurveysStore();
         surveys.surveys[0].files = [

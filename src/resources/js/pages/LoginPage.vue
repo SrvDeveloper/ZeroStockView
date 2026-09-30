@@ -65,10 +65,7 @@ async function submit() {
                 </form>
             </BaseCard>
 
-            <p class="mt-4 text-center text-xs text-slate-400">
-                デモ用アカウント: ID <code class="rounded bg-slate-200 px-1 py-0.5">admin</code> / パスワード
-                <code class="rounded bg-slate-200 px-1 py-0.5">password1234</code>
-            </p>
+            <p class="mt-5 text-center text-[11.5px] text-slate-400">SUNREEVE CO., LTD.</p>
         </div>
     </div>
 </template>

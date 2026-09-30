@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CrossWalkerController;
 use App\Http\Controllers\Api\ImportSettingController;
+use App\Http\Controllers\Api\InventoryTrendController;
 use App\Http\Controllers\Api\SurveyController;
 use App\Http\Controllers\Api\SurveyFileController;
 use Illuminate\Support\Facades\Route;
@@ -20,6 +21,9 @@ Route::prefix('api')->group(function (): void {
         Route::put('/import-settings/{importSetting}', [ImportSettingController::class, 'update']);
         Route::delete('/import-settings/{importSetting}', [ImportSettingController::class, 'destroy']);
         Route::get('/crosswalker/items', [CrossWalkerController::class, 'index']);
+
+        Route::get('/inventory-trends/products', [InventoryTrendController::class, 'products']);
+        Route::get('/inventory-trends', [InventoryTrendController::class, 'show']);
 
         Route::get('/surveys', [SurveyController::class, 'index']);
         Route::post('/surveys', [SurveyController::class, 'store']);

@@ -13,8 +13,9 @@ const props = withDefaults(
         disabled?: boolean;
         error?: string;
         size?: "sm" | "md";
+        showPlaceholder?: boolean;
     }>(),
-    { label: "", placeholder: "選択してください", required: false, disabled: false, error: "", size: "md" },
+    { label: "", placeholder: "選択してください", required: false, disabled: false, error: "", size: "md", showPlaceholder: true },
 );
 
 const emit = defineEmits<{ "update:modelValue": [value: string | number | null] }>();
@@ -46,7 +47,7 @@ function onChange(event: Event) {
         </label>
         <div class="relative">
             <select :id="selectId" :value="modelValue === null ? '' : String(modelValue)" :disabled="disabled" :class="selectClass" @change="onChange">
-                <option value="">{{ placeholder }}</option>
+                <option v-if="showPlaceholder" value="">{{ placeholder }}</option>
                 <option v-for="option in options" :key="String(option.value)" :value="String(option.value)" class="text-slate-900">{{ option.label }}</option>
             </select>
             <AppIcon name="expand_more" :size="16" class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-slate-400" />
