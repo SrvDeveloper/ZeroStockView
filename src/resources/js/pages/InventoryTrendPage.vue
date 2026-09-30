@@ -19,6 +19,19 @@ interface TrendSeries {
     points: { date: string; quantity: number | null }[];
 }
 
+type TrendView = "sku" | "product";
+
+interface StockoutSeries {
+    label: string;
+    color: string;
+    points: {
+        date: string;
+        quantity: number | null;
+        skus: { skuCode: string; stockoutDays: number }[];
+        periodStockoutDays: number;
+    }[];
+}
+
 interface SkuSummary {
     skuCode: string;
     color: string;
@@ -35,12 +48,13 @@ const availableBrands = ref<string[]>([]);
 const availableRange = ref<{ from: string; to: string } | null>(null);
 const productCode = ref("");
 const inventoryScope = ref<InventoryScope>("mallTotal");
+const trendView = ref<TrendView>("sku");
 const chartMode = ref<"line" | "bar">("line");
 const activePreset = ref<14 | 30 | 90 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
-const selectedSkuCodes = ref<string[]>([]);
+const selectedSkuCode = ref("");
 const productPickerOpen = ref(false);
 const pendingProductCode = ref("");
 const productBrandFilter = ref<string | null>(null);
@@ -80,15 +94,74 @@ const selectedDates = computed(() => {
     for (let date = targetStart.value; date <= targetEnd.value; date = addDays(date, 1)) dates.push(date);
     return dates;
 });
-const chartSeries = computed<TrendSeries[]>(() =>
-    rawSeries.value
-        .map((series, index) => ({
+const skuChartSeries = computed<TrendSeries[]>(() => {
+    const index = rawSeries.value.findIndex((series) => series.skuCode === selectedSkuCode.value);
+    const series = rawSeries.value[index];
+    if (!series) return [];
+
+    return [
+        {
             skuCode: series.skuCode,
             label: series.skuCode,
             color: SERIES_COLORS[index % SERIES_COLORS.length]!,
             points: series.points,
-        }))
-        .filter((series) => selectedSkuCodes.value.includes(series.skuCode)),
+        },
+    ];
+});
+const productChartSeries = computed<TrendSeries[]>(() => {
+    if (rawSeries.value.length === 0) return [];
+
+    return [
+        {
+            skuCode: productCode.value,
+            label: "総在庫数",
+            color: SERIES_COLORS[0]!,
+            points: selectedDates.value.map((date) => {
+                const quantities = rawSeries.value.flatMap((series) => {
+                    const quantity = series.points.find((point) => point.date === date)?.quantity;
+                    return quantity === null || quantity === undefined ? [] : [quantity];
+                });
+                return { date, quantity: quantities.length === 0 ? null : quantities.reduce((total, quantity) => total + quantity, 0) };
+            }),
+        },
+    ];
+});
+const productStockoutSeries = computed<StockoutSeries | null>(() => {
+    if (trendView.value !== "product" || rawSeries.value.length === 0) return null;
+
+    const stockoutDaysBySku = new Map(rawSeries.value.map((series) => [series.skuCode, series.points.filter((point) => point.quantity === 0).length]));
+    const periodStockoutDays = [...stockoutDaysBySku.values()].reduce((total, days) => total + days, 0);
+
+    return {
+        label: "欠品SKU数",
+        color: "#e11d48",
+        points: selectedDates.value.map((date) => {
+            const availableSeries = rawSeries.value.flatMap((series) => {
+                const quantity = series.points.find((point) => point.date === date)?.quantity;
+                return quantity === null || quantity === undefined ? [] : [{ series, quantity }];
+            });
+            const stockoutSkus = availableSeries
+                .filter(({ quantity }) => quantity === 0)
+                .map(({ series }) => ({
+                    skuCode: series.skuCode,
+                    stockoutDays: stockoutDaysBySku.get(series.skuCode) ?? 0,
+                }));
+
+            return {
+                date,
+                quantity: availableSeries.length === 0 ? null : stockoutSkus.length,
+                skus: stockoutSkus,
+                periodStockoutDays,
+            };
+        }),
+    };
+});
+const chartSeries = computed<TrendSeries[]>(() => (trendView.value === "sku" ? skuChartSeries.value : productChartSeries.value));
+const chartTitle = computed(() => (trendView.value === "sku" ? "SKU別 在庫数の推移" : "品番別 在庫総数・欠品SKU数の推移"));
+const chartDescription = computed(() =>
+    trendView.value === "sku"
+        ? `${selectedInventoryScopeLabel.value}の在庫数を、選択した1SKUについて1日単位で表示しています。`
+        : `${selectedInventoryScopeLabel.value}の総在庫数と欠品SKU数を、品番単位で表示しています。`,
 );
 const skuSummaries = computed<SkuSummary[]>(() =>
     rawSeries.value.map((series, index) => {
@@ -104,8 +177,6 @@ const skuSummaries = computed<SkuSummary[]>(() =>
         };
     }),
 );
-const hasAllSkus = computed(() => rawSeries.value.length > 0 && selectedSkuCodes.value.length === rawSeries.value.length);
-
 onMounted(loadProducts);
 
 async function loadProducts() {
@@ -151,12 +222,11 @@ async function loadTrend(resetSelection = false) {
         if (requestId !== trendRequestId) return;
         rawSeries.value = response.series;
         const availableCodes = response.series.map((series) => series.skuCode);
-        const retainedCodes = selectedSkuCodes.value.filter((code) => availableCodes.includes(code));
-        selectedSkuCodes.value = resetSelection || retainedCodes.length === 0 ? availableCodes : retainedCodes;
+        if (resetSelection || !availableCodes.includes(selectedSkuCode.value)) selectedSkuCode.value = availableCodes[0] ?? "";
     } catch {
         if (requestId !== trendRequestId) return;
         rawSeries.value = [];
-        selectedSkuCodes.value = [];
+        selectedSkuCode.value = "";
         trendError.value = "在庫推移の読み込みに失敗しました。時間をおいて再度お試しください。";
     } finally {
         if (requestId === trendRequestId) trendLoading.value = false;
@@ -242,23 +312,6 @@ function updateTargetEnd(event: Event) {
     if (targetEnd.value < targetStart.value) targetStart.value = targetEnd.value;
     activePreset.value = "custom";
     void loadTrend();
-}
-
-function toggleSku(skuCode: string) {
-    if (selectedSkuCodes.value.includes(skuCode)) {
-        if (selectedSkuCodes.value.length === 1) return;
-        selectedSkuCodes.value = selectedSkuCodes.value.filter((code) => code !== skuCode);
-        return;
-    }
-    selectedSkuCodes.value = [...selectedSkuCodes.value, skuCode];
-}
-
-function toggleAllSkus() {
-    if (hasAllSkus.value) {
-        selectedSkuCodes.value = rawSeries.value[0] ? [rawSeries.value[0].skuCode] : [];
-    } else {
-        selectedSkuCodes.value = rawSeries.value.map((series) => series.skuCode);
-    }
 }
 </script>
 
@@ -390,8 +443,30 @@ function toggleAllSkus() {
             </template>
         </BaseModal>
 
-        <BaseCard title="SKU別 在庫数の推移" :description="`${selectedInventoryScopeLabel}の在庫数を、1日単位で表示しています。`">
+        <BaseCard :title="chartTitle" :description="chartDescription">
             <template #actions>
+                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="在庫推移の確認単位">
+                    <button
+                        type="button"
+                        data-testid="trend-view-sku"
+                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                        :class="trendView === 'sku' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+                        :aria-pressed="trendView === 'sku'"
+                        @click="trendView = 'sku'"
+                    >
+                        SKU
+                    </button>
+                    <button
+                        type="button"
+                        data-testid="trend-view-product"
+                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                        :class="trendView === 'product' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+                        :aria-pressed="trendView === 'product'"
+                        @click="trendView = 'product'"
+                    >
+                        品番
+                    </button>
+                </div>
                 <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="グラフ表示形式">
                     <button
                         type="button"
@@ -419,22 +494,25 @@ function toggleAllSkus() {
                 </span>
             </template>
 
-            <div v-if="rawSeries.length > 0" class="mb-5 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-4">
-                <button type="button" class="mr-1 rounded-md px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50" :aria-pressed="hasAllSkus" @click="toggleAllSkus">
-                    {{ hasAllSkus ? "1件だけ表示" : "すべて表示" }}
-                </button>
+            <div v-if="rawSeries.length > 0 && trendView === 'sku'" class="mb-5 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-4">
+                <span class="mr-1 text-xs font-medium text-slate-500">表示SKU</span>
                 <button
                     v-for="(sku, index) in rawSeries"
                     :key="sku.skuCode"
                     type="button"
+                    :data-sku-code="sku.skuCode"
                     class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-                    :class="selectedSkuCodes.includes(sku.skuCode) ? 'border-slate-300 bg-white text-slate-700 shadow-xs' : 'border-slate-200 bg-slate-50 text-slate-400'"
-                    :aria-pressed="selectedSkuCodes.includes(sku.skuCode)"
-                    @click="toggleSku(sku.skuCode)"
+                    :class="selectedSkuCode === sku.skuCode ? 'border-primary-300 bg-primary-50 text-primary-800 shadow-xs' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'"
+                    :aria-pressed="selectedSkuCode === sku.skuCode"
+                    @click="selectedSkuCode = sku.skuCode"
                 >
-                    <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: selectedSkuCodes.includes(sku.skuCode) ? SERIES_COLORS[index % SERIES_COLORS.length] : '#cbd5e1' }"></span>
+                    <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: selectedSkuCode === sku.skuCode ? SERIES_COLORS[index % SERIES_COLORS.length] : '#cbd5e1' }"></span>
                     {{ sku.skuCode }}
                 </button>
+            </div>
+            <div v-else-if="rawSeries.length > 0" data-testid="product-chart-legend" class="mb-5 flex flex-wrap items-center gap-5 border-b border-slate-100 pb-4 text-xs font-medium text-slate-600">
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-primary-600"></span>総在庫数</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-rose-600"></span>欠品SKU数</span>
             </div>
 
             <div v-if="trendLoading" class="flex min-h-80 items-center justify-center gap-2 text-sm text-slate-500" role="status">
@@ -449,7 +527,7 @@ function toggleAllSkus() {
             </BaseAlert>
             <BaseEmpty v-else-if="chartSeries.length === 0" icon="show_chart" title="対象期間の在庫データがありません" description="対象品番または対象期間を変更してください。" />
             <div v-else class="overflow-x-auto pb-1">
-                <InventoryTrendChart :series="chartSeries" :display-mode="chartMode" />
+                <InventoryTrendChart :series="chartSeries" :display-mode="chartMode" :stockout-series="productStockoutSeries" />
             </div>
         </BaseCard>
 

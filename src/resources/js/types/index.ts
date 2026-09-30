@@ -86,6 +86,7 @@ export interface SurveyFile {
 export interface Survey {
     id: string;
     executedAt: string;
+    createdAt?: string;
     products: SurveyProductResult[];
     importSettingName: string | null;
     files: SurveyFile[];

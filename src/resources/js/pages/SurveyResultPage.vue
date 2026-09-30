@@ -283,7 +283,8 @@ async function exportExcel(scope: "all" | "filtered") {
                 </div>
             </div>
             <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
-                <p>調査日時: {{ formatDateTime(survey.executedAt) }}</p>
+                <p>在庫基準日時: {{ formatDateTime(survey.executedAt) }}</p>
+                <p v-if="survey.createdAt">結果作成日時: {{ formatDateTime(survey.createdAt) }}</p>
                 <p>
                     取込設定: <span class="font-medium text-slate-700">{{ survey.importSettingName || "記録なし" }}</span>
                 </p>
@@ -291,7 +292,7 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
         <p v-if="!hasReusableFiles" class="text-xs text-slate-400">取込ファイルが削除されているため、再照合機能は利用できません。</p>
 
-        <BaseModal :open="rerunMenuOpen" title="差異照合メニュー" description="保存済みの取込ファイルを使い、選択した設定で新しい調査結果を作成します。" width="md" @close="closeRerunMenu">
+        <BaseModal :open="rerunMenuOpen" title="差異照合メニュー" description="保存済みの取込ファイルを使い、元の在庫基準日時を引き継いだ調査結果を作成します。" width="md" @close="closeRerunMenu">
             <div class="flex flex-col gap-4">
                 <p v-if="rerunSettingOptions.length === 0" class="text-sm text-slate-500">利用できる別の取込設定がありません。</p>
                 <BaseSelect

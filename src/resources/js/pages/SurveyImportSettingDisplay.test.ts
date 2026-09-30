@@ -20,6 +20,7 @@ function seedSurvey() {
         {
             id: "1",
             executedAt: "2026-09-16T01:00:00Z",
+            createdAt: "2026-09-18T03:00:00Z",
             importSettingName: "売上TOP20",
             products: [],
             files: [],
@@ -41,6 +42,68 @@ describe("survey import setting display", () => {
 
         expect(wrapper.text()).toContain("取込設定");
         expect(wrapper.text()).toContain("売上TOP20");
+        expect(wrapper.text()).toContain("在庫基準日時");
+        expect(wrapper.text()).toContain("結果作成: 2026/09/18 03:00");
+    });
+
+    it("filters survey history by period and import setting", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys = [
+            { id: "1", executedAt: "2026-09-18T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
+            { id: "2", executedAt: "2026-09-17T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
+            { id: "3", executedAt: "2026-09-10T12:00:00Z", importSettingName: "サングラス", products: [], files: [] },
+            { id: "4", executedAt: "2026-09-17T08:00:00Z", importSettingName: null, products: [], files: [] },
+        ];
+        const wrapper = mount(SurveyHistoryPage);
+        const displayedIds = () => wrapper.findAll("[data-survey-id]").map((row) => row.attributes("data-survey-id"));
+
+        expect(displayedIds()).toEqual(["1", "2", "4", "3"]);
+
+        expect(wrapper.find("[data-testid=date-filter-mode]").exists()).toBe(false);
+        expect(wrapper.find("[data-testid=survey-date-filter]").exists()).toBe(false);
+
+        await wrapper.get("[data-testid=survey-date-from]").setValue("2026-09-17");
+        await wrapper.get("[data-testid=survey-date-to]").setValue("2026-09-17");
+        expect(displayedIds()).toEqual(["2", "4"]);
+        expect(wrapper.text()).toContain("全4件中2件を表示");
+
+        await wrapper.get("[data-testid=import-setting-filter] select").setValue("売上TOP20");
+        expect(displayedIds()).toEqual(["2"]);
+
+        await wrapper.get("[data-testid=survey-date-from]").setValue("2026-09-10");
+        await wrapper.get("[data-testid=import-setting-filter] select").setValue("");
+        expect(displayedIds()).toEqual(["2", "4", "3"]);
+
+        await wrapper.get("[data-testid=survey-date-from]").setValue("2026-09-18");
+        expect(wrapper.text()).toContain("開始日は終了日以前の日付を指定してください");
+        expect(wrapper.text()).toContain("条件に一致する調査履歴がありません");
+
+        await wrapper.get("[data-testid=reset-filters]").trigger("click");
+        expect(displayedIds()).toEqual(["1", "2", "4", "3"]);
+    });
+
+    it("can filter survey history with no recorded import setting", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys.push({ id: "2", executedAt: "2026-09-17T12:00:00Z", importSettingName: null, products: [], files: [] });
+        const wrapper = mount(SurveyHistoryPage);
+        const noSettingOption = wrapper.findAll("[data-testid=import-setting-filter] option").find((option) => option.text() === "記録なし");
+
+        expect(noSettingOption).toBeDefined();
+        await wrapper.get("[data-testid=import-setting-filter] select").setValue(noSettingOption?.attributes("value"));
+
+        expect(wrapper.findAll("[data-survey-id]").map((row) => row.attributes("data-survey-id"))).toEqual(["2"]);
+    });
+
+    it("keeps a rechecked past result out of the latest position", () => {
+        const surveys = useSurveysStore();
+        surveys.surveys = [
+            { id: "current", executedAt: "2026-09-18T12:00:00Z", createdAt: "2026-09-18T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
+            { id: "rechecked", executedAt: "2026-09-16T12:00:00Z", createdAt: "2026-09-30T12:00:00Z", importSettingName: "別設定", products: [], files: [] },
+        ];
+        const wrapper = mount(SurveyHistoryPage);
+
+        expect(wrapper.get("[data-survey-id=current]").text()).toContain("最新");
+        expect(wrapper.get("[data-survey-id=rechecked]").text()).not.toContain("最新");
     });
 
     it("shows the import setting in the survey result", () => {
@@ -50,6 +113,8 @@ describe("survey import setting display", () => {
         });
 
         expect(wrapper.text()).toContain("取込設定: 売上TOP20");
+        expect(wrapper.text()).toContain("在庫基準日時: 2026/09/16 01:00");
+        expect(wrapper.text()).toContain("結果作成日時: 2026/09/18 03:00");
     });
 
     it("clears each text filter from its clear button", async () => {
@@ -230,7 +295,9 @@ describe("survey import setting display", () => {
             { id: "1", name: "売上TOP20", productCodes: ["A-1001"], products: [], lastSyncedAt: null },
             { id: "2", name: "別設定", productCodes: ["B-2001"], products: [], lastSyncedAt: null },
         ];
-        const rerunImport = vi.spyOn(surveys, "rerunImport").mockResolvedValue({ id: "2", executedAt: "2026-09-18T00:00:00Z", products: [], importSettingName: "別設定", files: [] });
+        const rerunImport = vi
+            .spyOn(surveys, "rerunImport")
+            .mockResolvedValue({ id: "2", executedAt: "2026-09-16T01:00:00Z", createdAt: "2026-09-18T00:00:00Z", products: [], importSettingName: "別設定", files: [] });
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
         const menuButton = wrapper.get('[data-testid="rerun-menu-button"]');
         expect(menuButton.attributes("aria-expanded")).toBe("false");

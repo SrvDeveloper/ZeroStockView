@@ -70,6 +70,20 @@ class InventoryTrendApiTest extends TestCase
         }
     }
 
+    public function test_inventory_trends_prefer_the_newest_result_when_inventory_basis_times_match(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'A-1001']);
+        Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
+
+        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', amazonOwn: 1, createdAt: '2026-09-28 10:00:00');
+        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', amazonOwn: 9, createdAt: '2026-09-29 10:00:00');
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=amazon')
+            ->assertOk()
+            ->assertJsonPath('data.series.0.points.0.quantity', 10);
+    }
+
     private function snapshot(
         string $executedAt,
         string $productCode,
@@ -80,8 +94,14 @@ class InventoryTrendApiTest extends TestCase
         int $bossRfc = 1,
         int $free = 1,
         int $stock = 1,
+        ?string $createdAt = null,
     ): void {
-        $survey = Survey::factory()->create(['executed_at' => $executedAt]);
+        $surveyAttributes = ['executed_at' => $executedAt];
+        if ($createdAt !== null) {
+            $surveyAttributes['created_at'] = $createdAt;
+            $surveyAttributes['updated_at'] = $createdAt;
+        }
+        $survey = Survey::factory()->create($surveyAttributes);
         $surveyProduct = SurveyProduct::factory()->for($survey)->create([
             'product_code' => $productCode,
             'brand' => 'ALPHA',

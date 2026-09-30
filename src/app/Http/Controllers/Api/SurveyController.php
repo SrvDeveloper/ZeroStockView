@@ -29,7 +29,8 @@ class SurveyController extends Controller
             Survey::query()
                 ->with(['products.skus', 'files'])
                 ->orderByDesc('executed_at')
-                ->limit(100)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->get(),
         );
     }

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ImportSetting;
 use App\Models\Survey;
+use Carbon\CarbonInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -45,11 +46,14 @@ class InventoryImportService
             );
         }
 
-        return $this->import($files, $setting);
+        return $this->import($files, $setting, $source->executed_at);
     }
 
-    /** @param array<string, UploadedFile> $files */
-    public function import(array $files, ImportSetting $setting): Survey
+    /**
+     * @param  array<string, UploadedFile>  $files
+     * @param  CarbonInterface|null  $executedAt  在庫データの基準日時。新規取込では現在日時、再照合では元の調査日時を使用する。
+     */
+    public function import(array $files, ImportSetting $setting, ?CarbonInterface $executedAt = null): Survey
     {
         $targets = $setting->targets()
             ->with('product.skus')
@@ -96,8 +100,8 @@ class InventoryImportService
         $storedFiles = [];
 
         try {
-            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, &$storedFiles): Survey {
-                $survey = Survey::query()->create(['executed_at' => now(), 'import_setting_name' => $setting->name]);
+            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, $executedAt, &$storedFiles): Survey {
+                $survey = Survey::query()->create(['executed_at' => $executedAt ?? now(), 'import_setting_name' => $setting->name]);
 
                 foreach ($targets as $target) {
                     $product = $target->product;
@@ -156,8 +160,6 @@ class InventoryImportService
             Storage::disk('local')->delete($storedFiles);
             throw $exception;
         }
-
-        $this->pruneOldSurveys();
 
         return $survey->load(['products.skus', 'files']);
     }
@@ -335,14 +337,5 @@ class InventoryImportService
     private function tqKey(string $item, string $color, string $size): string
     {
         return implode("\x1f", [$item, $color, $size]);
-    }
-
-    private function pruneOldSurveys(): void
-    {
-        $oldSurveys = Survey::query()->orderByDesc('executed_at')->skip(100)->take(PHP_INT_MAX)->get();
-        foreach ($oldSurveys as $survey) {
-            Storage::disk('local')->delete($survey->files()->pluck('stored_path')->all());
-            $survey->delete();
-        }
     }
 }

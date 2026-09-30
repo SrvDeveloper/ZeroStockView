@@ -67,6 +67,8 @@ class InventoryTrendController extends Controller
             ->whereHas('products', fn ($query) => $query->where('product_code', $productCode))
             ->with(['products' => fn ($query) => $query->where('product_code', $productCode)->with('skus')])
             ->orderBy('executed_at')
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->get()
             ->keyBy(fn (Survey $survey): string => $survey->executed_at->toDateString());
 

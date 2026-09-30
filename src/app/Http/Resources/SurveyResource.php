@@ -17,6 +17,7 @@ class SurveyResource extends JsonResource
         return [
             'id' => (string) $this->getKey(),
             'executedAt' => $this->executed_at->toISOString(),
+            'createdAt' => $this->created_at->toISOString(),
             'importSettingName' => $this->import_setting_name,
             'products' => $this->products->map(fn ($product): array => [
                 'id' => (string) $product->getKey(),

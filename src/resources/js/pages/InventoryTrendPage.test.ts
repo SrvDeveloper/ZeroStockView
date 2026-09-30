@@ -63,14 +63,15 @@ describe("InventoryTrendPage", () => {
         vi.clearAllMocks();
     });
 
-    it("shows daily inventory trends loaded from the API for each SKU", async () => {
+    it("shows the daily inventory trend for one selected SKU", async () => {
         const wrapper = mountPage();
         await flushPromises();
 
         expect(wrapper.text()).toContain("SKU別 在庫数の推移");
         expect(wrapper.text()).toContain("1日単位");
-        expect(wrapper.findAll("polyline")).toHaveLength(4);
-        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(120);
+        expect(wrapper.findAll("polyline")).toHaveLength(1);
+        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(30);
+        expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-S"]').attributes("aria-pressed")).toBe("true");
         expect(wrapper.text()).toContain("SKU別サマリー");
         expect(wrapper.findAll('[data-testid="inventory-scope-select"] option')).toHaveLength(6);
         expect(wrapper.findAll('[data-testid="period-select"] option')).toHaveLength(4);
@@ -99,18 +100,20 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.text()).toContain("ZS-2501-03");
         expect(wrapper.text()).toContain("ZS-2501-03-NT-F");
-        expect(wrapper.findAll("polyline")).toHaveLength(3);
+        expect(wrapper.findAll("polyline")).toHaveLength(1);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ productCode: "ZS-2501-03" }));
     });
 
-    it("can hide an SKU while keeping at least one series visible", async () => {
+    it("switches the chart to another SKU while keeping one series visible", async () => {
         const wrapper = mountPage();
         await flushPromises();
-        const skuButton = wrapper.findAll('button[aria-pressed="true"]').find((button) => button.text().includes("ZS-2408-01-NV-S"));
 
-        await skuButton!.trigger("click");
+        await wrapper.get('[data-sku-code="ZS-2408-01-NV-M"]').trigger("click");
 
-        expect(wrapper.findAll("polyline")).toHaveLength(3);
+        expect(wrapper.findAll("polyline")).toHaveLength(1);
+        expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-S"]').attributes("aria-pressed")).toBe("false");
+        expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-M"]').attributes("aria-pressed")).toBe("true");
+        expect(wrapper.get('circle[aria-label^="ZS-2408-01-NV-M"]').attributes("aria-label")).toContain("ZS-2408-01-NV-M");
     });
 
     it("summarizes each SKU and counts only zero-stock days as stockouts", async () => {
@@ -142,7 +145,7 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.text()).toContain("2026/09/25〜2026/09/28（4日間）");
         expect((wrapper.get('[data-testid="period-select"] select').element as HTMLSelectElement).value).toBe("custom");
-        expect(wrapper.findAll('circle[tabindex="0"]')).toHaveLength(16);
+        expect(wrapper.findAll('circle[tabindex="0"]')).toHaveLength(4);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-09-25", to: "2026-09-28" }));
     });
 
@@ -155,7 +158,7 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
 
         expect(wrapper.text()).toContain("2026/09/15〜2026/09/28（14日間）");
-        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(56);
+        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(14);
     });
 
     it("requests and displays the selected inventory scope", async () => {
@@ -166,7 +169,7 @@ describe("InventoryTrendPage", () => {
         await inventoryScopeSelect.setValue("boss");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("BOSSの在庫数を、1日単位で表示しています");
+        expect(wrapper.text()).toContain("BOSSの在庫数を、選択した1SKUについて1日単位で表示しています");
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "boss" }));
     });
 
@@ -177,13 +180,13 @@ describe("InventoryTrendPage", () => {
         await wrapper.get('[data-testid="chart-mode-bar"]').trigger("click");
 
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-        expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(116);
+        expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(29);
         expect(wrapper.find("polyline").exists()).toBe(false);
         expect(wrapper.get('[data-testid="chart-mode-bar"]').attributes("aria-pressed")).toBe("true");
 
         await wrapper.get('[data-testid="chart-mode-line"]').trigger("click");
 
-        expect(wrapper.findAll("polyline")).toHaveLength(4);
+        expect(wrapper.findAll("polyline")).toHaveLength(1);
         expect(wrapper.find("[data-chart-bar]").exists()).toBe(false);
     });
 
@@ -199,7 +202,7 @@ describe("InventoryTrendPage", () => {
         expect(tooltip.attributes("style")).toContain("width: 190px");
         expect(tooltip.text()).toContain("2026/09/28");
         expect(tooltip.text()).toContain("ZS-2408-01-NV-S");
-        expect(tooltip.findAll("[data-tooltip-series]")).toHaveLength(4);
+        expect(tooltip.findAll("[data-tooltip-series]")).toHaveLength(1);
     });
 
     it("places a middle tooltip beside the point instead of over it", async () => {
@@ -209,25 +212,37 @@ describe("InventoryTrendPage", () => {
 
         await firstSeriesMiddlePoint.trigger("mouseenter");
 
-        expect(wrapper.get("[data-chart-tooltip]").attributes("style")).toContain("translate(14px, -50%)");
+        expect(wrapper.get("[data-chart-tooltip]").attributes("style")).toContain("translate(14px, 0)");
 
         await firstSeriesMiddlePoint.trigger("mouseleave");
 
         expect(wrapper.find("[data-chart-tooltip]").exists()).toBe(false);
     });
 
-    it("shows every SKU in one tooltip when points overlap", async () => {
+    it("shows total inventory and the number of out-of-stock SKUs in product view", async () => {
         const wrapper = mountPage();
         await flushPromises();
-        const overlappingPoint = wrapper.findAll('circle[tabindex="0"]')[14]!;
 
-        await overlappingPoint.trigger("mouseenter");
+        await wrapper.get('[data-testid="trend-view-product"]').trigger("click");
+
+        expect(wrapper.text()).toContain("品番別 在庫総数・欠品SKU数の推移");
+        expect(wrapper.findAll("polyline")).toHaveLength(2);
+        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
+
+        const lastTotalPoint = wrapper.findAll('circle[aria-label^="総在庫数"]')[29]!;
+        await lastTotalPoint.trigger("mouseenter");
 
         const tooltip = wrapper.get("[data-chart-tooltip]");
-        expect(tooltip.findAll("[data-tooltip-series]")).toHaveLength(4);
-        expect(tooltip.text()).toContain("ZS-2408-01-NV-S");
-        expect(tooltip.text()).toContain("ZS-2408-01-NV-M");
-        expect(tooltip.text()).toContain("ZS-2408-01-WH-M");
-        expect(tooltip.text()).toContain("ZS-2408-01-WH-L");
+        expect(tooltip.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
+        expect(tooltip.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
+
+        await wrapper.findAll('circle[aria-label*="欠品SKU"]')[29]!.trigger("mouseenter");
+        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
+        expect(wrapper.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
+        expect(wrapper.findAll("[data-tooltip-stockout-sku]")).toHaveLength(4);
+        expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("ZS-2408-01-NV-S");
+        expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("期間累計 1日");
+        expect(wrapper.get("[data-tooltip-period-stockout-days]").text()).toContain("全SKUの期間累計欠品日数4日");
     });
 });

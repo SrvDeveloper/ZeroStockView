@@ -71,6 +71,60 @@ describe("InventoryTrendChart", () => {
         expect(tooltip.text()).toContain("SKU-00230点75%");
     });
 
+    it("renders stockout counts on a separate scale and includes both product metrics in the tooltip", async () => {
+        const wrapper = mount(InventoryTrendChart, {
+            props: {
+                series: [
+                    {
+                        skuCode: "PRODUCT-001",
+                        label: "総在庫数",
+                        color: "#2563eb",
+                        points: [
+                            { date: "2026-09-27", quantity: 40 },
+                            { date: "2026-09-28", quantity: 0 },
+                        ],
+                    },
+                ],
+                stockoutSeries: {
+                    label: "欠品SKU数",
+                    color: "#e11d48",
+                    points: [
+                        { date: "2026-09-27", quantity: 1 },
+                        {
+                            date: "2026-09-28",
+                            quantity: 4,
+                            skus: [
+                                { skuCode: "SKU-001", stockoutDays: 3 },
+                                { skuCode: "SKU-002", stockoutDays: 2 },
+                                { skuCode: "SKU-003", stockoutDays: 1 },
+                                { skuCode: "SKU-004", stockoutDays: 2 },
+                            ],
+                            periodStockoutDays: 8,
+                        },
+                    ],
+                },
+            },
+        });
+
+        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(2);
+
+        await wrapper.findAll('circle[aria-label^="総在庫数"]')[1]!.trigger("mouseenter");
+
+        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
+        expect(wrapper.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
+        expect(wrapper.find("[data-tooltip-stockout-details]").exists()).toBe(false);
+
+        await wrapper.findAll('circle[aria-label*="欠品SKU"]')[1]!.trigger("mouseenter");
+
+        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
+        expect(wrapper.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
+        expect(wrapper.findAll("[data-tooltip-stockout-sku]")).toHaveLength(4);
+        expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("SKU-001");
+        expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("期間累計 3日");
+        expect(wrapper.get("[data-tooltip-period-stockout-days]").text()).toContain("全SKUの期間累計欠品日数8日");
+    });
+
     it("uses columns to keep a many-SKU tooltip compact", async () => {
         const wrapper = mount(InventoryTrendChart, {
             props: {

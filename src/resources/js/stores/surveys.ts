@@ -2,15 +2,19 @@ import axios from "axios";
 import { defineStore } from "pinia";
 import type { Survey } from "@/types";
 
-export const MAX_SURVEY_HISTORY = 100;
-
 export const useSurveysStore = defineStore("surveys", {
     state: () => ({
         surveys: [] as Survey[],
         loaded: false,
     }),
     getters: {
-        sortedSurveys: (state) => [...state.surveys].sort((a, b) => new Date(b.executedAt).getTime() - new Date(a.executedAt).getTime()),
+        sortedSurveys: (state) =>
+            [...state.surveys].sort((a, b) => {
+                const executedDifference = new Date(b.executedAt).getTime() - new Date(a.executedAt).getTime();
+                if (executedDifference !== 0) return executedDifference;
+
+                return new Date(b.createdAt ?? b.executedAt).getTime() - new Date(a.createdAt ?? a.executedAt).getTime();
+            }),
         latestSurvey(): Survey | null {
             return this.sortedSurveys[0] ?? null;
         },
@@ -28,7 +32,6 @@ export const useSurveysStore = defineStore("surveys", {
             const { data } = await axios.post<{ data: Survey }>("/api/surveys", formData);
             const survey = data.data;
             this.surveys.unshift(survey);
-            this.surveys = this.surveys.slice(0, MAX_SURVEY_HISTORY);
             return survey;
         },
         async rerunImport(surveyId: string, importSettingId: string): Promise<Survey> {
@@ -37,7 +40,6 @@ export const useSurveysStore = defineStore("surveys", {
             });
             const survey = data.data;
             this.surveys.unshift(survey);
-            this.surveys = this.surveys.slice(0, MAX_SURVEY_HISTORY);
             return survey;
         },
         async removeSurvey(id: string) {

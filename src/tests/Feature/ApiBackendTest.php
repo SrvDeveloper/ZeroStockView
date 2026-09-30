@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ImportTarget;
+use App\Models\Survey;
 use App\Models\SurveySku;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -65,6 +66,18 @@ class ApiBackendTest extends TestCase
         $this->getJson('/api/user')
             ->assertOk()
             ->assertJsonPath('user.loginId', 'admin');
+    }
+
+    public function test_all_survey_history_is_returned_without_a_retention_limit(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Survey::factory()->count(101)->create();
+
+        $this->getJson('/api/surveys')
+            ->assertOk()
+            ->assertJsonCount(101, 'data');
+
+        $this->assertDatabaseCount('surveys', 101);
     }
 
     public function test_named_import_setting_is_saved_with_product_and_sku_data(): void
@@ -194,10 +207,22 @@ class ApiBackendTest extends TestCase
         $this->get('/api/surveys/'.$response->json('data.id').'/export')
             ->assertOk()
             ->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $sourceExecutedAt = $response->json('data.executedAt');
+        $sourceCreatedAt = $response->json('data.createdAt');
+        $this->travel(1)->day();
 
         $rerunSettingId = $this->postJson('/api/import-settings', $this->targetPayload('再照合設定'))->assertCreated()->json('id');
         $rerunResponse = $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId]);
-        $rerunResponse->assertCreated()->assertJsonPath('data.importSettingName', '再照合設定')->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)->assertJsonCount(5, 'data.files');
+        $rerunResponse
+            ->assertCreated()
+            ->assertJsonPath('data.importSettingName', '再照合設定')
+            ->assertJsonPath('data.executedAt', $sourceExecutedAt)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
+            ->assertJsonCount(5, 'data.files');
+        $this->assertNotSame($sourceCreatedAt, $rerunResponse->json('data.createdAt'));
+        $this->getJson('/api/surveys')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $rerunResponse->json('data.id'));
         $this->assertSame(2, SurveySku::query()->count());
         $this->deleteJson('/api/surveys/'.$response->json('data.id').'/files')->assertNoContent();
         $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId])->assertUnprocessable()->assertJsonPath('errors.files.0', '取込ファイルが削除されているため、再照合できません。');
