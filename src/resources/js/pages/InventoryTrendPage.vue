@@ -48,8 +48,8 @@ const availableBrands = ref<string[]>([]);
 const availableRange = ref<{ from: string; to: string } | null>(null);
 const productCode = ref("");
 const inventoryScope = ref<InventoryScope>("mallTotal");
-const trendView = ref<TrendView>("sku");
-const chartMode = ref<"line" | "bar">("line");
+const trendView = ref<TrendView>("product");
+const chartMode = computed<"line" | "bar">(() => (trendView.value === "sku" ? "line" : "bar"));
 const activePreset = ref<14 | 30 | 90 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
@@ -465,28 +465,6 @@ function updateTargetEnd(event: Event) {
                         @click="trendView = 'product'"
                     >
                         品番
-                    </button>
-                </div>
-                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="グラフ表示形式">
-                    <button
-                        type="button"
-                        data-testid="chart-mode-line"
-                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
-                        :class="chartMode === 'line' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
-                        :aria-pressed="chartMode === 'line'"
-                        @click="chartMode = 'line'"
-                    >
-                        <AppIcon name="show_chart" :size="15" />折れ線
-                    </button>
-                    <button
-                        type="button"
-                        data-testid="chart-mode-bar"
-                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
-                        :class="chartMode === 'bar' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
-                        :aria-pressed="chartMode === 'bar'"
-                        @click="chartMode = 'bar'"
-                    >
-                        <AppIcon name="bar_chart" :size="15" />棒
                     </button>
                 </div>
                 <span v-if="targetStart && targetEnd" class="inline-flex items-center gap-1.5 text-xs text-slate-500">

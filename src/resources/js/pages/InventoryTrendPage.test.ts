@@ -66,6 +66,7 @@ describe("InventoryTrendPage", () => {
     it("shows the daily inventory trend for one selected SKU", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
         expect(wrapper.text()).toContain("SKU別 在庫数の推移");
         expect(wrapper.text()).toContain("1日単位");
@@ -100,13 +101,15 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.text()).toContain("ZS-2501-03");
         expect(wrapper.text()).toContain("ZS-2501-03-NT-F");
-        expect(wrapper.findAll("polyline")).toHaveLength(1);
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ productCode: "ZS-2501-03" }));
     });
 
     it("switches the chart to another SKU while keeping one series visible", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
         await wrapper.get('[data-sku-code="ZS-2408-01-NV-M"]').trigger("click");
 
@@ -145,7 +148,8 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.text()).toContain("2026/09/25〜2026/09/28（4日間）");
         expect((wrapper.get('[data-testid="period-select"] select').element as HTMLSelectElement).value).toBe("custom");
-        expect(wrapper.findAll('circle[tabindex="0"]')).toHaveLength(4);
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(4);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-09-25", to: "2026-09-28" }));
     });
 
@@ -158,7 +162,7 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
 
         expect(wrapper.text()).toContain("2026/09/15〜2026/09/28（14日間）");
-        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(14);
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(14);
     });
 
     it("requests and displays the selected inventory scope", async () => {
@@ -169,30 +173,36 @@ describe("InventoryTrendPage", () => {
         await inventoryScopeSelect.setValue("boss");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("BOSSの在庫数を、選択した1SKUについて1日単位で表示しています");
+        expect(wrapper.text()).toContain("BOSSの総在庫数と欠品SKU数を、品番単位で表示しています");
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "boss" }));
     });
 
-    it("switches between line and bar charts", async () => {
+    it("automatically uses bars for products and a line for SKUs", async () => {
         const wrapper = mountPage();
         await flushPromises();
 
-        await wrapper.get('[data-testid="chart-mode-bar"]').trigger("click");
-
+        expect(wrapper.get('[data-testid="trend-view-product"]').attributes("aria-pressed")).toBe("true");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
         expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(29);
-        expect(wrapper.find("polyline").exists()).toBe(false);
-        expect(wrapper.get('[data-testid="chart-mode-bar"]').attributes("aria-pressed")).toBe("true");
+        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
+        expect(wrapper.find('[data-testid="chart-mode-bar"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="chart-mode-line"]').exists()).toBe(false);
 
-        await wrapper.get('[data-testid="chart-mode-line"]').trigger("click");
+        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
         expect(wrapper.findAll("polyline")).toHaveLength(1);
         expect(wrapper.find("[data-chart-bar]").exists()).toBe(false);
+
+        await wrapper.get('[data-testid="trend-view-product"]').trigger("click");
+
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
     });
 
     it("opens the tooltip inward at the right edge of the chart", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
         const firstSeriesLastPoint = wrapper.findAll('circle[tabindex="0"]')[29]!;
 
         await firstSeriesLastPoint.trigger("mouseenter");
@@ -208,6 +218,7 @@ describe("InventoryTrendPage", () => {
     it("places a middle tooltip beside the point instead of over it", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
         const firstSeriesMiddlePoint = wrapper.findAll('circle[tabindex="0"]')[14]!;
 
         await firstSeriesMiddlePoint.trigger("mouseenter");
@@ -223,15 +234,13 @@ describe("InventoryTrendPage", () => {
         const wrapper = mountPage();
         await flushPromises();
 
-        await wrapper.get('[data-testid="trend-view-product"]').trigger("click");
-
         expect(wrapper.text()).toContain("品番別 在庫総数・欠品SKU数の推移");
-        expect(wrapper.findAll("polyline")).toHaveLength(2);
-        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(30);
+        expect(wrapper.get('[data-testid="trend-view-product"]').attributes("aria-pressed")).toBe("true");
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
         expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
 
-        const lastTotalPoint = wrapper.findAll('circle[aria-label^="総在庫数"]')[29]!;
-        await lastTotalPoint.trigger("mouseenter");
+        await wrapper.findAll("[data-chart-bar]")[29]!.trigger("mouseenter");
 
         const tooltip = wrapper.get("[data-chart-tooltip]");
         expect(tooltip.get("[data-tooltip-total]").text()).toContain("総在庫数0点");

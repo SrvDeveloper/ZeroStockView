@@ -87,11 +87,10 @@ const maxQuantity = computed(() => {
     return Math.max(20, Math.ceil(maximum / 10) * 10);
 });
 const yTicks = computed(() => Array.from({ length: 5 }, (_, index) => Math.round((maxQuantity.value * index) / 4)));
-const maxStockoutCount = computed(() => {
-    const maximum = Math.max(0, ...(props.stockoutSeries?.points.map((point) => point.quantity).filter((quantity): quantity is number => quantity !== null) ?? []));
-    return Math.max(1, maximum);
-});
-const stockoutTicks = computed(() => Array.from(new Set(Array.from({ length: 5 }, (_, index) => Math.round((maxStockoutCount.value * index) / 4)))));
+const maximumStockoutValue = computed(() => Math.max(0, ...(props.stockoutSeries?.points.map((point) => point.quantity).filter((quantity): quantity is number => quantity !== null) ?? [])));
+const stockoutTickInterval = computed(() => Math.max(1, Math.ceil(maximumStockoutValue.value / 4)));
+const maxStockoutCount = computed(() => stockoutTickInterval.value * 4);
+const stockoutTicks = computed(() => Array.from({ length: 5 }, (_, index) => stockoutTickInterval.value * index));
 const xTickIndexes = computed(() => {
     if (dates.value.length <= 1) return [0];
     const count = dates.value.length <= 14 ? 7 : 6;
@@ -346,7 +345,15 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
 
             <g v-if="stockoutSeries">
                 <text :x="width - plot.right + 12" :y="plot.top - 7" text-anchor="start" class="fill-rose-500 text-[10px]">欠品SKU</text>
-                <text v-for="tick in stockoutTicks" :key="`stockout-${tick}`" :x="width - plot.right + 12" :y="stockoutY(tick) + 4" text-anchor="start" class="fill-rose-500 text-[11px]">
+                <text
+                    v-for="tick in stockoutTicks"
+                    :key="`stockout-${tick}`"
+                    data-stockout-axis-tick
+                    :x="width - plot.right + 12"
+                    :y="stockoutY(tick) + 4"
+                    text-anchor="start"
+                    class="fill-rose-500 text-[11px]"
+                >
                     {{ tick }}
                 </text>
             </g>

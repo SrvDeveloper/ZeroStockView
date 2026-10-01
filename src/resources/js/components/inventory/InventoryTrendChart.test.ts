@@ -71,6 +71,34 @@ describe("InventoryTrendChart", () => {
         expect(tooltip.text()).toContain("SKU-00230点75%");
     });
 
+    it("spaces integer stockout-axis ticks evenly", () => {
+        const dates = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28"];
+        const wrapper = mount(InventoryTrendChart, {
+            props: {
+                series: [
+                    {
+                        skuCode: "PRODUCT-001",
+                        label: "総在庫数",
+                        color: "#2563eb",
+                        points: dates.map((date) => ({ date, quantity: 40 })),
+                    },
+                ],
+                stockoutSeries: {
+                    label: "欠品SKU数",
+                    color: "#e11d48",
+                    points: [2, 2, 3, 5, 6].map((quantity, index) => ({ date: dates[index]!, quantity })),
+                },
+            },
+        });
+
+        const ticks = wrapper.findAll("[data-stockout-axis-tick]");
+        expect(ticks.map((tick) => tick.text())).toEqual(["0", "2", "4", "6", "8"]);
+
+        const positions = ticks.map((tick) => Number(tick.attributes("y")));
+        const intervals = positions.slice(1).map((position, index) => position - positions[index]!);
+        expect(new Set(intervals).size).toBe(1);
+    });
+
     it("renders stockout counts on a separate scale and includes both product metrics in the tooltip", async () => {
         const wrapper = mount(InventoryTrendChart, {
             props: {
