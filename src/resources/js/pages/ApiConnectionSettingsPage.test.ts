@@ -118,7 +118,7 @@ describe("ApiConnectionSettingsPage", () => {
         expect(reference.text()).toContain("GET /api/v1/inventory/daily");
         expect(reference.text()).toContain("X-API-Key: 発行したAPIキー");
         expect(reference.text()).toContain("product_code");
-        expect(reference.text()).toContain("日本時間・最大31日間");
+        expect(reference.text()).toContain("日本時間・最大365日間");
 
         await wrapper.get('button[aria-label="閉じる"]').trigger("click");
 

@@ -8,7 +8,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 
 class MaximumDateRange implements ValidationRule
 {
-    public const MAXIMUM_DAYS = 31;
+    public const MAXIMUM_DAYS = 365;
 
     public function __construct(private readonly mixed $from) {}
 
@@ -26,7 +26,7 @@ class MaximumDateRange implements ValidationRule
         }
 
         if ($to->greaterThan($from->addDays(self::MAXIMUM_DAYS - 1))) {
-            $fail('対象期間は31日以内で指定してください。');
+            $fail('対象期間は365日以内で指定してください。');
         }
     }
 }

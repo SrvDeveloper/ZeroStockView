@@ -229,7 +229,7 @@ async function saveSetting() {
                     <dt class="font-medium text-slate-600">認証ヘッダー</dt>
                     <dd><code class="break-all rounded bg-slate-100 px-2 py-1 text-xs text-slate-800">X-API-Key: 発行したAPIキー</code></dd>
                     <dt class="font-medium text-slate-600">パラメータ</dt>
-                    <dd class="text-slate-600"> <code>from</code>、<code>to</code>（必須・日本時間・最大31日間）、<code>product_code</code>（任意・省略時は全品番） </dd>
+                    <dd class="text-slate-600"> <code>from</code>、<code>to</code>（必須・日本時間・最大365日間）、<code>product_code</code>（任意・省略時は全品番） </dd>
                 </dl>
             </div>
 

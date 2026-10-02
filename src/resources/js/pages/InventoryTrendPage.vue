@@ -50,8 +50,8 @@ const productCode = ref("");
 const inventoryScope = ref<InventoryScope>("mallTotal");
 const trendView = ref<TrendView>("product");
 const chartMode = computed<"line" | "bar">(() => (trendView.value === "sku" ? "line" : "bar"));
-const MAXIMUM_PERIOD_DAYS = 31;
-const activePreset = ref<14 | 30 | "custom">(30);
+const MAXIMUM_PERIOD_DAYS = 365;
+const activePreset = ref<14 | 30 | 90 | 365 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
@@ -79,6 +79,8 @@ const filteredProductOptions = computed(() => {
 const periodOptions = [
     { value: 14 as const, label: "14日" },
     { value: 30 as const, label: "30日" },
+    { value: 90 as const, label: "90日" },
+    { value: 365 as const, label: "1年" },
     { value: "custom" as const, label: "カスタム" },
 ];
 const inventoryScopeOptions: SelectOption[] = [
@@ -284,7 +286,7 @@ function formatSummaryAverage(quantity: number | null): string {
     return `${Number(quantity.toFixed(1))}点`;
 }
 
-function selectPreset(days: 14 | 30) {
+function selectPreset(days: 14 | 30 | 90 | 365) {
     if (!targetEnd.value) return;
     activePreset.value = days;
     const start = addDays(targetEnd.value, -(days - 1));
@@ -294,7 +296,7 @@ function selectPreset(days: 14 | 30) {
 
 function updatePeriodPreset(value: string | number | null) {
     const days = Number(value);
-    if (days === 14 || days === 30) selectPreset(days);
+    if (days === 14 || days === 30 || days === 90 || days === 365) selectPreset(days);
     else if (value === "custom") activePreset.value = "custom";
 }
 
@@ -466,7 +468,7 @@ async function exportCsv(scope: "selected" | "all") {
                                 @change="updateTargetEnd"
                             />
                         </div>
-                        <p class="mt-1 text-xs text-slate-500">対象期間は最大31日間です。</p>
+                        <p class="mt-1 text-xs text-slate-500">対象期間は最大365日間です。</p>
                     </div>
                 </div>
             </div>

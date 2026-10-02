@@ -18,7 +18,7 @@ const productsResponse: InventoryTrendProductList = {
         { productCode: "ZS-2501-03", brand: "FIELD NOTE", category: "バッグ", skuCount: 3 },
     ],
     brands: ["FIELD NOTE", "NORTH HARBOR"],
-    dateRange: { from: "2026-07-01", to: "2026-09-28" },
+    dateRange: { from: "2025-01-01", to: "2026-09-28" },
 };
 
 function addDays(date: string, amount: number): string {
@@ -109,7 +109,7 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-S"]').attributes("aria-pressed")).toBe("true");
         expect(wrapper.text()).toContain("SKU別サマリー");
         expect(wrapper.findAll('[data-testid="inventory-scope-select"] option')).toHaveLength(6);
-        expect(wrapper.findAll('[data-testid="period-select"] option')).toHaveLength(3);
+        expect(wrapper.findAll('[data-testid="period-select"] option')).toHaveLength(5);
         expect(wrapper.text()).not.toContain("選択してください");
         expect(wrapper.text()).not.toContain("期間を選択");
         expect(wrapper.text()).not.toContain("ダミーデータ");
@@ -187,16 +187,16 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-09-25", to: "2026-09-28" }));
     });
 
-    it("limits a custom target period to 31 days", async () => {
+    it("limits a custom target period to 365 days", async () => {
         const wrapper = mountPage();
         await flushPromises();
 
-        await wrapper.get('input[aria-label="対象期間の開始日"]').setValue("2026-07-01");
+        await wrapper.get('input[aria-label="対象期間の開始日"]').setValue("2025-01-01");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("2026/07/01〜2026/07/31（31日間）");
-        expect((wrapper.get('input[aria-label="対象期間の終了日"]').element as HTMLInputElement).value).toBe("2026-07-31");
-        expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-07-01", to: "2026-07-31" }));
+        expect(wrapper.text()).toContain("2025/01/01〜2025/12/31（365日間）");
+        expect((wrapper.get('input[aria-label="対象期間の終了日"]').element as HTMLInputElement).value).toBe("2025-12-31");
+        expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2025-01-01", to: "2025-12-31" }));
     });
 
     it("updates the target dates from the display period select", async () => {
