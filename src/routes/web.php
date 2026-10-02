@@ -23,6 +23,7 @@ Route::prefix('api')->group(function (): void {
         Route::get('/crosswalker/items', [CrossWalkerController::class, 'index']);
 
         Route::get('/inventory-trends/products', [InventoryTrendController::class, 'products']);
+        Route::get('/inventory-trends/export', [InventoryTrendController::class, 'export']);
         Route::get('/inventory-trends', [InventoryTrendController::class, 'show']);
 
         Route::get('/surveys', [SurveyController::class, 'index']);

@@ -51,3 +51,15 @@ export async function fetchInventoryTrend(params: { productCode: string; from: s
     });
     return data.data;
 }
+
+export async function exportInventoryTrend(params: { productCode?: string; from: string; to: string }): Promise<Blob> {
+    const { data } = await axios.get<Blob>("/api/inventory-trends/export", {
+        params: {
+            ...(params.productCode ? { product_code: params.productCode } : {}),
+            from: params.from,
+            to: params.to,
+        },
+        responseType: "blob",
+    });
+    return data;
+}

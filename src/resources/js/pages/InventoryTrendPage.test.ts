@@ -6,6 +6,7 @@ import InventoryTrendPage from "@/pages/InventoryTrendPage.vue";
 const apiMocks = vi.hoisted(() => ({
     fetchInventoryTrendProducts: vi.fn(),
     fetchInventoryTrend: vi.fn(),
+    exportInventoryTrend: vi.fn(),
 }));
 
 vi.mock("@/api/inventoryTrends", () => apiMocks);
@@ -60,7 +61,40 @@ function mountPage(buildTrend: typeof trendResponse = trendResponse) {
 
 describe("InventoryTrendPage", () => {
     beforeEach(() => {
+        vi.restoreAllMocks();
         vi.clearAllMocks();
+        apiMocks.exportInventoryTrend.mockResolvedValue(new Blob(["csv"]));
+    });
+
+    it("exports daily inventory CSV by SKU and warehouse for the selected product", async () => {
+        const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+        const wrapper = mountPage();
+        await flushPromises();
+
+        await wrapper.get('[data-testid="inventory-trend-export"]').trigger("click");
+        await flushPromises();
+
+        expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({
+            productCode: "ZS-2408-01",
+            from: "2026-08-30",
+            to: "2026-09-28",
+        });
+        expect(click).toHaveBeenCalledOnce();
+    });
+
+    it("exports daily inventory CSV for all products in the selected period", async () => {
+        const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+        const wrapper = mountPage();
+        await flushPromises();
+
+        await wrapper.get('[data-testid="inventory-trend-export-all"]').trigger("click");
+        await flushPromises();
+
+        expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({
+            from: "2026-08-30",
+            to: "2026-09-28",
+        });
+        expect(click).toHaveBeenCalledOnce();
     });
 
     it("shows the daily inventory trend for one selected SKU", async () => {

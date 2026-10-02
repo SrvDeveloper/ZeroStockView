@@ -84,6 +84,78 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonPath('data.series.0.points.0.quantity', 10);
     }
 
+    public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'A-1001']);
+        Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
+
+        $this->snapshot('2026-09-27 09:00:00', 'A-1001', 'A-1001-M', amazonOwn: 1, amazonFba: 2, bossOwn: 3, bossRfc: 4, free: 5, stock: 6);
+        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', amazonOwn: 10, amazonFba: 20, bossOwn: 30, bossRfc: 40, free: 50, stock: 60);
+        $this->snapshot('2026-09-29 10:00:00', 'A-1001', 'A-1001-M', amazonOwn: 11, amazonFba: 21, bossOwn: 31, bossRfc: 41, free: 51, stock: 61);
+
+        $response = $this->get('/api/inventory-trends/export?product_code=A-1001&from=2026-09-27&to=2026-09-29');
+
+        $response->assertOk()
+            ->assertDownload('A-1001_2026-09-27_2026-09-29_daily_inventory.csv')
+            ->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $contents = file_get_contents($response->baseResponse->getFile()->getPathname());
+        $this->assertIsString($contents);
+        $this->assertStringContainsString("\r\n", $contents);
+        $rows = array_map(
+            fn (string $line): array => str_getcsv($line, ',', '"', ''),
+            explode("\r\n", trim($contents)),
+        );
+
+        $this->assertSame([
+            'date', 'productCode', 'brand', 'category', 'sku', 'size',
+            'amazonOwn', 'amazonFba', 'bossOwn', 'bossRfc', 'freeStock', 'ecStock',
+        ], $rows[0]);
+        $this->assertCount(3, $rows);
+        $this->assertSame(['2026-09-27', 'A-1001', 'ALPHA', 'トップス', 'A-1001-M'], array_slice($rows[1], 0, 5));
+        $this->assertSame(['10', '20', '30', '40', '50', '60'], array_slice($rows[1], 6));
+        $this->assertSame(['11', '21', '31', '41', '51', '61'], array_slice($rows[2], 6));
+    }
+
+    public function test_daily_inventory_for_all_products_uses_each_products_latest_daily_snapshot(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        $this->snapshot('2026-09-27 09:00:00', 'A-1001', 'A-1001-M', amazonOwn: 1, amazonFba: 2, bossOwn: 3, bossRfc: 4, free: 5, stock: 6);
+        $this->snapshot('2026-09-27 10:00:00', 'B-2002', 'B-2002-L', amazonOwn: 70, amazonFba: 71, bossOwn: 72, bossRfc: 73, free: 74, stock: 75);
+        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', amazonOwn: 90, amazonFba: 91, bossOwn: 92, bossRfc: 93, free: 94, stock: 95);
+
+        $response = $this->get('/api/inventory-trends/export?from=2026-09-27&to=2026-09-27');
+
+        $response->assertOk()
+            ->assertDownload('all_products_2026-09-27_2026-09-27_daily_inventory.csv')
+            ->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $contents = file_get_contents($response->baseResponse->getFile()->getPathname());
+        $this->assertIsString($contents);
+        $rows = array_map(
+            fn (string $line): array => str_getcsv($line, ',', '"', ''),
+            explode("\r\n", trim($contents)),
+        );
+
+        $this->assertCount(3, $rows);
+        $this->assertSame('A-1001', $rows[1][1]);
+        $this->assertSame(['90', '91', '92', '93', '94', '95'], array_slice($rows[1], 6));
+        $this->assertSame('B-2002', $rows[2][1]);
+        $this->assertSame(['70', '71', '72', '73', '74', '75'], array_slice($rows[2], 6));
+    }
+
+    public function test_daily_inventory_export_validates_the_period(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $this->snapshot('2026-09-27 10:00:00', 'A-1001', 'A-1001-M');
+
+        $this->getJson('/api/inventory-trends/export?product_code=A-1001&from=2026-09-28&to=2026-09-27')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('to');
+    }
+
     private function snapshot(
         string $executedAt,
         string $productCode,

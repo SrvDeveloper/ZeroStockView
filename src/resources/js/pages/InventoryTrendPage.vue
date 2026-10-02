@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { fetchInventoryTrend, fetchInventoryTrendProducts, type InventoryScope, type InventoryTrendProduct, type InventoryTrendSeries } from "@/api/inventoryTrends";
+import { exportInventoryTrend, fetchInventoryTrend, fetchInventoryTrendProducts, type InventoryScope, type InventoryTrendProduct, type InventoryTrendSeries } from "@/api/inventoryTrends";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
@@ -63,6 +63,8 @@ const productsLoading = ref(false);
 const trendLoading = ref(false);
 const productsError = ref("");
 const trendError = ref("");
+const exportError = ref("");
+const exportLoading = ref<"selected" | "all" | null>(null);
 let trendRequestId = 0;
 
 const selectedProduct = computed(() => products.value.find((product) => product.productCode === productCode.value));
@@ -313,11 +315,61 @@ function updateTargetEnd(event: Event) {
     activePreset.value = "custom";
     void loadTrend();
 }
+
+async function exportCsv(scope: "selected" | "all") {
+    if (!targetStart.value || !targetEnd.value || (scope === "selected" && !productCode.value)) return;
+    exportLoading.value = scope;
+    exportError.value = "";
+    try {
+        const blob = await exportInventoryTrend({
+            ...(scope === "selected" ? { productCode: productCode.value } : {}),
+            from: targetStart.value,
+            to: targetEnd.value,
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        const filePrefix = scope === "selected" ? productCode.value : "全品番";
+        link.download = `${filePrefix}_${targetStart.value}_${targetEnd.value}_日次在庫.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    } catch {
+        exportError.value = "日次在庫のCSV出力に失敗しました。時間をおいて再度お試しください。";
+    } finally {
+        exportLoading.value = null;
+    }
+}
 </script>
 
 <template>
     <div class="flex flex-col gap-6">
-        <h1 class="text-xl font-semibold text-slate-900">在庫推移</h1>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h1 class="text-xl font-semibold text-slate-900">在庫推移</h1>
+            <div class="flex flex-wrap gap-2">
+                <BaseButton
+                    data-testid="inventory-trend-export"
+                    variant="secondary"
+                    icon="download"
+                    :loading="exportLoading === 'selected'"
+                    :disabled="!productCode || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
+                    @click="exportCsv('selected')"
+                >
+                    選択品番をCSV出力
+                </BaseButton>
+                <BaseButton
+                    data-testid="inventory-trend-export-all"
+                    variant="primary"
+                    icon="download"
+                    :loading="exportLoading === 'all'"
+                    :disabled="!targetStart || !targetEnd || trendLoading || exportLoading !== null"
+                    @click="exportCsv('all')"
+                >
+                    全品番をCSV出力
+                </BaseButton>
+            </div>
+        </div>
+
+        <BaseAlert v-if="exportError" tone="danger" title="日次在庫を出力できませんでした">{{ exportError }}</BaseAlert>
 
         <BaseAlert v-if="productsError" tone="danger" title="対象品番を読み込めませんでした">
             <div class="flex flex-wrap items-center justify-between gap-3">

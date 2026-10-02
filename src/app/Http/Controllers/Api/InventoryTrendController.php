@@ -9,8 +9,11 @@ use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
+use App\Services\InventoryTrendCsvExporter;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class InventoryTrendController extends Controller
 {
@@ -119,6 +122,26 @@ class InventoryTrendController extends Controller
                 ])->values(),
             ],
         ]);
+    }
+
+    public function export(Request $request, InventoryTrendCsvExporter $exporter): BinaryFileResponse
+    {
+        $data = $request->validate([
+            'product_code' => ['sometimes', 'string', 'max:100', 'exists:survey_products,product_code'],
+            'from' => ['required', 'date_format:Y-m-d'],
+            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+        $productCode = $data['product_code'] ?? null;
+        $path = $exporter->export(
+            $productCode,
+            CarbonImmutable::parse($data['from']),
+            CarbonImmutable::parse($data['to']),
+        );
+        $fileName = ($productCode ?? 'all_products').'_'.$data['from'].'_'.$data['to'].'_daily_inventory.csv';
+
+        return response()->download($path, $fileName, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ])->deleteFileAfterSend();
     }
 
     private function quantity(SurveySku $sku, string $scope): int
