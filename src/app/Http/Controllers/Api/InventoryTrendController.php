@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
+use App\Rules\MaximumDateRange;
 use App\Services\InventoryTrendCsvExporter;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -129,7 +130,7 @@ class InventoryTrendController extends Controller
         $data = $request->validate([
             'product_code' => ['sometimes', 'string', 'max:100', 'exists:survey_products,product_code'],
             'from' => ['required', 'date_format:Y-m-d'],
-            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from', new MaximumDateRange($request->input('from'))],
         ]);
         $productCode = $data['product_code'] ?? null;
         $path = $exporter->export(

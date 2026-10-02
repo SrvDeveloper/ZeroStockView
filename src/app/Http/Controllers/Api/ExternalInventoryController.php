@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Rules\MaximumDateRange;
 use App\Services\InventoryTrendCsvExporter;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -15,7 +16,7 @@ class ExternalInventoryController extends Controller
         $data = $request->validate([
             'product_code' => ['sometimes', 'string', 'max:100', 'exists:survey_products,product_code'],
             'from' => ['required', 'date_format:Y-m-d'],
-            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from', new MaximumDateRange($request->input('from'))],
         ]);
 
         $rows = $inventory->rows(

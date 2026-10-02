@@ -154,6 +154,14 @@ class InventoryTrendApiTest extends TestCase
         $this->getJson('/api/inventory-trends/export?product_code=A-1001&from=2026-09-28&to=2026-09-27')
             ->assertUnprocessable()
             ->assertJsonValidationErrors('to');
+
+        $this->getJson('/api/inventory-trends/export?product_code=A-1001&from=2026-08-01&to=2026-09-01')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('to');
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-08-01&to=2026-09-01&scope=amazon')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('to');
     }
 
     private function snapshot(

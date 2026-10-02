@@ -162,6 +162,10 @@ class ExternalInventoryApiTest extends TestCase
         $client->getJson('/api/v1/inventory/daily?from=2026-09-28&to=2026-09-27')
             ->assertUnprocessable()
             ->assertJsonValidationErrors('to');
+
+        $client->getJson('/api/v1/inventory/daily?from=2026-08-01&to=2026-09-01')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('to');
     }
 
     /** @param array<int, string> $allowedNetworks */

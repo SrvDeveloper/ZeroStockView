@@ -54,6 +54,8 @@ class DatabaseSchemaTest extends TestCase
             $this->assertTrue(Schema::hasTable($table));
             $this->assertTrue(Schema::hasColumns($table, $columns));
         }
+
+        $this->assertTrue(Schema::hasIndex('survey_products', ['product_code']));
     }
 
     public function test_current_product_data_and_survey_snapshots_have_independent_lifecycles(): void

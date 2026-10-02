@@ -10,7 +10,8 @@
         "lint": "eslint resources/js vite.config.js vitest.config.ts eslint.config.js",
         "typecheck": "vue-tsc --noEmit -p tsconfig.json",
         "test": "vitest run --passWithNoTests",
-        "check": "npm run format:check && npm run lint && npm run typecheck && npm run test"
+        "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+        "build:prod": "vite build --mode prod"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

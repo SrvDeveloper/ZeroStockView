@@ -51,6 +51,13 @@ class ApiBackendTest extends TestCase
         });
     }
 
+    public function test_application_uses_japan_timezone(): void
+    {
+        $this->assertSame('Asia/Tokyo', config('app.timezone'));
+        $this->assertSame('Asia/Tokyo', date_default_timezone_get());
+        $this->assertSame('+09:00', config('database.connections.mysql.timezone'));
+    }
+
     public function test_user_can_log_in_and_fetch_the_authenticated_account(): void
     {
         User::factory()->create([

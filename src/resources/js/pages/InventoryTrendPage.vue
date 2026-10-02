@@ -50,7 +50,8 @@ const productCode = ref("");
 const inventoryScope = ref<InventoryScope>("mallTotal");
 const trendView = ref<TrendView>("product");
 const chartMode = computed<"line" | "bar">(() => (trendView.value === "sku" ? "line" : "bar"));
-const activePreset = ref<14 | 30 | 90 | "custom">(30);
+const MAXIMUM_PERIOD_DAYS = 31;
+const activePreset = ref<14 | 30 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
@@ -78,7 +79,6 @@ const filteredProductOptions = computed(() => {
 const periodOptions = [
     { value: 14 as const, label: "14日" },
     { value: 30 as const, label: "30日" },
-    { value: 90 as const, label: "90日" },
     { value: "custom" as const, label: "カスタム" },
 ];
 const inventoryScopeOptions: SelectOption[] = [
@@ -90,6 +90,18 @@ const inventoryScopeOptions: SelectOption[] = [
     { value: "grandTotal", label: "総数" },
 ];
 const selectedInventoryScopeLabel = computed(() => inventoryScopeOptions.find((option) => option.value === inventoryScope.value)?.label ?? "");
+const earliestTargetStart = computed(() => {
+    const availableFrom = availableRange.value?.from ?? "";
+    if (!targetEnd.value) return availableFrom;
+    const limitedFrom = addDays(targetEnd.value, -(MAXIMUM_PERIOD_DAYS - 1));
+    return limitedFrom > availableFrom ? limitedFrom : availableFrom;
+});
+const latestTargetEnd = computed(() => {
+    const availableTo = availableRange.value?.to ?? "";
+    if (!targetStart.value) return availableTo;
+    const limitedTo = addDays(targetStart.value, MAXIMUM_PERIOD_DAYS - 1);
+    return !availableTo || limitedTo < availableTo ? limitedTo : availableTo;
+});
 const selectedDates = computed(() => {
     if (!targetStart.value || !targetEnd.value) return [];
     const dates: string[] = [];
@@ -272,7 +284,7 @@ function formatSummaryAverage(quantity: number | null): string {
     return `${Number(quantity.toFixed(1))}点`;
 }
 
-function selectPreset(days: 14 | 30 | 90) {
+function selectPreset(days: 14 | 30) {
     if (!targetEnd.value) return;
     activePreset.value = days;
     const start = addDays(targetEnd.value, -(days - 1));
@@ -282,7 +294,7 @@ function selectPreset(days: 14 | 30 | 90) {
 
 function updatePeriodPreset(value: string | number | null) {
     const days = Number(value);
-    if (days === 14 || days === 30 || days === 90) selectPreset(days);
+    if (days === 14 || days === 30) selectPreset(days);
     else if (value === "custom") activePreset.value = "custom";
 }
 
@@ -299,7 +311,12 @@ function updateTargetStart(event: Event) {
         return;
     }
     targetStart.value = input.value;
-    if (targetStart.value > targetEnd.value) targetEnd.value = targetStart.value;
+    if (!targetEnd.value || targetStart.value > targetEnd.value) {
+        targetEnd.value = targetStart.value;
+    } else {
+        const maximumEnd = addDays(targetStart.value, MAXIMUM_PERIOD_DAYS - 1);
+        if (targetEnd.value > maximumEnd) targetEnd.value = maximumEnd;
+    }
     activePreset.value = "custom";
     void loadTrend();
 }
@@ -311,7 +328,12 @@ function updateTargetEnd(event: Event) {
         return;
     }
     targetEnd.value = input.value;
-    if (targetEnd.value < targetStart.value) targetStart.value = targetEnd.value;
+    if (!targetStart.value || targetEnd.value < targetStart.value) {
+        targetStart.value = targetEnd.value;
+    } else {
+        const minimumStart = addDays(targetEnd.value, -(MAXIMUM_PERIOD_DAYS - 1));
+        if (targetStart.value < minimumStart) targetStart.value = minimumStart;
+    }
     activePreset.value = "custom";
     void loadTrend();
 }
@@ -425,7 +447,7 @@ async function exportCsv(scope: "selected" | "all") {
                             <input
                                 type="date"
                                 :value="targetStart"
-                                :min="availableRange?.from"
+                                :min="earliestTargetStart"
                                 :max="availableRange?.to"
                                 :disabled="!availableRange"
                                 aria-label="対象期間の開始日"
@@ -437,13 +459,14 @@ async function exportCsv(scope: "selected" | "all") {
                                 type="date"
                                 :value="targetEnd"
                                 :min="availableRange?.from"
-                                :max="availableRange?.to"
+                                :max="latestTargetEnd"
                                 :disabled="!availableRange"
                                 aria-label="対象期間の終了日"
                                 class="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-2 focus:outline-primary-500/40"
                                 @change="updateTargetEnd"
                             />
                         </div>
+                        <p class="mt-1 text-xs text-slate-500">対象期間は最大31日間です。</p>
                     </div>
                 </div>
             </div>
