@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\ApiConnectionSettingController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CrossWalkerController;
+use App\Http\Controllers\Api\ExternalInventoryController;
 use App\Http\Controllers\Api\ImportSettingController;
 use App\Http\Controllers\Api\InventoryTrendController;
 use App\Http\Controllers\Api\SurveyController;
@@ -9,12 +11,19 @@ use App\Http\Controllers\Api\SurveyFileController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->group(function (): void {
+    Route::get('/v1/inventory/daily', [ExternalInventoryController::class, 'daily'])
+        ->middleware(['inventory.api', 'throttle:60,1']);
+
     Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
 
     Route::middleware('auth')->group(function (): void {
         Route::get('/user', [AuthController::class, 'user']);
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::put('/password', [AuthController::class, 'changePassword']);
+
+        Route::get('/api-connection-settings', [ApiConnectionSettingController::class, 'show']);
+        Route::put('/api-connection-settings', [ApiConnectionSettingController::class, 'update']);
+        Route::post('/api-connection-settings/rotate-key', [ApiConnectionSettingController::class, 'rotateKey']);
 
         Route::get('/import-settings', [ImportSettingController::class, 'index']);
         Route::post('/import-settings', [ImportSettingController::class, 'store']);

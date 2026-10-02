@@ -8,7 +8,37 @@ use RuntimeException;
 
 class InventoryTrendCsvExporter
 {
+    private const HEADERS = [
+        'date', 'productCode', 'brand', 'category', 'sku', 'size',
+        'amazonOwn', 'amazonFba', 'bossOwn', 'bossRfc', 'freeStock', 'ecStock',
+    ];
+
     public function export(?string $productCode, CarbonImmutable $from, CarbonImmutable $to): string
+    {
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'inventory-trend-csv-');
+        if ($temporaryPath === false) {
+            throw new RuntimeException('CSVファイルを作成できませんでした。');
+        }
+
+        $stream = fopen($temporaryPath, 'wb');
+        if ($stream === false) {
+            throw new RuntimeException('CSVファイルを作成できませんでした。');
+        }
+
+        try {
+            $this->writeRow($stream, self::HEADERS);
+            foreach ($this->rows($productCode, $from, $to) as $row) {
+                $this->writeRow($stream, array_map(fn (string $header): string|int => $row[$header], self::HEADERS));
+            }
+        } finally {
+            fclose($stream);
+        }
+
+        return $temporaryPath;
+    }
+
+    /** @return array<int, array<string, string|int>> */
+    public function rows(?string $productCode, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $surveyQuery = Survey::query()
             ->whereBetween('executed_at', [$from->startOfDay(), $to->endOfDay()]);
@@ -45,47 +75,29 @@ class InventoryTrendCsvExporter
         }
         unset($products);
 
-        $temporaryPath = tempnam(sys_get_temp_dir(), 'inventory-trend-csv-');
-        if ($temporaryPath === false) {
-            throw new RuntimeException('CSVファイルを作成できませんでした。');
-        }
-
-        $stream = fopen($temporaryPath, 'wb');
-        if ($stream === false) {
-            throw new RuntimeException('CSVファイルを作成できませんでした。');
-        }
-
-        try {
-            $this->writeRow($stream, [
-                'date', 'productCode', 'brand', 'category', 'sku', 'size',
-                'amazonOwn', 'amazonFba', 'bossOwn', 'bossRfc', 'freeStock', 'ecStock',
-            ]);
-
-            foreach ($dailyProducts as $date => $products) {
-                foreach ($products as $product) {
-                    foreach ($product->skus as $sku) {
-                        $this->writeRow($stream, [
-                            $date,
-                            $product->product_code,
-                            $product->brand,
-                            $product->category,
-                            $sku->sku_code,
-                            $sku->tq_size,
-                            $sku->amazon_own_stock,
-                            $sku->amazon_fba_stock,
-                            $sku->boss_own_stock,
-                            $sku->boss_rfc_stock,
-                            $sku->free_stock,
-                            $sku->ec_stock,
-                        ]);
-                    }
+        $rows = [];
+        foreach ($dailyProducts as $date => $products) {
+            foreach ($products as $product) {
+                foreach ($product->skus as $sku) {
+                    $rows[] = [
+                        'date' => $date,
+                        'productCode' => $product->product_code,
+                        'brand' => $product->brand,
+                        'category' => $product->category,
+                        'sku' => $sku->sku_code,
+                        'size' => $sku->tq_size,
+                        'amazonOwn' => $sku->amazon_own_stock,
+                        'amazonFba' => $sku->amazon_fba_stock,
+                        'bossOwn' => $sku->boss_own_stock,
+                        'bossRfc' => $sku->boss_rfc_stock,
+                        'freeStock' => $sku->free_stock,
+                        'ecStock' => $sku->ec_stock,
+                    ];
                 }
             }
-        } finally {
-            fclose($stream);
         }
 
-        return $temporaryPath;
+        return $rows;
     }
 
     /**

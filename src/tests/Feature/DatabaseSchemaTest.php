@@ -26,6 +26,7 @@ class DatabaseSchemaTest extends TestCase
             'skus' => ['id', 'product_id', 'sku_code', 'child_asin', 'status', 'tq_item_no', 'tq_color_no', 'tq_size', 'sort_order'],
             'import_settings' => ['id', 'name'],
             'import_targets' => ['id', 'import_setting_id', 'product_id', 'sort_order'],
+            'api_connection_settings' => ['id', 'enabled', 'api_key_hash', 'api_key_suffix', 'api_key_issued_at', 'allowed_networks'],
             'surveys' => ['id', 'executed_at', 'import_setting_name'],
             'survey_products' => ['id', 'survey_id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'sort_order', 'memo'],
             'survey_skus' => [

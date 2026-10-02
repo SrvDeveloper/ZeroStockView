@@ -34,6 +34,13 @@ describe("router", () => {
         expect(router.currentRoute.value.path).toBe("/manual");
     });
 
+    it("provides the API connection settings route", async () => {
+        await router.push("/api-settings");
+
+        expect(router.currentRoute.value.name).toBe("api-connection-settings");
+        expect(router.currentRoute.value.path).toBe("/api-settings");
+    });
+
     it("provides the inventory trends route", async () => {
         await router.push("/inventory-trends");
 

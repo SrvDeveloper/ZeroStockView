@@ -65,6 +65,11 @@ const router = createRouter({
             component: () => import("@/pages/PasswordChangePage.vue"),
         },
         {
+            path: "/api-settings",
+            name: "api-connection-settings",
+            component: () => import("@/pages/ApiConnectionSettingsPage.vue"),
+        },
+        {
             path: "/:pathMatch(.*)*",
             name: "not-found",
             component: () => import("@/pages/NotFoundPage.vue"),

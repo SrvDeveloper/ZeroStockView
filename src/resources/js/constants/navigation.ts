@@ -10,5 +10,6 @@ export const NAV_ITEMS: NavItem[] = [
     { name: "survey-history", label: "在庫調査履歴", icon: "history" },
     { name: "inventory-trends", label: "在庫推移", icon: "show_chart" },
     { name: "file-management", label: "ファイル管理", icon: "files" },
+    { name: "api-connection-settings", label: "API連携設定", icon: "api" },
     { name: "manual", label: "操作マニュアル", icon: "menu_book" },
 ];
