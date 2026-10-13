@@ -97,16 +97,21 @@ describe("InventoryTrendPage", () => {
         expect(click).toHaveBeenCalledOnce();
     });
 
-    it("shows the daily inventory trend for one selected SKU", async () => {
+    it("shows the daily inventory trends for every SKU", async () => {
         const wrapper = mountPage();
         await flushPromises();
         await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
         expect(wrapper.text()).toContain("SKU別 在庫数の推移");
+        expect(wrapper.text()).toContain("対象品番の全SKU");
         expect(wrapper.text()).toContain("1日単位");
-        expect(wrapper.findAll("polyline")).toHaveLength(1);
-        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(30);
-        expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-S"]').attributes("aria-pressed")).toBe("true");
+        expect(wrapper.findAll("[data-sku-card]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-sku-mini-chart]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-mini-chart-area]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-mini-chart-line]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-mini-chart-point]")).toHaveLength(120);
+        expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-S"]').text()).toContain("最新 0点");
+        expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-M"]').text()).toContain("期間平均 28.5点");
         expect(wrapper.text()).toContain("SKU別サマリー");
         expect(wrapper.findAll('[data-testid="inventory-scope-select"] option')).toHaveLength(6);
         expect(wrapper.findAll('[data-testid="period-select"] option')).toHaveLength(5);
@@ -140,17 +145,14 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ productCode: "ZS-2501-03" }));
     });
 
-    it("switches the chart to another SKU while keeping one series visible", async () => {
+    it("keeps every SKU visible without requiring a SKU selection", async () => {
         const wrapper = mountPage();
         await flushPromises();
         await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
-        await wrapper.get('[data-sku-code="ZS-2408-01-NV-M"]').trigger("click");
-
-        expect(wrapper.findAll("polyline")).toHaveLength(1);
-        expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-S"]').attributes("aria-pressed")).toBe("false");
-        expect(wrapper.get('[data-sku-code="ZS-2408-01-NV-M"]').attributes("aria-pressed")).toBe("true");
-        expect(wrapper.get('circle[aria-label^="ZS-2408-01-NV-M"]').attributes("aria-label")).toContain("ZS-2408-01-NV-M");
+        expect(wrapper.findAll("[data-sku-card]")).toHaveLength(4);
+        expect(wrapper.find("[data-sku-code]").exists()).toBe(false);
+        expect(wrapper.find('svg[aria-label="ZS-2408-01-NV-Mの日次在庫推移"]').exists()).toBe(true);
     });
 
     it("summarizes each SKU and counts only zero-stock days as stockouts", async () => {
@@ -223,7 +225,7 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "boss" }));
     });
 
-    it("automatically uses bars for products and a line for SKUs", async () => {
+    it("uses the product chart and switches to the all-SKU chart grid", async () => {
         const wrapper = mountPage();
         await flushPromises();
 
@@ -236,7 +238,8 @@ describe("InventoryTrendPage", () => {
 
         await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
-        expect(wrapper.findAll("polyline")).toHaveLength(1);
+        expect(wrapper.findAll("[data-sku-mini-chart]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-mini-chart-line]")).toHaveLength(4);
         expect(wrapper.find("[data-chart-bar]").exists()).toBe(false);
 
         await wrapper.get('[data-testid="trend-view-product"]').trigger("click");
@@ -245,35 +248,15 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
     });
 
-    it("opens the tooltip inward at the right edge of the chart", async () => {
+    it("labels each SKU mini chart and its daily inventory points", async () => {
         const wrapper = mountPage();
         await flushPromises();
         await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
-        const firstSeriesLastPoint = wrapper.findAll('circle[tabindex="0"]')[29]!;
 
-        await firstSeriesLastPoint.trigger("mouseenter");
-
-        const tooltip = wrapper.get("[data-chart-tooltip]");
-        expect(tooltip.attributes("style")).toContain("translate(calc(-100% - 14px), -100%)");
-        expect(tooltip.attributes("style")).toContain("width: 190px");
-        expect(tooltip.text()).toContain("2026/09/28");
-        expect(tooltip.text()).toContain("ZS-2408-01-NV-S");
-        expect(tooltip.findAll("[data-tooltip-series]")).toHaveLength(1);
-    });
-
-    it("places a middle tooltip beside the point instead of over it", async () => {
-        const wrapper = mountPage();
-        await flushPromises();
-        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
-        const firstSeriesMiddlePoint = wrapper.findAll('circle[tabindex="0"]')[14]!;
-
-        await firstSeriesMiddlePoint.trigger("mouseenter");
-
-        expect(wrapper.get("[data-chart-tooltip]").attributes("style")).toContain("translate(14px, 0)");
-
-        await firstSeriesMiddlePoint.trigger("mouseleave");
-
-        expect(wrapper.find("[data-chart-tooltip]").exists()).toBe(false);
+        const firstChart = wrapper.get('svg[aria-label="ZS-2408-01-NV-Sの日次在庫推移"]');
+        expect(firstChart.get("desc").text()).toContain("日別在庫数");
+        expect(firstChart.findAll("[data-mini-chart-point]")).toHaveLength(30);
+        expect(firstChart.findAll("title").at(-1)?.text()).toBe("2026/09/28 在庫0点");
     });
 
     it("shows total inventory and the number of out-of-stock SKUs in product view", async () => {
