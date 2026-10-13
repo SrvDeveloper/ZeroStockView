@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { exportInventoryTrend, fetchInventoryTrend, fetchInventoryTrendProducts, type InventoryScope, type InventoryTrendProduct, type InventoryTrendSeries } from "@/api/inventoryTrends";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
+import InventoryTrendMiniChart from "@/components/inventory/InventoryTrendMiniChart.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
@@ -32,9 +33,11 @@ interface StockoutSeries {
     }[];
 }
 
-interface SkuSummary {
+interface SkuCard {
     skuCode: string;
+    size: string;
     color: string;
+    points: { date: string; quantity: number | null }[];
     latest: number | null;
     average: number | null;
     minimum: number | null;
@@ -49,13 +52,11 @@ const availableRange = ref<{ from: string; to: string } | null>(null);
 const productCode = ref("");
 const inventoryScope = ref<InventoryScope>("mallTotal");
 const trendView = ref<TrendView>("product");
-const chartMode = computed<"line" | "bar">(() => (trendView.value === "sku" ? "line" : "bar"));
 const MAXIMUM_PERIOD_DAYS = 365;
 const activePreset = ref<14 | 30 | 90 | 365 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
-const selectedSkuCode = ref("");
 const productPickerOpen = ref(false);
 const pendingProductCode = ref("");
 const productBrandFilter = ref<string | null>(null);
@@ -110,20 +111,6 @@ const selectedDates = computed(() => {
     for (let date = targetStart.value; date <= targetEnd.value; date = addDays(date, 1)) dates.push(date);
     return dates;
 });
-const skuChartSeries = computed<TrendSeries[]>(() => {
-    const index = rawSeries.value.findIndex((series) => series.skuCode === selectedSkuCode.value);
-    const series = rawSeries.value[index];
-    if (!series) return [];
-
-    return [
-        {
-            skuCode: series.skuCode,
-            label: series.skuCode,
-            color: SERIES_COLORS[index % SERIES_COLORS.length]!,
-            points: series.points,
-        },
-    ];
-});
 const productChartSeries = computed<TrendSeries[]>(() => {
     if (rawSeries.value.length === 0) return [];
 
@@ -172,19 +159,20 @@ const productStockoutSeries = computed<StockoutSeries | null>(() => {
         }),
     };
 });
-const chartSeries = computed<TrendSeries[]>(() => (trendView.value === "sku" ? skuChartSeries.value : productChartSeries.value));
 const chartTitle = computed(() => (trendView.value === "sku" ? "SKU別 在庫数の推移" : "品番別 在庫総数・欠品SKU数の推移"));
 const chartDescription = computed(() =>
     trendView.value === "sku"
-        ? `${selectedInventoryScopeLabel.value}の在庫数を、選択した1SKUについて1日単位で表示しています。`
+        ? `${selectedInventoryScopeLabel.value}の在庫数を、対象品番の全SKUについて1日単位で表示しています。`
         : `${selectedInventoryScopeLabel.value}の総在庫数と欠品SKU数を、品番単位で表示しています。`,
 );
-const skuSummaries = computed<SkuSummary[]>(() =>
+const skuCards = computed<SkuCard[]>(() =>
     rawSeries.value.map((series, index) => {
         const quantities = series.points.flatMap((point) => (point.quantity === null ? [] : [point.quantity]));
         return {
             skuCode: series.skuCode,
+            size: series.size,
             color: SERIES_COLORS[index % SERIES_COLORS.length]!,
+            points: series.points,
             latest: quantities.at(-1) ?? null,
             average: quantities.length > 0 ? quantities.reduce((sum, quantity) => sum + quantity, 0) / quantities.length : null,
             minimum: quantities.length > 0 ? Math.min(...quantities) : null,
@@ -214,7 +202,7 @@ async function loadProducts() {
         if (products.value.length > 0) {
             productCode.value = products.value[0]!.productCode;
             pendingProductCode.value = productCode.value;
-            await loadTrend(true);
+            await loadTrend();
         }
     } catch {
         productsError.value = "対象品番の読み込みに失敗しました。時間をおいて再度お試しください。";
@@ -223,7 +211,7 @@ async function loadProducts() {
     }
 }
 
-async function loadTrend(resetSelection = false) {
+async function loadTrend() {
     if (!productCode.value || !targetStart.value || !targetEnd.value) return;
     const requestId = ++trendRequestId;
     trendLoading.value = true;
@@ -237,12 +225,9 @@ async function loadTrend(resetSelection = false) {
         });
         if (requestId !== trendRequestId) return;
         rawSeries.value = response.series;
-        const availableCodes = response.series.map((series) => series.skuCode);
-        if (resetSelection || !availableCodes.includes(selectedSkuCode.value)) selectedSkuCode.value = availableCodes[0] ?? "";
     } catch {
         if (requestId !== trendRequestId) return;
         rawSeries.value = [];
-        selectedSkuCode.value = "";
         trendError.value = "在庫推移の読み込みに失敗しました。時間をおいて再度お試しください。";
     } finally {
         if (requestId === trendRequestId) trendLoading.value = false;
@@ -264,7 +249,7 @@ function applyProductSelection() {
     const changed = productCode.value !== pendingProductCode.value;
     productCode.value = pendingProductCode.value;
     productPickerOpen.value = false;
-    if (changed) void loadTrend(true);
+    if (changed) void loadTrend();
 }
 
 function addDays(date: string, amount: number): string {
@@ -549,23 +534,11 @@ async function exportCsv(scope: "selected" | "all") {
                 </span>
             </template>
 
-            <div v-if="rawSeries.length > 0 && trendView === 'sku'" class="mb-5 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-4">
-                <span class="mr-1 text-xs font-medium text-slate-500">表示SKU</span>
-                <button
-                    v-for="(sku, index) in rawSeries"
-                    :key="sku.skuCode"
-                    type="button"
-                    :data-sku-code="sku.skuCode"
-                    class="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
-                    :class="selectedSkuCode === sku.skuCode ? 'border-primary-300 bg-primary-50 text-primary-800 shadow-xs' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'"
-                    :aria-pressed="selectedSkuCode === sku.skuCode"
-                    @click="selectedSkuCode = sku.skuCode"
-                >
-                    <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: selectedSkuCode === sku.skuCode ? SERIES_COLORS[index % SERIES_COLORS.length] : '#cbd5e1' }"></span>
-                    {{ sku.skuCode }}
-                </button>
-            </div>
-            <div v-else-if="rawSeries.length > 0" data-testid="product-chart-legend" class="mb-5 flex flex-wrap items-center gap-5 border-b border-slate-100 pb-4 text-xs font-medium text-slate-600">
+            <div
+                v-if="rawSeries.length > 0 && trendView === 'product'"
+                data-testid="product-chart-legend"
+                class="mb-5 flex flex-wrap items-center gap-5 border-b border-slate-100 pb-4 text-xs font-medium text-slate-600"
+            >
                 <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-primary-600"></span>総在庫数</span>
                 <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-rose-600"></span>欠品SKU数</span>
             </div>
@@ -580,14 +553,45 @@ async function exportCsv(scope: "selected" | "all") {
                     <BaseButton size="sm" variant="secondary" icon="refresh" @click="() => loadTrend()">再試行</BaseButton>
                 </div>
             </BaseAlert>
-            <BaseEmpty v-else-if="chartSeries.length === 0" icon="show_chart" title="対象期間の在庫データがありません" description="対象品番または対象期間を変更してください。" />
+            <BaseEmpty v-else-if="rawSeries.length === 0" icon="show_chart" title="対象期間の在庫データがありません" description="対象品番または対象期間を変更してください。" />
+            <div v-else-if="trendView === 'sku'" data-testid="sku-chart-grid" class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,230px),1fr))] gap-3">
+                <article
+                    v-for="sku in skuCards"
+                    :key="sku.skuCode"
+                    :data-sku-card="sku.skuCode"
+                    class="min-w-0 rounded-xl border bg-white p-3 shadow-xs"
+                    :class="sku.stockoutDays > 0 ? 'border-rose-300' : 'border-slate-200'"
+                >
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <h3 class="truncate font-mono text-sm font-medium text-slate-900" :title="sku.skuCode">{{ sku.skuCode }}</h3>
+                            <p v-if="sku.size" class="mt-0.5 text-xs text-slate-500">サイズ {{ sku.size }}</p>
+                        </div>
+                        <span
+                            class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                            :class="sku.latest === null ? 'bg-slate-100 text-slate-600' : sku.stockoutDays > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'"
+                        >
+                            {{ sku.latest === null ? "データなし" : sku.stockoutDays > 0 ? `欠品 ${sku.stockoutDays}日` : "在庫あり" }}
+                        </span>
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <span
+                            >最新 <strong class="ml-1 text-base text-slate-900">{{ formatSummaryQuantity(sku.latest) }}</strong></span
+                        >
+                        <span
+                            >期間平均 <strong class="ml-1 font-medium text-slate-700">{{ formatSummaryAverage(sku.average) }}</strong></span
+                        >
+                    </div>
+                    <InventoryTrendMiniChart :label="sku.skuCode" :points="sku.points" :color="sku.color" />
+                </article>
+            </div>
             <div v-else class="overflow-x-auto pb-1">
-                <InventoryTrendChart :series="chartSeries" :display-mode="chartMode" :stockout-series="productStockoutSeries" />
+                <InventoryTrendChart :series="productChartSeries" display-mode="bar" :stockout-series="productStockoutSeries" />
             </div>
         </BaseCard>
 
         <BaseCard
-            v-if="skuSummaries.length > 0 && !trendLoading && !trendError"
+            v-if="skuCards.length > 0 && !trendLoading && !trendError"
             title="SKU別サマリー"
             :description="`選択期間の${selectedInventoryScopeLabel}在庫を集計しています。データがない日は平均・欠品日数の対象外です。`"
             :padded="false"
@@ -605,7 +609,7 @@ async function exportCsv(scope: "selected" | "all") {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <tr v-for="summary in skuSummaries" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-slate-50/70">
+                        <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-slate-50/70">
                             <td class="px-5 py-3 font-medium text-slate-800">
                                 <span class="inline-flex items-center gap-2">
                                     <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: summary.color }"></span>
