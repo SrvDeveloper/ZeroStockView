@@ -26,6 +26,8 @@ Prettier formats frontend code; ESLint enforces frontend rules. Do not reformat 
 
 ## Workspace Editing Constraint
 
+In this workspace, ordinary `exec_command` calls can also fail with `bwrap: No permissions to create a new namespace`, before the command itself runs. If this occurs, retry the command with `sandbox_permissions: "require_escalated"` and a narrow, task-specific justification. Do not assume a failed command changed files or produced valid results; verify its exit code and rerun the intended check.
+
 In this workspace, `apply_patch` may fail with `bwrap: No permissions to create a new namespace` because unprivileged user namespaces are unavailable. When that exact environment error occurs, do not retry `apply_patch` repeatedly. After reading the target context, use narrowly scoped `sed -i` or `perl -0pi` substitutions as the fallback. Avoid whole-file rewrites and broad replacements; format the touched files, run `git diff --check`, and inspect the resulting diff immediately. Preserve unrelated user changes.
 
 ## Testing Guidelines
