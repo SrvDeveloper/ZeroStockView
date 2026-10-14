@@ -1,12 +1,19 @@
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AmazonInventoryImport } from "@/api/amazonInventoryImports";
 import FileDropzone from "@/components/ui/FileDropzone.vue";
 import DataImportPage from "@/pages/DataImportPage.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+const { push, fetchAmazonInventoryImports, startAmazonInventoryImport } = vi.hoisted(() => ({
+    push: vi.fn(),
+    fetchAmazonInventoryImports: vi.fn(),
+    startAmazonInventoryImport: vi.fn(),
+}));
+
+vi.mock("@/api/amazonInventoryImports", () => ({ fetchAmazonInventoryImports, startAmazonInventoryImport }));
 
 vi.mock("vue-router", () => {
     return { useRouter: () => ({ push }) };
@@ -57,9 +64,108 @@ function validImportFiles(): File[] {
     ];
 }
 
+function amazonImport(status: AmazonInventoryImport["status"]): AmazonInventoryImport {
+    return {
+        id: "7",
+        status,
+        triggerSource: "manual",
+        source: "sp_api",
+        createdAt: "2026-10-14T00:00:00Z",
+        startedAt: null,
+        completedAt: null,
+        basisAt: status === "succeeded" ? "2026-10-14T01:00:00Z" : null,
+        targetSkuCount: status === "succeeded" ? 2 : null,
+        ownRowCount: null,
+        fbaRowCount: null,
+        matchedOwnCount: status === "succeeded" ? 1 : null,
+        matchedFbaCount: status === "succeeded" ? 2 : null,
+        errorMessage: status === "failed" ? "FBAレポートの生成に失敗しました。" : null,
+    };
+}
+
 describe("DataImportPage", () => {
     beforeEach(() => {
         push.mockReset();
+        fetchAmazonInventoryImports.mockReset().mockResolvedValue([]);
+        startAmazonInventoryImport.mockReset().mockResolvedValue(amazonImport("queued"));
+    });
+
+    it("queues an Amazon import and prevents a second click while it is active", async () => {
+        const wrapper = mountPage();
+        await flushPromises();
+
+        const button = wrapper.get('[data-testid="amazon-import-start"]');
+        await button.trigger("click");
+        await flushPromises();
+
+        expect(startAmazonInventoryImport).toHaveBeenCalledTimes(1);
+        expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("受付");
+        expect(button.attributes("disabled")).toBeDefined();
+        wrapper.unmount();
+    });
+
+    it("restores a failed Amazon import after reload and allows retry", async () => {
+        fetchAmazonInventoryImports.mockResolvedValue([amazonImport("failed")]);
+        const wrapper = mountPage();
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("FBAレポートの生成に失敗しました。");
+        await wrapper.get('[data-testid="amazon-import-start"]').trigger("click");
+        await flushPromises();
+
+        expect(startAmazonInventoryImport).toHaveBeenCalledTimes(1);
+        expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("受付");
+        wrapper.unmount();
+    });
+
+    it("identifies a scheduled Amazon import in the history", async () => {
+        fetchAmazonInventoryImports.mockResolvedValue([{ ...amazonImport("succeeded"), triggerSource: "scheduled" }]);
+
+        const wrapper = mount(DataImportPage);
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("定期実行");
+    });
+
+    it("refreshes a running Amazon import until it succeeds", async () => {
+        fetchAmazonInventoryImports.mockResolvedValueOnce([amazonImport("running")]).mockResolvedValueOnce([amazonImport("succeeded")]);
+        let poll: (() => void) | undefined;
+        const interval = vi.spyOn(window, "setInterval").mockImplementation((callback) => {
+            poll = callback as () => void;
+            return 1;
+        });
+        const clear = vi.spyOn(window, "clearInterval").mockImplementation(() => {});
+        try {
+            const wrapper = mountPage();
+            await flushPromises();
+            expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("処理中");
+            expect(wrapper.get('[data-testid="amazon-import-start"]').attributes("disabled")).toBeDefined();
+
+            poll?.();
+            await flushPromises();
+            expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("成功");
+            expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("対象 SKU: 2 件");
+            expect(wrapper.get('[data-testid="amazon-import-start"]').attributes("disabled")).toBeUndefined();
+            wrapper.unmount();
+        } finally {
+            interval.mockRestore();
+            clear.mockRestore();
+        }
+    });
+
+    it("shows the active run when another request already started an Amazon import", async () => {
+        fetchAmazonInventoryImports.mockResolvedValueOnce([]).mockResolvedValueOnce([amazonImport("running")]);
+        startAmazonInventoryImport.mockRejectedValue({ isAxiosError: true, response: { status: 409, data: { message: "Amazon在庫取込はすでに実行中です。" } } });
+        const wrapper = mountPage();
+        await flushPromises();
+
+        await wrapper.get('[data-testid="amazon-import-start"]').trigger("click");
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("処理中");
+        expect(wrapper.text()).toContain("Amazon在庫取込はすでに実行中です。");
+        expect(wrapper.get('[data-testid="amazon-import-start"]').attributes("disabled")).toBeDefined();
+        wrapper.unmount();
     });
 
     it("places the settings button next to the selector without the old target summary", async () => {
