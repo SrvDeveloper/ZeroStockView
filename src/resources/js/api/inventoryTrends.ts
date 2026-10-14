@@ -7,11 +7,20 @@ export interface InventoryTrendProduct {
     brand: string;
     category: string;
     skuCount: number;
+    hasSurveyHistory: boolean;
 }
 
 export interface InventoryTrendPoint {
     date: string;
     quantity: number | null;
+    source: "survey" | "sp_api" | null;
+    basisAt: string | null;
+}
+
+export interface InventoryTrendDailySource {
+    date: string;
+    source: "survey" | "sp_api";
+    basisAt: string;
 }
 
 export interface InventoryTrendSeries {
@@ -26,6 +35,7 @@ export interface InventoryTrendData {
     from: string;
     to: string;
     dates: string[];
+    dailySources: InventoryTrendDailySource[];
     series: InventoryTrendSeries[];
 }
 

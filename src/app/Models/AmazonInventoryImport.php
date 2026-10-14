@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -20,6 +22,15 @@ class AmazonInventoryImport extends Model
         return $this->hasMany(AmazonInventorySnapshot::class)->orderBy('sku_code');
     }
 
+    /** @return Attribute<CarbonImmutable|null, string|null> */
+    protected function snapshotDate(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value): ?CarbonImmutable => $value === null ? null : CarbonImmutable::createFromFormat('!Y-m-d', substr($value, 0, 10), 'Asia/Tokyo'),
+            set: fn ($value): ?string => $value === null ? null : (is_string($value) ? substr($value, 0, 10) : CarbonImmutable::instance($value)->setTimezone('Asia/Tokyo')->toDateString()),
+        );
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
@@ -29,7 +40,6 @@ class AmazonInventoryImport extends Model
             'own_retrieved_at' => 'datetime',
             'fba_retrieved_at' => 'datetime',
             'basis_at' => 'datetime',
-            'snapshot_date' => 'date',
             'active_key' => 'integer',
             'target_sku_count' => 'integer',
             'own_row_count' => 'integer',

@@ -13,9 +13,10 @@ vi.mock("@/api/inventoryTrends", () => apiMocks);
 
 const productsResponse: InventoryTrendProductList = {
     data: [
-        { productCode: "ZS-2408-01", brand: "NORTH HARBOR", category: "トップス", skuCount: 4 },
-        { productCode: "ZS-2411-07", brand: "NORTH HARBOR", category: "ボトムス", skuCount: 2 },
-        { productCode: "ZS-2501-03", brand: "FIELD NOTE", category: "バッグ", skuCount: 3 },
+        { productCode: "ZS-2408-01", brand: "NORTH HARBOR", category: "トップス", skuCount: 4, hasSurveyHistory: true },
+        { productCode: "ZS-2411-07", brand: "NORTH HARBOR", category: "ボトムス", skuCount: 2, hasSurveyHistory: true },
+        { productCode: "ZS-2501-03", brand: "FIELD NOTE", category: "バッグ", skuCount: 3, hasSurveyHistory: true },
+        { productCode: "API-ONLY", brand: "NORTH HARBOR", category: "トップス", skuCount: 1, hasSurveyHistory: false },
     ],
     brands: ["FIELD NOTE", "NORTH HARBOR"],
     dateRange: { from: "2025-01-01", to: "2026-09-28" },
@@ -44,10 +45,16 @@ function trendResponse(params: { productCode: string; from: string; to: string; 
         from: params.from,
         to: params.to,
         dates,
+        dailySources: [],
         series: skuCodes.map((skuCode, skuIndex) => ({
             skuCode,
             size: "M",
-            points: dates.map((date, dateIndex) => ({ date, quantity: dateIndex === 14 ? 42 : dateIndex === 29 ? 0 : 10 + skuIndex * 5 + dateIndex })),
+            points: dates.map((date, dateIndex) => ({
+                date,
+                quantity: dateIndex === 14 ? 42 : dateIndex === 29 ? 0 : 10 + skuIndex * 5 + dateIndex,
+                source: "survey",
+                basisAt: `${date}T10:00:00+09:00`,
+            })),
         })),
     };
 }
@@ -95,6 +102,43 @@ describe("InventoryTrendPage", () => {
             to: "2026-09-28",
         });
         expect(click).toHaveBeenCalledOnce();
+    });
+
+    it("shows the Amazon source and basis time and blocks survey CSV for an API-only product", async () => {
+        const wrapper = mountPage((params) => {
+            const response = trendResponse(params);
+            if (params.productCode === "API-ONLY" && params.scope === "amazon") {
+                response.series = [
+                    {
+                        skuCode: "API-ONLY-M",
+                        size: "M",
+                        points: response.dates.map((date) => ({
+                            date,
+                            quantity: date === "2026-09-28" ? 7 : null,
+                            source: date === "2026-09-28" ? "sp_api" : null,
+                            basisAt: date === "2026-09-28" ? "2026-09-28T09:00:00+09:00" : null,
+                        })),
+                    },
+                ];
+                response.dailySources = [{ date: "2026-09-28", source: "sp_api", basisAt: "2026-09-28T09:00:00+09:00" }];
+            }
+            return response;
+        });
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("SP-API履歴は含みません");
+        expect(wrapper.text()).toContain("CSVは手動調査の日次全倉庫データ");
+        await wrapper.get('[data-testid="product-picker-button"]').trigger("click");
+        await wrapper.get('[data-product-code="API-ONLY"]').trigger("click");
+        await wrapper.get('[data-testid="apply-product-selection"]').trigger("click");
+        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="inventory-trend-export"]').attributes("disabled")).toBeDefined();
+        expect(wrapper.get('[data-source-date="2026-09-28"]').text()).toContain("SP-API");
+        expect(wrapper.get('[data-source-date="2026-09-28"]').text()).toContain("2026/09/28 09:00");
+        expect(wrapper.get('[data-summary-sku="API-ONLY-M"]').text()).toContain("7点");
+        expect(wrapper.find('[data-testid="survey-scope-note"]').exists()).toBe(false);
     });
 
     it("shows the daily inventory trends for every SKU", async () => {
