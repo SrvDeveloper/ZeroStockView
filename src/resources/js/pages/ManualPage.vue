@@ -7,7 +7,10 @@ import ManualTableOfContents from "@/components/manual/ManualTableOfContents.vue
 
 const sections = [
     { id: "introduction", title: "はじめに" },
-    { id: "basic-operation", title: "事前準備" },
+    { id: "basic-operation-amazon", title: "事前準備①：Amazon" },
+    { id: "basic-operation-boss", title: "事前準備②：BOSS" },
+    { id: "basic-operation-ec", title: "事前準備③：ECストック" },
+    { id: "basic-operation-free", title: "事前準備④：フリー在庫" },
     { id: "notes", title: "注意事項" },
     { id: "faq", title: "よくある質問" },
 ];
@@ -31,7 +34,7 @@ const sections = [
                     <p class="text-sm leading-7 text-slate-600">照合を行う品番がまだ商品識別子管理システム「Crosswalker」に登録されていない場合は、事前に追加登録してください。</p>
                 </ManualSection>
 
-                <ManualSection id="basic-operation" title="事前準備①：Amazon用の取込データ準備" description="Amazonの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-amazon" title="事前準備①：Amazon用の取込データ準備" description="Amazonの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <!-- ManualStep は必要な手順数だけ追加・削除できます。 -->
                     <ManualStep :number="1" title="「Amazon Seller Central」で出品レポート画面を開く">
                         <p>
@@ -74,7 +77,7 @@ const sections = [
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation" title="事前準備②：BOSS用の取込データ準備" description="BOSSの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-boss" title="事前準備②：BOSS用の取込データ準備" description="BOSSの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <ManualStep :number="1" title="在庫・商品一覧画面で商品一覧を表示します。">
                         <p>
                             BOSSにログインして、在庫・商品一覧画面を開き、検索条件を変更しないで検索ボタンを押下します。<br />
@@ -97,7 +100,7 @@ const sections = [
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation" title="事前準備③：ECストックの取込データ準備" description="ECストック在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-ec" title="事前準備③：ECストックの取込データ準備" description="ECストック在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <ManualStep :number="1" title="ターコイズでKEEP一覧表出力画面を開きます。">
                         <p>ターコイズにログインして、「在庫管理」＞「KEEP一覧表」を押下します。</p>
                         <ManualScreenshot src="/img/manual/03-1.png" caption="KEEP一覧表出力画面を開く" />
@@ -113,7 +116,7 @@ const sections = [
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation" title="事前準備④：フリー在庫の取込データ準備" description="フリー在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-free" title="事前準備④：フリー在庫の取込データ準備" description="フリー在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <ManualStep :number="1" title="ターコイズで在庫一覧照会画面を開きます。">
                         <p>ターコイズにログインして、「在庫管理」＞「在庫一覧照会」を押下します。</p>
                         <ManualScreenshot src="/img/manual/04-1.png" caption="在庫一覧照会画面を開く" />

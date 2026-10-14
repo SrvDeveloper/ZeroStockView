@@ -9,15 +9,17 @@ describe("ManualPage", () => {
         const wrapper = mount(ManualPage);
         const links = wrapper.findAll('nav[aria-label="操作マニュアルの目次"] a');
 
-        expect(links.map((link) => link.attributes("href"))).toEqual(["#introduction", "#basic-operation", "#notes", "#faq"]);
-        expect(wrapper.findAll("section")).toHaveLength(4);
+        const sectionIds = wrapper.findAll("section").map((section) => section.attributes("id"));
+
+        expect(sectionIds).toEqual(["introduction", "basic-operation-amazon", "basic-operation-boss", "basic-operation-ec", "basic-operation-free", "notes", "faq"]);
+        expect(links.map((link) => link.attributes("href"))).toEqual(sectionIds.map((id) => `#${id}`));
     });
 
-    it("shows reusable callouts and an image placeholder", () => {
+    it("shows callouts and screenshots for the import instructions", () => {
         const wrapper = mount(ManualPage);
 
-        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(3);
-        expect(wrapper.getComponent(ManualScreenshot).text()).toContain("ここに画面キャプチャを配置");
+        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(8);
+        expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/01-1.png");
         expect(wrapper.find('[role="alert"]').text()).toContain("注意");
     });
 });
