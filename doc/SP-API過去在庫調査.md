@@ -27,6 +27,16 @@ Amazonの[Inventory Report](https://developer-docs.amazon/sp-api/docs/report-typ
 
 [Amazon公式のFBA Reports仕様](https://developer-docs.amazon/sp-api/docs/report-type-values-fba)によると、`GET_LEDGER_SUMMARY_VIEW_DATA`は`aggregatedByTimePeriod=DAILY`と`aggregateByLocation=COUNTRY`を指定でき、`Date`、`FNSKU`、`ASIN`、`MSKU`、`Disposition`、`Ending Warehouse Balance`、`In Transit Between Warehouses`などを返す。日次の期末**倉庫残高**は、現行FBA Manage Inventoryに別列で存在する**出荷可能数**と同一の指標ではない。`SELLABLE`区分だけを選んでも、期末残高を出荷可能数と呼び替えない。
 
+具体的な違いは次のとおり。
+
+| 項目 | FBA出荷可能数（`afn-fulfillable-quantity`） | Ledger期末倉庫残高（`Ending Warehouse Balance`） |
+| --- | --- | --- |
+| 基準時刻 | レポート生成時点に近い現在値 | 指定した日次期間の終了時点 |
+| 数量の意味 | 注文のためにピッキング・梱包・発送できる数量 | 期末にAmazonのフルフィルメントセンターに残る数量。`Disposition`（`SELLABLE`、破損など）ごとに集計される |
+| 予約・移動中 | 予約・処理中など、直ちに出荷できない数量は別の区分 | 注文向けに予約された在庫もLedger側に含まれ得る。倉庫間移動中は別列`In Transit Between Warehouses`を確認する |
+
+Amazonは「Fulfillable」をピッキング・梱包・発送できる在庫、「Reserved」を注文処理中または内部処理中の在庫と定義している（[FBA Inventory API](https://developer-docs.amazon/sp-api/docs/fba-inventory-api)）。`Disposition=SELLABLE`は商品の**状態**であり、「今すぐ新規注文に使える」という意味ではない。Amazonの[Ledger項目定義](https://sellercentral.amazon.com/help/hub/reference/external/GEQ8JEWH5KJC5QCG?locale=en-EN)では期末倉庫残高と倉庫間移動中を別項目とし、[Amazon担当者の説明](https://sellercentral.amazon.com/seller-forums/discussions/t/049699ca-8a05-4c03-9ea2-168705fbdfd0)では予約在庫もLedgerに反映されるとしている。たとえば期末に販売可能な状態の10個が倉庫にあって3個が注文用に確保されていれば、期末倉庫残高と新規注文に使える数量は異なり得る。これは概念例で、両レポートから常に差分計算で復元できるという意味ではない。
+
 開発環境の既存接続で日本Marketplaceに対し、日次・国別、1日分ずつレポート生成とダウンロードを実行した。認証情報、レポートID、本文、個別のSKUと数量は記録していない。
 
 | 指定期間 | 戻った`Date` | 行数 | 歴史上の社内SKUと一致した`MSKU`行 / ASIN行 |
