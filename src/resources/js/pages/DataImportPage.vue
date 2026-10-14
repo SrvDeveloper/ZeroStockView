@@ -1,21 +1,78 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
+import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import FileDropzone from "@/components/ui/FileDropzone.vue";
 import BaseSelect from "@/components/ui/BaseSelect.vue";
+import { fetchAmazonInventoryImports, startAmazonInventoryImport, type AmazonInventoryImport, type AmazonImportStatus } from "@/api/amazonInventoryImports";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import { IMPORT_FILE_TYPES, type ImportFileType } from "@/types";
+import { formatDateTime } from "@/utils/format";
 
 const importSettings = useImportSettingsStore();
 const surveys = useSurveysStore();
 const toast = useUiStore();
 const router = useRouter();
+
+const amazonImports = ref<AmazonInventoryImport[]>([]);
+const amazonLoading = ref(true);
+const amazonStarting = ref(false);
+const amazonError = ref("");
+const activeAmazonImport = computed(() => amazonImports.value.find((item) => item.status === "queued" || item.status === "running"));
+const latestAmazonImport = computed(() => activeAmazonImport.value ?? amazonImports.value[0]);
+const canStartAmazon = computed(() => importSettings.settings.length > 0 && !amazonStarting.value && !activeAmazonImport.value && !amazonLoading.value);
+const amazonStatus: Record<AmazonImportStatus, { label: string; tone: "neutral" | "brand" | "success" | "danger" }> = {
+    queued: { label: "受付", tone: "neutral" },
+    running: { label: "処理中", tone: "brand" },
+    succeeded: { label: "成功", tone: "success" },
+    failed: { label: "失敗", tone: "danger" },
+};
+let amazonPollTimer: number | undefined;
+
+async function loadAmazonImports() {
+    try {
+        amazonImports.value = await fetchAmazonInventoryImports();
+        amazonError.value = "";
+    } catch {
+        amazonError.value = "Amazon在庫取込の状態を取得できませんでした。再読み込みしてください。";
+    } finally {
+        amazonLoading.value = false;
+    }
+}
+
+async function startAmazonImport() {
+    if (!canStartAmazon.value) return;
+    amazonStarting.value = true;
+    amazonError.value = "";
+    try {
+        const importRun = await startAmazonInventoryImport();
+        amazonImports.value = [importRun, ...amazonImports.value.filter((item) => item.id !== importRun.id)];
+        toast.push("Amazon在庫取込を受け付けました");
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 409) {
+            await loadAmazonImports();
+        }
+        amazonError.value = axios.isAxiosError(error) ? (error.response?.data?.message ?? "Amazon在庫取込を開始できませんでした。") : "Amazon在庫取込を開始できませんでした。";
+        toast.push("Amazon在庫取込を開始できませんでした", "error");
+    } finally {
+        amazonStarting.value = false;
+    }
+}
+
+watch(activeAmazonImport, (active) => {
+    if (amazonPollTimer !== undefined) window.clearInterval(amazonPollTimer);
+    amazonPollTimer = active ? window.setInterval(() => void loadAmazonImports(), 5000) : undefined;
+});
+onMounted(() => void loadAmazonImports());
+onUnmounted(() => {
+    if (amazonPollTimer !== undefined) window.clearInterval(amazonPollTimer);
+});
 
 const accepts: Record<ImportFileType, string> = {
     在庫商品レポート: ".txt",
@@ -155,6 +212,38 @@ async function runImport() {
                 <BaseButton variant="primary" size="sm" @click="router.push({ name: 'import-settings' })">取込設定へ</BaseButton>
             </div>
         </BaseAlert>
+
+        <BaseCard
+            title="Amazon 在庫を取得"
+            description="保存済みの取込設定に含まれる品番について、Amazon の自社発送在庫と FBA 出荷可能在庫を取得します。下の5ファイルによる取込・調査とは別の履歴に保存されます。"
+        >
+            <div class="flex flex-col gap-4">
+                <p class="text-xs text-slate-500">ASIN が登録されていない SKU は Amazon 在庫の取得対象に含まれません。</p>
+                <div class="flex flex-wrap items-center gap-3">
+                    <BaseButton data-testid="amazon-import-start" variant="primary" icon="refresh" :disabled="!canStartAmazon" :loading="amazonStarting" @click="startAmazonImport"
+                        >Amazon 在庫を取得</BaseButton
+                    >
+                    <span v-if="amazonLoading" class="text-sm text-slate-500">状態を確認中…</span>
+                    <span v-else-if="!latestAmazonImport" class="text-sm text-slate-500">実行履歴はありません。</span>
+                    <span v-else-if="activeAmazonImport" class="text-sm text-slate-500">完了まで自動更新します。</span>
+                </div>
+                <BaseAlert v-if="amazonError" tone="danger" title="Amazon 在庫取込">{{ amazonError }}</BaseAlert>
+                <div v-if="latestAmazonImport" data-testid="amazon-import-status" class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-semibold">最新の実行</span>
+                        <BaseBadge :tone="amazonStatus[latestAmazonImport.status].tone">{{ amazonStatus[latestAmazonImport.status].label }}</BaseBadge>
+                        <span>{{ latestAmazonImport.triggerSource === "scheduled" ? "定期実行" : "手動実行" }}</span>
+                        <span>受付日時: {{ formatDateTime(latestAmazonImport.createdAt) }}</span>
+                    </div>
+                    <p v-if="latestAmazonImport.basisAt" class="mt-2">在庫基準日時: {{ formatDateTime(latestAmazonImport.basisAt) }}</p>
+                    <p v-if="latestAmazonImport.status === 'succeeded'" class="mt-2"
+                        >対象 SKU: {{ latestAmazonImport.targetSkuCount ?? 0 }} 件 ／ 自社発送の照合: {{ latestAmazonImport.matchedOwnCount ?? 0 }} 件 ／ FBA の照合:
+                        {{ latestAmazonImport.matchedFbaCount ?? 0 }} 件</p
+                    >
+                    <p v-if="latestAmazonImport.errorMessage" class="mt-2 text-rose-700">{{ latestAmazonImport.errorMessage }}</p>
+                </div>
+            </div>
+        </BaseCard>
 
         <BaseCard>
             <div

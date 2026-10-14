@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AmazonInventoryImportController;
 use App\Http\Controllers\Api\ApiConnectionSettingController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CrossWalkerController;
@@ -24,6 +25,10 @@ Route::prefix('api')->group(function (): void {
         Route::get('/api-connection-settings', [ApiConnectionSettingController::class, 'show']);
         Route::put('/api-connection-settings', [ApiConnectionSettingController::class, 'update']);
         Route::post('/api-connection-settings/rotate-key', [ApiConnectionSettingController::class, 'rotateKey']);
+
+        Route::get('/amazon-inventory-imports', [AmazonInventoryImportController::class, 'index']);
+        Route::post('/amazon-inventory-imports', [AmazonInventoryImportController::class, 'store']);
+        Route::get('/amazon-inventory-imports/{amazonInventoryImport}', [AmazonInventoryImportController::class, 'show']);
 
         Route::get('/import-settings', [ImportSettingController::class, 'index']);
         Route::post('/import-settings', [ImportSettingController::class, 'store']);

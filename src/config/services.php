@@ -35,6 +35,19 @@ return [
         ],
     ],
 
+    'amazon_sp_api' => [
+        'endpoint' => env('SP_API_ENDPOINT', 'https://sellingpartnerapi-fe.amazon.com'),
+        'marketplace_id' => env('SP_API_MARKETPLACE_ID', 'A1VC38T7YXB528'),
+        'client_id' => env('SP_API_CLIENT_ID'),
+        'client_secret' => env('SP_API_CLIENT_SECRET'),
+        'refresh_token' => env('SP_API_REFRESH_TOKEN'),
+        'timeout' => env('SP_API_TIMEOUT', 30),
+        'poll_attempts' => env('SP_API_POLL_ATTEMPTS', 40),
+        'poll_interval_seconds' => env('SP_API_POLL_INTERVAL_SECONDS', 15),
+        'retry_attempts' => env('SP_API_RETRY_ATTEMPTS', 3),
+        'retry_delay_seconds' => env('SP_API_RETRY_DELAY_SECONDS', 2),
+    ],
+
     'crosswalker' => [
         'base_url' => env('CROSSWALKER_API_URL') ?: env('CROSSWALKER_BASE_URL') ?: env('API_URL'),
         'api_key' => env('CROSSWALKER_API_KEY') ?: env('CROSSWALKER_TOKEN') ?: env('API_KEY'),
