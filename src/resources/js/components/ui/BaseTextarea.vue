@@ -1,17 +1,14 @@
 <script setup lang="ts">
 import { computed, useId } from "vue";
 
-const props = withDefaults(
-    defineProps<{ modelValue: string; label?: string; placeholder?: string; rows?: number; error?: string; hint?: string; bordered?: boolean }>(),
-    {
-        label: "",
-        placeholder: "",
-        rows: 4,
-        error: "",
-        hint: "",
-        bordered: true,
-    },
-);
+const props = withDefaults(defineProps<{ modelValue: string; label?: string; placeholder?: string; rows?: number; error?: string; hint?: string; bordered?: boolean }>(), {
+    label: "",
+    placeholder: "",
+    rows: 4,
+    error: "",
+    hint: "",
+    bordered: true,
+});
 
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const areaId = useId();
