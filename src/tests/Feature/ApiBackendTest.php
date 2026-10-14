@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\AmazonInventoryImport;
 use App\Models\ImportTarget;
 use App\Models\Survey;
+use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -156,24 +158,36 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('message', 'CrossWalker APIの利用上限に達しました。時間をおいて再度お試しください。');
     }
 
-    public function test_five_files_are_imported_into_a_persisted_survey(): void
+    public function test_three_files_are_imported_with_the_latest_available_amazon_api_snapshot(): void
     {
         Storage::fake('local');
         $this->actingAs(User::factory()->create());
         $settingId = $this->postJson('/api/import-settings', $this->targetPayload())
             ->assertCreated()
             ->json('id');
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'amazon_own' => UploadedFile::fake()->createWithContent('在庫商品レポート.txt', "ASIN\t数量\nB000000001\t99\n"),
+        ])->assertUnprocessable()->assertJsonValidationErrors('amazon_own');
+        $amazonBasisAt = now()->subMinute();
+        $amazonImport = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'basis_at' => $amazonBasisAt,
+            'snapshot_date' => $amazonBasisAt->toDateString(),
+            'completed_at' => $amazonBasisAt,
+        ]);
+        $amazonImport->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-01-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 2,
+            'amazon_fba_stock' => 3,
+            'basis_at' => $amazonBasisAt,
+        ]);
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
-            'amazon_own' => UploadedFile::fake()->createWithContent(
-                '在庫商品レポート.txt',
-                "出品者SKU\tASIN\t価格\t数量\nA-1001-01-M\tB000000001\t1000\t2\n",
-            ),
-            'amazon_fba' => UploadedFile::fake()->createWithContent(
-                'FBA在庫管理レポート.csv',
-                "ASIN,Amazon出荷在庫(出荷可)\nB000000001,3\n",
-            ),
             'boss' => UploadedFile::fake()->createWithContent(
                 '倉庫毎の在庫数レポート.csv',
                 "倉庫,SKUコード,販売可能数,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,99,10,6\nRFC倉庫,A-1001-01-M,99,7,2\n",
@@ -190,6 +204,8 @@ class ApiBackendTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonCount(1, 'data.products.0.skus')
+            ->assertJsonPath('data.includesAmazonInventory', false)
+            ->assertJsonPath('data.amazonSource', 'sp_api')
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
             ->assertJsonPath('data.importSettingName', '売上TOP20')
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 3)
@@ -200,16 +216,42 @@ class ApiBackendTest extends TestCase
 
         $this->assertDatabaseHas('survey_skus', [
             'sku_code' => 'A-1001-01-M',
-            'amazon_own_stock' => 2,
-            'amazon_fba_stock' => 3,
+            'amazon_own_stock' => 0,
+            'amazon_fba_stock' => 0,
             'boss_own_stock' => 4,
             'boss_rfc_stock' => 5,
             'ec_stock' => 7,
             'free_stock' => 8,
         ]);
         $this->assertDatabaseMissing('survey_skus', ['sku_code' => 'A-1001-01-L']);
-        $this->assertSame(5, $response->json('data.files') === null ? 0 : count($response->json('data.files')));
+        $this->assertSame(3, $response->json('data.files') === null ? 0 : count($response->json('data.files')));
         $this->assertSame(1, SurveySku::query()->count());
+        $this->assertDatabaseHas('surveys', [
+            'id' => $response->json('data.id'),
+            'includes_amazon_inventory' => false,
+            'amazon_inventory_import_id' => $amazonImport->id,
+        ]);
+
+        $newerBasisAt = now();
+        $newerAmazonImport = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'basis_at' => $newerBasisAt,
+            'snapshot_date' => $newerBasisAt->toDateString(),
+            'completed_at' => $newerBasisAt,
+        ]);
+        $newerAmazonImport->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-01-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 99,
+            'amazon_fba_stock' => 99,
+            'basis_at' => $newerBasisAt,
+        ]);
+        $this->getJson('/api/surveys/'.$response->json('data.id'))
+            ->assertOk()
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 3);
 
         $this->get('/api/surveys/'.$response->json('data.id').'/export')
             ->assertOk()
@@ -225,8 +267,13 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('data.importSettingName', '再照合設定')
             ->assertJsonPath('data.executedAt', $sourceExecutedAt)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
-            ->assertJsonCount(5, 'data.files');
+            ->assertJsonPath('data.amazonSource', 'sp_api')
+            ->assertJsonCount(3, 'data.files');
         $this->assertNotSame($sourceCreatedAt, $rerunResponse->json('data.createdAt'));
+        $this->assertDatabaseHas('surveys', [
+            'id' => $rerunResponse->json('data.id'),
+            'amazon_inventory_import_id' => $amazonImport->id,
+        ]);
         $this->getJson('/api/surveys')
             ->assertOk()
             ->assertJsonPath('data.0.id', $rerunResponse->json('data.id'));
@@ -237,6 +284,57 @@ class ApiBackendTest extends TestCase
         $this->getJson('/api/surveys/'.$response->json('data.id'))
             ->assertOk()
             ->assertJsonPath('data.importSettingName', '売上TOP20');
+    }
+
+    public function test_three_file_survey_without_an_amazon_snapshot_keeps_amazon_stock_unknown(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())
+            ->assertCreated()
+            ->json('id');
+
+        $response = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'boss' => UploadedFile::fake()->createWithContent(
+                '倉庫毎の在庫数レポート.csv',
+                "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n",
+            ),
+            'ec_stock' => UploadedFile::fake()->createWithContent(
+                'KEEP一覧表.csv',
+                "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n",
+            ),
+            'free_stock' => UploadedFile::fake()->createWithContent(
+                '在庫一覧照会表.csv',
+                "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n",
+            ),
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.amazonSource', null)
+            ->assertJsonPath('data.amazonBasisAt', null)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', null)
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 3);
+    }
+
+    public function test_existing_survey_keeps_its_saved_amazon_stock(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $survey = Survey::factory()->create();
+        $product = SurveyProduct::factory()->for($survey)->create();
+        SurveySku::factory()->create([
+            'survey_product_id' => $product->id,
+            'amazon_own_stock' => 4,
+            'amazon_fba_stock' => 7,
+        ]);
+
+        $this->getJson('/api/surveys/'.$survey->id)
+            ->assertOk()
+            ->assertJsonPath('data.includesAmazonInventory', true)
+            ->assertJsonPath('data.amazonSource', 'survey')
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 4)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 7);
     }
 
     /** @return array<string, mixed> */

@@ -12,7 +12,7 @@ import { fetchAmazonInventoryImports, startAmazonInventoryImport, type AmazonInv
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import { IMPORT_FILE_TYPES, type ImportFileType } from "@/types";
+import { IMPORT_FILE_TYPES, type UploadFileType } from "@/types";
 import { formatDateTime } from "@/utils/format";
 
 const importSettings = useImportSettingsStore();
@@ -74,18 +74,14 @@ onUnmounted(() => {
     if (amazonPollTimer !== undefined) window.clearInterval(amazonPollTimer);
 });
 
-const accepts: Record<ImportFileType, string> = {
-    在庫商品レポート: ".txt",
-    FBA在庫管理レポート: ".csv",
+const accepts: Record<UploadFileType, string> = {
     倉庫毎の在庫数レポート: ".csv",
     KEEP一覧表: ".csv",
     在庫一覧照会表: ".csv",
 };
-const expectedFileNames = Object.fromEntries(IMPORT_FILE_TYPES.map(({ type, extension }) => [type, `${type}.${extension}`])) as Record<ImportFileType, string>;
+const expectedFileNames = Object.fromEntries(IMPORT_FILE_TYPES.map(({ type, extension }) => [type, `${type}.${extension}`])) as Record<UploadFileType, string>;
 
-const files = reactive<Record<ImportFileType, File | null>>({
-    在庫商品レポート: null,
-    FBA在庫管理レポート: null,
+const files = reactive<Record<UploadFileType, File | null>>({
     倉庫毎の在庫数レポート: null,
     KEEP一覧表: null,
     在庫一覧照会表: null,
@@ -102,7 +98,7 @@ const folderInputRef = ref<HTMLInputElement | null>(null);
 const folderSelectionMessage = ref("");
 const bulkDragging = ref(false);
 
-function setFile(type: ImportFileType, file: File | null) {
+function setFile(type: UploadFileType, file: File | null) {
     files[type] = file;
     folderSelectionMessage.value = "";
 }
@@ -154,14 +150,12 @@ async function runImport() {
     running.value = true;
 
     const formData = new FormData();
-    const keys: Record<ImportFileType, string> = {
-        在庫商品レポート: "amazon_own",
-        FBA在庫管理レポート: "amazon_fba",
+    const keys: Record<UploadFileType, string> = {
         倉庫毎の在庫数レポート: "boss",
         KEEP一覧表: "ec_stock",
         在庫一覧照会表: "free_stock",
     };
-    for (const [type, file] of Object.entries(files) as [ImportFileType, File | null][]) {
+    for (const [type, file] of Object.entries(files) as [UploadFileType, File | null][]) {
         if (file) formData.append(keys[type], file);
     }
 
@@ -187,7 +181,7 @@ async function runImport() {
     <div class="flex flex-col gap-6">
         <div>
             <h1 class="text-xl font-semibold text-slate-900">データ取込</h1>
-            <p class="mt-1 text-sm text-slate-500">5種類のファイルを添付し、取込・調査を実行します。実行前に取込対象品番の商品情報を最新化します。</p>
+            <p class="mt-1 text-sm text-slate-500">BOSS・ECストック・フリー在庫の3種類のファイルを添付して取込・調査を実行します。</p>
         </div>
 
         <BaseCard v-if="importSettings.settings.length > 0">
@@ -215,7 +209,7 @@ async function runImport() {
 
         <BaseCard
             title="Amazon 在庫を取得"
-            description="保存済みの取込設定に含まれる品番について、Amazon の自社発送在庫と FBA 出荷可能在庫を取得します。下の5ファイルによる取込・調査とは別の履歴に保存されます。"
+            description="保存済みの取込設定に含まれる品番について、Amazon の自社発送在庫と FBA 出荷可能在庫を取得します。下の3ファイルによる取込・調査とは別の履歴に保存されます。"
         >
             <div class="flex flex-col gap-4">
                 <p class="text-xs text-slate-500">ASIN が登録されていない SKU は Amazon 在庫の取得対象に含まれません。</p>
@@ -257,8 +251,8 @@ async function runImport() {
             >
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <p class="text-sm font-semibold text-slate-900">5ファイルを一括選択</p>
-                        <p class="mt-1 text-xs text-slate-500">5ファイルをまとめてドラッグ＆ドロップ、またはフォルダを選択すると自動設定します。</p>
+                        <p class="text-sm font-semibold text-slate-900">3ファイルを一括選択</p>
+                        <p class="mt-1 text-xs text-slate-500">3ファイルをまとめてドラッグ＆ドロップ、またはフォルダを選択すると自動設定します。</p>
                     </div>
                     <BaseButton icon="folder_open" @click="openFolderPicker">フォルダを選択</BaseButton>
                     <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />

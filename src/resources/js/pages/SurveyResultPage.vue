@@ -25,6 +25,8 @@ const surveysStore = useSurveysStore();
 const toast = useUiStore();
 
 const survey = computed(() => surveysStore.getSurvey(props.id));
+const includesAmazonInventory = computed(() => survey.value?.includesAmazonInventory !== false);
+const hasAmazonStock = computed(() => includesAmazonInventory.value || survey.value?.amazonSource === "sp_api");
 const isLatest = computed(() => surveysStore.latestSurvey?.id === props.id);
 const rerunSettingId = ref<string | null>(null);
 const rerunMenuOpen = ref(false);
@@ -83,6 +85,8 @@ const HAS_STOCK_BUTTONS = [
     { key: "freeHas", label: "フリー" },
     { key: "ecHas", label: "ECストック" },
 ] as const;
+const zeroStockButtons = computed(() => (hasAmazonStock.value ? ZERO_STOCK_BUTTONS : ZERO_STOCK_BUTTONS.filter((button) => button.key !== "amazonZero")));
+const hasStockButtons = computed(() => (hasAmazonStock.value ? HAS_STOCK_BUTTONS : HAS_STOCK_BUTTONS.filter((button) => button.key !== "amazonHas")));
 
 const activeConditions = ref<string[]>([]);
 const conditionOperator = ref<"and" | "or">("and");
@@ -99,7 +103,7 @@ function matchesConditions(stock: StockQuantities): boolean {
     const matches = (key: string) => {
         switch (key) {
             case "amazonZero":
-                return stock.amazonOwn === 0 && stock.amazonFba === 0;
+                return stock.amazonOwn !== null && stock.amazonFba !== null && stock.amazonOwn === 0 && stock.amazonFba === 0;
             case "bossZero":
                 return stock.bossOwn === 0 && stock.bossRfc === 0;
             case "freeZero":
@@ -107,7 +111,7 @@ function matchesConditions(stock: StockQuantities): boolean {
             case "ecZero":
                 return stock.ecStock === 0;
             case "amazonHas":
-                return stock.amazonOwn + stock.amazonFba > 0;
+                return (stock.amazonOwn ?? 0) + (stock.amazonFba ?? 0) > 0;
             case "bossHas":
                 return stock.bossOwn + stock.bossRfc > 0;
             case "freeHas":
@@ -165,11 +169,11 @@ const matchedSkuCount = computed(() => {
 });
 
 function isZero(stock: StockQuantities): boolean {
-    return Object.values(stock).every((v) => v === 0);
+    return Object.values(stock).every((value) => value === 0);
 }
 
-function amazonStockTotal(stock: StockQuantities): number {
-    return stock.amazonOwn + stock.amazonFba;
+function amazonStockTotal(stock: StockQuantities): number | null {
+    return stock.amazonOwn === null || stock.amazonFba === null ? null : stock.amazonOwn + stock.amazonFba;
 }
 
 function bossStockTotal(stock: StockQuantities): number {
@@ -177,7 +181,7 @@ function bossStockTotal(stock: StockQuantities): number {
 }
 
 function stockTotal(stock: StockQuantities): number {
-    return stock.amazonOwn + stock.amazonFba + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
+    return (amazonStockTotal(stock) ?? 0) + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
 }
 
 function isLowStock(quantity: number): boolean {
@@ -190,8 +194,8 @@ function groupedStockClass(quantity: number): string {
     return "font-semibold text-slate-900";
 }
 
-function amazonStockClass(quantity: number, asin: string): string {
-    if (!asin.trim()) return "text-slate-300";
+function amazonStockClass(quantity: number | null, asin: string): string {
+    if (quantity === null || !asin.trim()) return "text-slate-300";
     return groupedStockClass(quantity);
 }
 
@@ -291,6 +295,10 @@ async function exportExcel(scope: "all" | "filtered") {
             </div>
         </div>
         <p v-if="!hasReusableFiles" class="text-xs text-slate-400">取込ファイルが削除されているため、再照合機能は利用できません。</p>
+        <p v-if="!includesAmazonInventory && survey.amazonSource === 'sp_api'" class="text-sm text-slate-500">
+            Amazon 在庫は SP-API の {{ formatDateTime(survey.amazonBasisAt!) }} 時点の値です。ほかの在庫とは基準日時が異なるため、総数には合算しません。
+        </p>
+        <p v-else-if="!includesAmazonInventory" class="text-sm text-slate-500">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
 
         <BaseModal :open="rerunMenuOpen" title="差異照合メニュー" description="保存済みの取込ファイルを使い、元の在庫基準日時を引き継いだ調査結果を作成します。" width="md" @close="closeRerunMenu">
             <div class="flex flex-col gap-4">
@@ -326,7 +334,7 @@ async function exportExcel(scope: "all" | "filtered") {
                 <div class="flex flex-wrap items-center gap-1">
                     <span class="text-xs font-medium text-slate-400">在庫ゼロ:</span>
                     <button
-                        v-for="btn in ZERO_STOCK_BUTTONS"
+                        v-for="btn in zeroStockButtons"
                         :key="btn.key"
                         :data-stock-condition="btn.key"
                         type="button"
@@ -338,7 +346,7 @@ async function exportExcel(scope: "all" | "filtered") {
                     </button>
                     <span class="ml-3 text-xs font-medium text-slate-400">在庫あり:</span>
                     <button
-                        v-for="btn in HAS_STOCK_BUTTONS"
+                        v-for="btn in hasStockButtons"
                         :key="btn.key"
                         :data-stock-condition="btn.key"
                         type="button"
@@ -374,7 +382,7 @@ async function exportExcel(scope: "all" | "filtered") {
 
                 <p class="text-xs text-slate-400">
                     該当SKU: <span class="font-semibold text-slate-700">{{ matchedSkuCount }}</span> / 全{{ totalSkuCount }}件
-                    <span class="ml-3">Ctrlキーを押しながらAmazon・BOSSの数値にマウスを置くと内訳を表示します</span>
+                    <span class="ml-3">Ctrlキーを押しながら{{ hasAmazonStock ? "Amazon・BOSS" : "BOSS" }}の数値にマウスを置くと内訳を表示します</span>
                 </p>
             </div>
         </BaseCard>
@@ -405,21 +413,21 @@ async function exportExcel(scope: "all" | "filtered") {
                 <table class="w-full min-w-200 table-fixed text-left text-sm">
                     <colgroup>
                         <col class="w-40" />
+                        <col v-if="hasAmazonStock" class="w-24" />
                         <col class="w-24" />
                         <col class="w-24" />
                         <col class="w-24" />
-                        <col class="w-24" />
-                        <col class="w-24" />
+                        <col v-if="includesAmazonInventory" class="w-24" />
                         <col />
                     </colgroup>
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs tracking-wide text-slate-500">
                         <tr>
                             <th class="px-3 py-2">SKU</th>
-                            <th class="border-l border-slate-200 px-3 py-2 text-center">Amazon</th>
+                            <th v-if="hasAmazonStock" class="border-l border-slate-200 px-3 py-2 text-center">Amazon</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">BOSS</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">フリー在庫</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">ECストック</th>
-                            <th class="border-l border-slate-200 px-3 py-2 text-center">在庫総数</th>
+                            <th v-if="includesAmazonInventory" class="border-l border-slate-200 px-3 py-2 text-center">在庫総数</th>
                             <th class="border-l border-slate-200 px-3 py-2">メモ</th>
                         </tr>
                     </thead>
@@ -432,14 +440,15 @@ async function exportExcel(scope: "all" | "filtered") {
                                 </div>
                             </td>
                             <td
+                                v-if="hasAmazonStock"
                                 data-stock-field="amazon"
                                 tabindex="0"
                                 aria-label="Amazon在庫合計"
                                 class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
                                 :class="amazonStockClass(amazonStockTotal(sku.stock), sku.asin)"
                             >
-                                <span class="stock-total-value">{{ amazonStockTotal(sku.stock) }}</span>
-                                <div class="stock-breakdown-tooltip" role="tooltip">
+                                <span class="stock-total-value">{{ amazonStockTotal(sku.stock) ?? "—" }}</span>
+                                <div v-if="amazonStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
                                     <p class="mb-1.5 text-left text-[11px] font-semibold text-slate-500">Amazon内訳</p>
                                     <div class="grid grid-cols-2 divide-x divide-slate-200">
                                         <div class="pr-2 text-center">
@@ -481,7 +490,12 @@ async function exportExcel(scope: "all" | "filtered") {
                             <td data-stock-field="ecStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.ecStock)">
                                 {{ sku.stock.ecStock }}
                             </td>
-                            <td data-stock-field="total" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(stockTotal(sku.stock))">
+                            <td
+                                v-if="includesAmazonInventory"
+                                data-stock-field="total"
+                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
+                                :class="stockClass(stockTotal(sku.stock))"
+                            >
                                 {{ stockTotal(sku.stock) }}
                             </td>
                             <td class="border-l border-slate-200 px-3 py-2.5">

@@ -27,7 +27,7 @@ class SurveyController extends Controller
 
         return SurveyResource::collection(
             Survey::query()
-                ->with(['products.skus', 'files'])
+                ->with(['products.skus', 'files', 'amazonImport.snapshots'])
                 ->orderByDesc('executed_at')
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
@@ -56,7 +56,7 @@ class SurveyController extends Controller
 
     public function show(Survey $survey): SurveyResource
     {
-        return new SurveyResource($survey->load(['products.skus', 'files']));
+        return new SurveyResource($survey->load(['products.skus', 'files', 'amazonImport.snapshots']));
     }
 
     public function export(Request $request, Survey $survey, SurveyExcelExporter $exporter): BinaryFileResponse

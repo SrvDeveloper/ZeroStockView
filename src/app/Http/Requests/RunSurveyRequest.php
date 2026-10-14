@@ -24,8 +24,8 @@ class RunSurveyRequest extends FormRequest
     {
         return [
             'import_setting_id' => ['required', 'integer', 'exists:import_settings,id'],
-            'amazon_own' => ['required', 'file', 'mimes:txt', 'max:20480'],
-            'amazon_fba' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
+            'amazon_own' => ['prohibited'],
+            'amazon_fba' => ['prohibited'],
             'boss' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
             'ec_stock' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
             'free_stock' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],

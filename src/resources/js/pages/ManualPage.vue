@@ -7,10 +7,10 @@ import ManualTableOfContents from "@/components/manual/ManualTableOfContents.vue
 
 const sections = [
     { id: "introduction", title: "はじめに" },
-    { id: "basic-operation-amazon", title: "事前準備①：Amazon" },
-    { id: "basic-operation-boss", title: "事前準備②：BOSS" },
-    { id: "basic-operation-ec", title: "事前準備③：ECストック" },
-    { id: "basic-operation-free", title: "事前準備④：フリー在庫" },
+    { id: "basic-operation-amazon", title: "Amazon在庫取得" },
+    { id: "basic-operation-boss", title: "事前準備①：BOSS" },
+    { id: "basic-operation-ec", title: "事前準備②：ECストック" },
+    { id: "basic-operation-free", title: "事前準備③：フリー在庫" },
     { id: "notes", title: "注意事項" },
     { id: "faq", title: "よくある質問" },
 ];
@@ -34,50 +34,16 @@ const sections = [
                     <p class="text-sm leading-7 text-slate-600">照合を行う品番がまだ商品識別子管理システム「Crosswalker」に登録されていない場合は、事前に追加登録してください。</p>
                 </ManualSection>
 
-                <ManualSection id="basic-operation-amazon" title="事前準備①：Amazon用の取込データ準備" description="Amazonの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
-                    <!-- ManualStep は必要な手順数だけ追加・削除できます。 -->
-                    <ManualStep :number="1" title="「Amazon Seller Central」で出品レポート画面を開く">
-                        <p>
-                            左上の「≡」をクリック。「レポート」＞「出品レポート」をクリックします。ログイン済みの場合は下記URLからアクセス可能です。<br />
-                            <a href="https://sellercentral.amazon.co.jp/listing/reports/ref=xx_invreport_dnav_xx" target="_blank" class="text-primary-600 hover:text-primary-500">
-                                https://sellercentral.amazon.co.jp/listing/reports/ref=xx_invreport_dnav_xx
-                            </a>
-                        </p>
-                        <ManualScreenshot src="/img/manual/01-1.png" caption="「レポート」の中の「出品レポート」をクリック" />
-                    </ManualStep>
-                    <div class="border-t border-slate-100"></div>
-                    <ManualStep :number="2" title="「出品詳細レポート(カスタム)」をリクエストする">
-                        <p>リクエストするレポートの種類で「出品詳細レポート(カスタム)」を選択して、レポートをリクエストをクリックします。</p>
-                        <ManualScreenshot src="/img/manual/01-2.png" caption="「出品詳細レポート(カスタム)」をリクエスト" />
-                    </ManualStep>
-                    <div class="border-t border-slate-100"></div>
-                    <ManualStep :number="3" title="「出品詳細レポート(カスタム)」をダウンロードする">
-                        <p>リクエスト後、レポートが作成されるとダウンロードボタンが表示されますので、クリックしてダウンロードしてください。</p>
-                        <ManualScreenshot src="/img/manual/01-3.png" caption="出品詳細レポートをダウンロード" />
-                        <ManualCallout title="操作のヒント" tone="tip">ダウンロードしたファイルは "出品詳細レポート.txt" にリネームすると、後々使いやすくなります。</ManualCallout>
-                    </ManualStep>
-                    <div class="border-t border-slate-100"></div>
-                    <ManualStep :number="4" title="「Amazon Seller Central」でFBA在庫管理レポート画面を開く">
-                        <p>
-                            左上の「≡」をクリック。「レポート」＞「Fulfillment」をクリックします。その後、FBA在庫管理という項目をクリックします。<br />ログイン済みの場合は下記URLからアクセス可能です。<br />
-                            <a href="https://sellercentral.amazon.co.jp/reportcentral/FBA_MYI_UNSUPPRESSED_INVENTORY/1" target="_blank" class="text-primary-600 hover:text-primary-500">
-                                https://sellercentral.amazon.co.jp/reportcentral/FBA_MYI_UNSUPPRESSED_INVENTORY/1
-                            </a>
-                        </p>
-                        <ManualScreenshot src="/img/manual/01-4.png" caption="Amazon フルフィルメント レポート画面を開く" />
-                        <ManualScreenshot src="/img/manual/01-5.png" caption="FBA在庫管理レポート画面を開く" />
-                    </ManualStep>
-                    <div class="border-t border-slate-100"></div>
-                    <ManualStep :number="5" title="FBA在庫管理レポートをダウンロード">
-                        <p>
-                            「.csv形式でのダウンロードをリクエスト」をクリックしてレポートをリクエストします。しばらく待つとダウンロードボタンが表示されるので、クリックしてダウンロードしてください。
-                        </p>
-                        <ManualScreenshot src="/img/manual/01-6.png" caption="FBA在庫管理レポートをダウンロード" />
-                        <ManualCallout title="操作のヒント" tone="tip">ダウンロードしたファイルは "FBA在庫管理レポート.csv" にリネームすると、後々使いやすくなります。</ManualCallout>
+                <ManualSection id="basic-operation-amazon" title="Amazon在庫取得" description="Amazon在庫はSP-APIから取得します。ファイルの準備は不要です。" icon="touch_app">
+                    <ManualStep :number="1" title="データ取込画面でAmazon在庫を確認する">
+                        <p>Amazon在庫の取得状況と最終取得日時を確認します。必要に応じて手動取得を実行してください。</p>
+                        <ManualCallout title="調査履歴のAmazon在庫" tone="tip"
+                            >調査時点までに取得に成功した最新のSP-API在庫を表示します。在庫の基準日時は調査日時と異なる場合があります。</ManualCallout
+                        >
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation-boss" title="事前準備②：BOSS用の取込データ準備" description="BOSSの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-boss" title="事前準備①：BOSS用の取込データ準備" description="BOSSの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <ManualStep :number="1" title="在庫・商品一覧画面で商品一覧を表示します。">
                         <p>
                             BOSSにログインして、在庫・商品一覧画面を開き、検索条件を変更しないで検索ボタンを押下します。<br />
@@ -100,7 +66,7 @@ const sections = [
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation-ec" title="事前準備③：ECストックの取込データ準備" description="ECストック在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-ec" title="事前準備②：ECストックの取込データ準備" description="ECストック在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <ManualStep :number="1" title="ターコイズでKEEP一覧表出力画面を開きます。">
                         <p>ターコイズにログインして、「在庫管理」＞「KEEP一覧表」を押下します。</p>
                         <ManualScreenshot src="/img/manual/03-1.png" caption="KEEP一覧表出力画面を開く" />
@@ -116,7 +82,7 @@ const sections = [
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation-free" title="事前準備④：フリー在庫の取込データ準備" description="フリー在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection id="basic-operation-free" title="事前準備③：フリー在庫の取込データ準備" description="フリー在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
                     <ManualStep :number="1" title="ターコイズで在庫一覧照会画面を開きます。">
                         <p>ターコイズにログインして、「在庫管理」＞「在庫一覧照会」を押下します。</p>
                         <ManualScreenshot src="/img/manual/04-1.png" caption="在庫一覧照会画面を開く" />

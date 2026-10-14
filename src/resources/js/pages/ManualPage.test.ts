@@ -18,8 +18,9 @@ describe("ManualPage", () => {
     it("shows callouts and screenshots for the import instructions", () => {
         const wrapper = mount(ManualPage);
 
-        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(8);
-        expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/01-1.png");
+        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(7);
+        expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
+        expect(wrapper.get("#basic-operation-amazon").text()).toContain("SP-API");
         expect(wrapper.find('[role="alert"]').text()).toContain("注意");
     });
 });

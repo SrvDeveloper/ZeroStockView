@@ -11,19 +11,28 @@ class SurveyExcelExporter
     /** @param array<int, int> $skuIds */
     public function export(Survey $survey, array $skuIds = []): string
     {
-        $survey->loadMissing('products.skus');
+        $survey->loadMissing(['products.skus', 'amazonImport.snapshots']);
+        $amazonSnapshots = $survey->amazonImport?->snapshots->keyBy('sku_code') ?? collect();
+        $hasAmazon = $survey->includes_amazon_inventory || $survey->amazonImport !== null;
         $allowedIds = array_fill_keys($skuIds, true);
-        $rows = [[
+        $headers = [
             '品番', 'ブランド', 'カテゴリ', '親ASIN', 'SKU', 'ASIN', 'TQ品番', 'TQカラーNo', 'TQサイズ',
-            'Amazon:自社', 'Amazon:FBA', 'BOSS:自社', 'BOSS:RFC', 'フリー在庫', 'ECストック', '品番メモ', 'SKUメモ',
-        ]];
+        ];
+        if ($hasAmazon) {
+            array_push($headers, 'Amazon:自社', 'Amazon:FBA');
+        }
+        if (! $survey->includes_amazon_inventory && $survey->amazonImport !== null) {
+            array_push($headers, 'Amazon取得元', 'Amazon基準日時');
+        }
+        array_push($headers, 'BOSS:自社', 'BOSS:RFC', 'フリー在庫', 'ECストック', '品番メモ', 'SKUメモ');
+        $rows = [$headers];
 
         foreach ($survey->products as $product) {
             foreach ($product->skus as $sku) {
                 if ($skuIds !== [] && ! isset($allowedIds[$sku->getKey()])) {
                     continue;
                 }
-                $rows[] = [
+                $row = [
                     $product->product_code,
                     $product->brand,
                     $product->category,
@@ -33,15 +42,22 @@ class SurveyExcelExporter
                     $sku->tq_item_no,
                     $sku->tq_color_no,
                     $sku->tq_size,
-                    $sku->amazon_own_stock,
-                    $sku->amazon_fba_stock,
+                ];
+                if ($survey->includes_amazon_inventory) {
+                    array_push($row, $sku->amazon_own_stock, $sku->amazon_fba_stock);
+                } elseif ($survey->amazonImport !== null) {
+                    $snapshot = $amazonSnapshots->get($sku->sku_code);
+                    array_push($row, $snapshot?->amazon_own_stock ?? '', $snapshot?->amazon_fba_stock ?? '', 'SP-API', $survey->amazonImport->basis_at->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s'));
+                }
+                array_push($row,
                     $sku->boss_own_stock,
                     $sku->boss_rfc_stock,
                     $sku->free_stock,
                     $sku->ec_stock,
                     $product->memo ?? '',
                     $sku->memo ?? '',
-                ];
+                );
+                $rows[] = $row;
             }
         }
 
@@ -84,11 +100,13 @@ class SurveyExcelExporter
             $xmlRows[] = '<row r="'.($rowIndex + 1).'">'.implode('', $cells).'</row>';
         }
 
+        $lastColumn = $this->columnName(count($rows[0]));
+
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
             .'<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-            .'<cols><col min="1" max="17" width="16" customWidth="1"/></cols>'
-            .'<sheetData>'.implode('', $xmlRows).'</sheetData><autoFilter ref="A1:Q1"/></worksheet>';
+            .'<cols><col min="1" max="'.count($rows[0]).'" width="16" customWidth="1"/></cols>'
+            .'<sheetData>'.implode('', $xmlRows).'</sheetData><autoFilter ref="A1:'.$lastColumn.'1"/></worksheet>';
     }
 
     private function columnName(int $number): string

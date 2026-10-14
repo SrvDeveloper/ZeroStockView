@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AmazonInventoryImport;
 use App\Models\ImportSetting;
 use App\Models\Survey;
 use Carbon\CarbonInterface;
@@ -15,8 +16,6 @@ use RuntimeException;
 class InventoryImportService
 {
     private const FILE_TYPES = [
-        'amazon_own' => '在庫商品レポート',
-        'amazon_fba' => 'FBA在庫管理レポート',
         'boss' => '倉庫毎の在庫数レポート',
         'ec_stock' => 'KEEP一覧表',
         'free_stock' => '在庫一覧照会表',
@@ -46,15 +45,25 @@ class InventoryImportService
             );
         }
 
-        return $this->import($files, $setting, $source->executed_at);
+        return $this->import($files, $setting, $source->executed_at, $source->amazon_inventory_import_id);
     }
 
     /**
      * @param  array<string, UploadedFile>  $files
      * @param  CarbonInterface|null  $executedAt  在庫データの基準日時。新規取込では現在日時、再照合では元の調査日時を使用する。
      */
-    public function import(array $files, ImportSetting $setting, ?CarbonInterface $executedAt = null): Survey
+    public function import(array $files, ImportSetting $setting, ?CarbonInterface $executedAt = null, ?int $amazonImportId = null): Survey
     {
+        $basisAt = $executedAt ?? now();
+        if ($executedAt === null) {
+            $amazonImportId = AmazonInventoryImport::query()
+                ->where('status', 'succeeded')
+                ->where('basis_at', '<=', $basisAt)
+                ->orderByDesc('basis_at')
+                ->orderByDesc('id')
+                ->value('id');
+        }
+
         $targets = $setting->targets()
             ->with('product.skus')
             ->orderBy('sort_order')
@@ -84,15 +93,11 @@ class InventoryImportService
             ],
         ])->all();
 
-        $asinLookup = $skus->filter(fn ($sku): bool => $sku->child_asin !== null)
-            ->pluck('sku_code', 'child_asin')->all();
         $skuLookup = $skus->pluck('sku_code', 'sku_code')->all();
         $tqLookup = $skus->mapWithKeys(fn ($sku): array => [
             $this->tqKey($sku->tq_item_no, $sku->tq_color_no, $sku->tq_size) => $sku->sku_code,
         ])->all();
 
-        $this->applyAmazon($stocks, $asinLookup, $files['amazon_own'], 'amazon_own_stock', '数量', "\t");
-        $this->applyAmazon($stocks, $asinLookup, $files['amazon_fba'], 'amazon_fba_stock', 'Amazon出荷在庫(出荷可)', ',');
         $this->applyBoss($stocks, $skuLookup, $files['boss']);
         $this->applyTq($stocks, $tqLookup, $files['ec_stock'], 'キープ残数', 'ec_stock', true);
         $this->applyTq($stocks, $tqLookup, $files['free_stock'], '可能在庫数', 'free_stock', false);
@@ -100,8 +105,13 @@ class InventoryImportService
         $storedFiles = [];
 
         try {
-            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, $executedAt, &$storedFiles): Survey {
-                $survey = Survey::query()->create(['executed_at' => $executedAt ?? now(), 'import_setting_name' => $setting->name]);
+            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, $basisAt, $amazonImportId, &$storedFiles): Survey {
+                $survey = Survey::query()->create([
+                    'executed_at' => $basisAt,
+                    'import_setting_name' => $setting->name,
+                    'includes_amazon_inventory' => false,
+                    'amazon_inventory_import_id' => $amazonImportId,
+                ]);
 
                 foreach ($targets as $target) {
                     $product = $target->product;
@@ -161,30 +171,7 @@ class InventoryImportService
             throw $exception;
         }
 
-        return $survey->load(['products.skus', 'files']);
-    }
-
-    /**
-     * @param  array<string, array<string, int>>  $stocks
-     * @param  array<string, string>  $asinLookup
-     */
-    private function applyAmazon(array &$stocks, array $asinLookup, UploadedFile $file, string $stockField, string $quantityHeader, string $delimiter): void
-    {
-        $seen = [];
-        foreach ($this->rows($file, ['ASIN', $quantityHeader], $delimiter) as $rowNumber => $row) {
-            if (! isset($asinLookup[$row['ASIN']])) {
-                continue;
-            }
-
-            $quantity = $this->quantity($row[$quantityHeader], $file, $rowNumber);
-            if ($quantity === null) {
-                continue;
-            }
-
-            $skuCode = $asinLookup[$row['ASIN']];
-            $this->ensureNotDuplicate($seen, $skuCode, $file, $rowNumber);
-            $stocks[$skuCode][$stockField] = $quantity;
-        }
+        return $survey->load(['products.skus', 'files', 'amazonImport.snapshots']);
     }
 
     /**
