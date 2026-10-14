@@ -28,7 +28,7 @@ class InventoryTrendCsvExporter
         try {
             $this->writeRow($stream, self::HEADERS);
             foreach ($this->rows($productCode, $from, $to) as $row) {
-                $this->writeRow($stream, array_map(fn (string $header): string|int => $row[$header], self::HEADERS));
+                $this->writeRow($stream, array_map(fn (string $header): string|int|null => $row[$header], self::HEADERS));
             }
         } finally {
             fclose($stream);
@@ -37,7 +37,7 @@ class InventoryTrendCsvExporter
         return $temporaryPath;
     }
 
-    /** @return array<int, array<string, string|int>> */
+    /** @return array<int, array<string, string|int|null>> */
     public function rows(?string $productCode, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $surveyQuery = Survey::query()
@@ -66,7 +66,7 @@ class InventoryTrendCsvExporter
         foreach ($surveys as $survey) {
             $date = $survey->executed_at->toDateString();
             foreach ($survey->products as $product) {
-                $dailyProducts[$date][$product->product_code] = $product;
+                $dailyProducts[$date][$product->product_code] = ['product' => $product, 'includes_amazon_inventory' => $survey->includes_amazon_inventory];
             }
         }
         ksort($dailyProducts);
@@ -77,7 +77,8 @@ class InventoryTrendCsvExporter
 
         $rows = [];
         foreach ($dailyProducts as $date => $products) {
-            foreach ($products as $product) {
+            foreach ($products as $entry) {
+                $product = $entry['product'];
                 foreach ($product->skus as $sku) {
                     $rows[] = [
                         'date' => $date,
@@ -86,8 +87,8 @@ class InventoryTrendCsvExporter
                         'category' => $product->category,
                         'sku' => $sku->sku_code,
                         'size' => $sku->tq_size,
-                        'amazonOwn' => $sku->amazon_own_stock,
-                        'amazonFba' => $sku->amazon_fba_stock,
+                        'amazonOwn' => $entry['includes_amazon_inventory'] ? $sku->amazon_own_stock : null,
+                        'amazonFba' => $entry['includes_amazon_inventory'] ? $sku->amazon_fba_stock : null,
                         'bossOwn' => $sku->boss_own_stock,
                         'bossRfc' => $sku->boss_rfc_stock,
                         'freeStock' => $sku->free_stock,
@@ -102,7 +103,7 @@ class InventoryTrendCsvExporter
 
     /**
      * @param  resource  $stream
-     * @param  array<int, string|int>  $row
+     * @param  array<int, string|int|null>  $row
      */
     private function writeRow($stream, array $row): void
     {

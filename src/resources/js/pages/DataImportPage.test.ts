@@ -55,13 +55,7 @@ async function selectFolder(wrapper: VueWrapper, selectedFiles: File[]) {
 }
 
 function validImportFiles(): File[] {
-    return [
-        new File([""], "FBA在庫管理レポート.csv"),
-        new File([""], "KEEP一覧表.csv"),
-        new File([""], "在庫一覧照会表.csv"),
-        new File([""], "在庫商品レポート.txt"),
-        new File([""], "倉庫毎の在庫数レポート.csv"),
-    ];
+    return [new File([""], "KEEP一覧表.csv"), new File([""], "在庫一覧照会表.csv"), new File([""], "倉庫毎の在庫数レポート.csv")];
 }
 
 function amazonImport(status: AmazonInventoryImport["status"]): AmazonInventoryImport {
@@ -180,15 +174,16 @@ describe("DataImportPage", () => {
         expect(push).toHaveBeenCalledWith({ name: "import-settings" });
     });
 
-    it("assigns all import files by exact file name from a selected folder", async () => {
+    it("assigns the three import files and ignores old Amazon files", async () => {
         const wrapper = mountPage();
-        const selectedFiles = validImportFiles();
+        const selectedFiles = [...validImportFiles(), new File([""], "在庫商品レポート.txt"), new File([""], "FBA在庫管理レポート.csv")];
 
         await selectFolder(wrapper, selectedFiles);
 
         const selectedNames = wrapper.findAllComponents(FileDropzone).map((dropzone) => (dropzone.props("modelValue") as File | null)?.name);
-        expect(selectedNames).toEqual(["在庫商品レポート.txt", "FBA在庫管理レポート.csv", "倉庫毎の在庫数レポート.csv", "KEEP一覧表.csv", "在庫一覧照会表.csv"]);
-        expect(wrapper.text()).toContain("5 / 5");
+        expect(selectedNames).toEqual(["倉庫毎の在庫数レポート.csv", "KEEP一覧表.csv", "在庫一覧照会表.csv"]);
+        expect(wrapper.text()).toContain("3 / 3");
+        expect(wrapper.findAllComponents(FileDropzone)).toHaveLength(3);
         expect(wrapper.text()).not.toContain("フォルダを確認してください");
     });
 
@@ -201,7 +196,7 @@ describe("DataImportPage", () => {
 
         await dropzone.trigger("drop", { dataTransfer: { files: validImportFiles() } });
 
-        expect(wrapper.text()).toContain("5 / 5");
+        expect(wrapper.text()).toContain("3 / 3");
         expect(dropzone.classes()).not.toContain("border-primary-500");
     });
 
@@ -227,25 +222,24 @@ describe("DataImportPage", () => {
         expect(runImport).toHaveBeenCalledTimes(1);
         const formData = runImport.mock.calls[0]![0];
         expect(formData.get("import_setting_id")).toBe("2");
+        expect(formData.get("boss")).toBeInstanceOf(File);
+        expect(formData.get("ec_stock")).toBeInstanceOf(File);
+        expect(formData.get("free_stock")).toBeInstanceOf(File);
+        expect(formData.has("amazon_own")).toBe(false);
+        expect(formData.has("amazon_fba")).toBe(false);
     });
 
     it("reports missing and duplicate files without retaining invalid selections", async () => {
         const wrapper = mountPage();
-        const selectedFiles = [
-            new File([""], "在庫商品レポート.txt"),
-            new File([""], "FBA在庫管理レポート.csv"),
-            new File([""], "KEEP一覧表.csv"),
-            new File([""], "KEEP一覧表.csv"),
-            new File([""], "在庫一覧照会表.csv"),
-        ];
+        const selectedFiles = [new File([""], "在庫商品レポート.txt"), new File([""], "KEEP一覧表.csv"), new File([""], "KEEP一覧表.csv"), new File([""], "在庫一覧照会表.csv")];
 
         await selectFolder(wrapper, selectedFiles);
 
         expect(wrapper.text()).toContain("見つからないファイル: 倉庫毎の在庫数レポート.csv");
         expect(wrapper.text()).toContain("同名ファイルが複数あります: KEEP一覧表.csv");
         const dropzones = wrapper.findAllComponents(FileDropzone);
-        expect(dropzones[2]!.props("modelValue")).toBeNull();
-        expect(dropzones[3]!.props("modelValue")).toBeNull();
-        expect(wrapper.text()).toContain("3 / 5");
+        expect(dropzones[0]!.props("modelValue")).toBeNull();
+        expect(dropzones[1]!.props("modelValue")).toBeNull();
+        expect(wrapper.text()).toContain("1 / 3");
     });
 });

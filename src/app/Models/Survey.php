@@ -6,9 +6,10 @@ use Database\Factories\SurveyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['executed_at', 'import_setting_name'])]
+#[Fillable(['executed_at', 'import_setting_name', 'includes_amazon_inventory', 'amazon_inventory_import_id'])]
 class Survey extends Model
 {
     /** @use HasFactory<SurveyFactory> */
@@ -26,11 +27,18 @@ class Survey extends Model
         return $this->hasMany(SurveyFile::class)->orderBy('file_type');
     }
 
+    /** @return BelongsTo<AmazonInventoryImport, $this> */
+    public function amazonImport(): BelongsTo
+    {
+        return $this->belongsTo(AmazonInventoryImport::class, 'amazon_inventory_import_id');
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'executed_at' => 'datetime',
+            'includes_amazon_inventory' => 'boolean',
         ];
     }
 }

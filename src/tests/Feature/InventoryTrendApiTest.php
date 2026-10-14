@@ -9,6 +9,8 @@ use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\InventoryTrendCsvExporter;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -153,6 +155,33 @@ class InventoryTrendApiTest extends TestCase
         $this->assertIsString($contents);
         $this->assertStringContainsString('A-1001-M,', $contents);
         $this->assertStringContainsString(',12,1,30,1,1,1', $contents);
+    }
+
+    public function test_three_file_survey_does_not_replace_amazon_api_history_or_report_unmeasured_totals(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'A-1001']);
+        Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
+        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', bossOwn: 7, bossRfc: 2);
+        Survey::query()->update(['includes_amazon_inventory' => false]);
+        $this->apiSnapshot('2026-09-27 09:00:00', 'A-1001', 'A-1001-M', 4, 6);
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=amazon')
+            ->assertOk()
+            ->assertJsonPath('data.series.0.points.0.quantity', 10)
+            ->assertJsonPath('data.series.0.points.0.source', 'sp_api');
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=boss')
+            ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', 9);
+        foreach (['mallTotal', 'grandTotal'] as $scope) {
+            $this->getJson("/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope={$scope}")
+                ->assertOk()->assertJsonCount(0, 'data.series');
+        }
+
+        $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        $this->assertCount(1, $rows);
+        $this->assertNull($rows[0]['amazonOwn']);
+        $this->assertNull($rows[0]['amazonFba']);
+        $this->assertSame(7, $rows[0]['bossOwn']);
     }
 
     public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void
