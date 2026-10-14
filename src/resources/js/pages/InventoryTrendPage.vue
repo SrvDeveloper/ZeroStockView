@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { exportInventoryTrend, fetchInventoryTrend, fetchInventoryTrendProducts, type InventoryScope, type InventoryTrendProduct, type InventoryTrendSeries } from "@/api/inventoryTrends";
+import {
+    exportInventoryTrend,
+    fetchInventoryTrend,
+    fetchInventoryTrendProducts,
+    type InventoryScope,
+    type InventoryTrendDailySource,
+    type InventoryTrendProduct,
+    type InventoryTrendSeries,
+} from "@/api/inventoryTrends";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
 import InventoryTrendMiniChart from "@/components/inventory/InventoryTrendMiniChart.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
@@ -57,6 +65,7 @@ const activePreset = ref<14 | 30 | 90 | 365 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
+const dailySources = ref<InventoryTrendDailySource[]>([]);
 const productPickerOpen = ref(false);
 const pendingProductCode = ref("");
 const productBrandFilter = ref<string | null>(null);
@@ -225,9 +234,11 @@ async function loadTrend() {
         });
         if (requestId !== trendRequestId) return;
         rawSeries.value = response.series;
+        dailySources.value = response.dailySources;
     } catch {
         if (requestId !== trendRequestId) return;
         rawSeries.value = [];
+        dailySources.value = [];
         trendError.value = "在庫推移の読み込みに失敗しました。時間をおいて再度お試しください。";
     } finally {
         if (requestId === trendRequestId) trendLoading.value = false;
@@ -260,6 +271,18 @@ function addDays(date: string, amount: number): string {
 
 function formatTargetDate(date: string): string {
     return date.replaceAll("-", "/");
+}
+
+function formatBasisAt(value: string): string {
+    return new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).format(new Date(value));
 }
 
 function formatSummaryQuantity(quantity: number | null): string {
@@ -326,7 +349,7 @@ function updateTargetEnd(event: Event) {
 }
 
 async function exportCsv(scope: "selected" | "all") {
-    if (!targetStart.value || !targetEnd.value || (scope === "selected" && !productCode.value)) return;
+    if (!targetStart.value || !targetEnd.value || (scope === "selected" && (!productCode.value || !selectedProduct.value?.hasSurveyHistory))) return;
     exportLoading.value = scope;
     exportError.value = "";
     try {
@@ -360,10 +383,10 @@ async function exportCsv(scope: "selected" | "all") {
                     variant="secondary"
                     icon="download"
                     :loading="exportLoading === 'selected'"
-                    :disabled="!productCode || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
+                    :disabled="!productCode || !selectedProduct?.hasSurveyHistory || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
                     @click="exportCsv('selected')"
                 >
-                    選択品番をCSV出力
+                    選択品番の手動調査CSV
                 </BaseButton>
                 <BaseButton
                     data-testid="inventory-trend-export-all"
@@ -373,10 +396,12 @@ async function exportCsv(scope: "selected" | "all") {
                     :disabled="!targetStart || !targetEnd || trendLoading || exportLoading !== null"
                     @click="exportCsv('all')"
                 >
-                    全品番をCSV出力
+                    全品番の手動調査CSV
                 </BaseButton>
             </div>
         </div>
+
+        <p class="text-xs text-slate-500">CSVは手動調査の日次全倉庫データです。SP-API履歴は含みません。</p>
 
         <BaseAlert v-if="exportError" tone="danger" title="日次在庫を出力できませんでした">{{ exportError }}</BaseAlert>
 
@@ -458,6 +483,10 @@ async function exportCsv(scope: "selected" | "all") {
                 </div>
             </div>
         </BaseCard>
+
+        <p v-if="inventoryScope === 'mallTotal' || inventoryScope === 'grandTotal'" data-testid="survey-scope-note" class="text-sm text-slate-600">
+            この区分は同じ手動調査の在庫だけを合算しています。SP-API履歴は含みません。
+        </p>
 
         <BaseModal :open="productPickerOpen" title="対象品番を選択" description="ブランドやキーワードで対象品番を絞り込めます。" width="lg" @close="closeProductPicker">
             <div class="flex flex-col gap-4">
@@ -587,6 +616,28 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
             <div v-else class="overflow-x-auto pb-1">
                 <InventoryTrendChart :series="productChartSeries" display-mode="bar" :stockout-series="productStockoutSeries" />
+            </div>
+        </BaseCard>
+
+        <BaseCard
+            v-if="inventoryScope === 'amazon' && dailySources.length > 0 && !trendLoading && !trendError"
+            title="Amazon在庫の取得元"
+            description="日付ごとに採用した在庫の取得元と基準日時（日本時間）です。データがない日は表示しません。"
+            :padded="false"
+        >
+            <div class="max-h-72 overflow-auto">
+                <table data-testid="amazon-daily-sources" class="w-full min-w-120 text-left text-sm">
+                    <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
+                        <tr><th class="px-5 py-3 font-medium">日付</th><th class="px-4 py-3 font-medium">取得元</th><th class="px-5 py-3 font-medium">基準日時（日本時間）</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <tr v-for="dailySource in dailySources" :key="dailySource.date" :data-source-date="dailySource.date">
+                            <td class="px-5 py-2">{{ formatTargetDate(dailySource.date) }}</td>
+                            <td class="px-4 py-2">{{ dailySource.source === "sp_api" ? "SP-API" : "手動調査" }}</td>
+                            <td class="px-5 py-2">{{ formatBasisAt(dailySource.basisAt) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </BaseCard>
 

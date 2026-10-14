@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListInventoryTrendProductsRequest;
 use App\Http\Requests\ShowInventoryTrendRequest;
+use App\Models\AmazonInventoryImport;
+use App\Models\AmazonInventorySnapshot;
 use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
@@ -20,8 +22,12 @@ class InventoryTrendController extends Controller
 {
     public function products(ListInventoryTrendProductsRequest $request): JsonResponse
     {
-        $eligibleCodes = SurveyProduct::query()->select('product_code')->distinct();
-        $baseQuery = Product::query()->whereIn('product_code', $eligibleCodes);
+        $surveyCodes = SurveyProduct::query()->select('product_code')->distinct();
+        $apiCodes = AmazonInventorySnapshot::query()->select('product_code')->distinct()
+            ->whereHas('import', fn ($query) => $query->where('status', 'succeeded'));
+        $baseQuery = Product::query()->where(fn ($query) => $query
+            ->whereIn('product_code', $surveyCodes)
+            ->orWhereIn('product_code', $apiCodes));
         $brands = (clone $baseQuery)->orderBy('brand')->distinct()->pluck('brand')->values();
         $data = $request->validated();
 
@@ -38,10 +44,19 @@ class InventoryTrendController extends Controller
             ->withCount('skus')
             ->orderBy('product_code')
             ->get();
+        $surveyProductCodes = SurveyProduct::query()->whereIn('product_code', $products->pluck('product_code'))
+            ->distinct()->pluck('product_code')->flip();
 
         $dateQuery = Survey::query()->whereHas('products');
-        $availableFrom = (clone $dateQuery)->min('executed_at');
-        $availableTo = (clone $dateQuery)->max('executed_at');
+        $apiDateQuery = AmazonInventoryImport::query()->where('status', 'succeeded')->whereHas('snapshots');
+        $firstDates = array_filter([
+            (clone $dateQuery)->min('executed_at'),
+            (clone $apiDateQuery)->min('snapshot_date'),
+        ]);
+        $lastDates = array_filter([
+            (clone $dateQuery)->max('executed_at'),
+            (clone $apiDateQuery)->max('snapshot_date'),
+        ]);
 
         return response()->json([
             'data' => $products->map(fn (Product $product): array => [
@@ -49,11 +64,12 @@ class InventoryTrendController extends Controller
                 'brand' => $product->brand,
                 'category' => $product->category,
                 'skuCount' => $product->skus_count,
+                'hasSurveyHistory' => $surveyProductCodes->has($product->product_code),
             ])->values(),
             'brands' => $brands,
-            'dateRange' => $availableFrom && $availableTo ? [
-                'from' => CarbonImmutable::parse($availableFrom)->toDateString(),
-                'to' => CarbonImmutable::parse($availableTo)->toDateString(),
+            'dateRange' => $firstDates && $lastDates ? [
+                'from' => CarbonImmutable::parse(min($firstDates))->toDateString(),
+                'to' => CarbonImmutable::parse(max($lastDates))->toDateString(),
             ] : null,
         ]);
     }
@@ -75,6 +91,15 @@ class InventoryTrendController extends Controller
             ->orderBy('id')
             ->get()
             ->keyBy(fn (Survey $survey): string => $survey->executed_at->toDateString());
+        $dailyImports = $scope === 'amazon' ? AmazonInventoryImport::query()
+            ->where('status', 'succeeded')
+            ->whereBetween('snapshot_date', [$from->toDateString(), $to->toDateString()])
+            ->whereHas('snapshots', fn ($query) => $query->where('product_code', $productCode))
+            ->with(['snapshots' => fn ($query) => $query->where('product_code', $productCode)])
+            ->orderBy('basis_at')->orderBy('completed_at')->orderBy('id')->get()
+            ->keyBy(fn (AmazonInventoryImport $import): string => $import->snapshot_date->toDateString()) : collect();
+        $currentProduct = Product::query()->where('product_code', $productCode)->with('skus')->first();
+        $currentSkus = $currentProduct?->skus->keyBy('sku_code');
 
         $dates = collect();
         for ($date = $from->startOfDay(); $date->lte($to); $date = $date->addDay()) {
@@ -83,20 +108,51 @@ class InventoryTrendController extends Controller
         $skuMetadata = [];
         $quantities = [];
         $productSnapshot = null;
+        $dailySources = [];
 
-        foreach ($dailySurveys as $date => $survey) {
-            $productSnapshot = $survey->products->first();
-            if ($productSnapshot === null) {
+        foreach ($dates as $date) {
+            $survey = $dailySurveys->get($date);
+            $import = $dailyImports->get($date);
+            if ($import !== null && $this->preferImport($import, $survey)) {
+                $basisAt = $import->basis_at->toIso8601String();
+                $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt];
+                foreach ($import->snapshots as $snapshot) {
+                    $currentSku = $currentSkus?->get($snapshot->sku_code);
+                    $skuMetadata[$snapshot->sku_code] = [
+                        'skuCode' => $snapshot->sku_code,
+                        'size' => $currentSku?->tq_size ?? '',
+                        'sortOrder' => $currentSku?->sort_order ?? PHP_INT_MAX,
+                    ];
+                    $quantities[$snapshot->sku_code][$date] = [
+                        'quantity' => $snapshot->amazon_own_stock + $snapshot->amazon_fba_stock,
+                        'source' => 'sp_api',
+                        'basisAt' => $basisAt,
+                    ];
+                }
+
                 continue;
             }
 
-            foreach ($productSnapshot->skus as $sku) {
+            $selectedProductSnapshot = $survey?->products->first();
+            if ($selectedProductSnapshot === null) {
+                continue;
+            }
+            $productSnapshot = $selectedProductSnapshot;
+            $basisAt = $survey->executed_at->toIso8601String();
+            if ($scope === 'amazon') {
+                $dailySources[] = ['date' => $date, 'source' => 'survey', 'basisAt' => $basisAt];
+            }
+            foreach ($selectedProductSnapshot->skus as $sku) {
                 $skuMetadata[$sku->sku_code] = [
                     'skuCode' => $sku->sku_code,
                     'size' => $sku->tq_size,
                     'sortOrder' => $sku->sort_order,
                 ];
-                $quantities[$sku->sku_code][$date] = $this->quantity($sku, $scope);
+                $quantities[$sku->sku_code][$date] = [
+                    'quantity' => $this->quantity($sku, $scope),
+                    'source' => 'survey',
+                    'basisAt' => $basisAt,
+                ];
             }
         }
 
@@ -104,22 +160,24 @@ class InventoryTrendController extends Controller
 
         return response()->json([
             'data' => [
-                'product' => $productSnapshot ? [
-                    'productCode' => $productSnapshot->product_code,
-                    'brand' => $productSnapshot->brand,
-                    'category' => $productSnapshot->category,
+                'product' => $productSnapshot || $currentProduct ? [
+                    'productCode' => $productCode,
+                    'brand' => $productSnapshot?->brand ?? $currentProduct?->brand,
+                    'category' => $productSnapshot?->category ?? $currentProduct?->category,
                 ] : null,
                 'scope' => $scope,
                 'from' => $data['from'],
                 'to' => $data['to'],
                 'dates' => $dates,
+                'dailySources' => $dailySources,
                 'series' => collect($skuMetadata)->map(fn (array $metadata, string $skuCode): array => [
                     'skuCode' => $metadata['skuCode'],
                     'size' => $metadata['size'],
-                    'points' => $dates->map(fn (string $date): array => [
-                        'date' => $date,
-                        'quantity' => $quantities[$skuCode][$date] ?? null,
-                    ])->values(),
+                    'points' => $dates->map(fn (string $date): array => ['date' => $date] + ($quantities[$skuCode][$date] ?? [
+                        'quantity' => null,
+                        'source' => null,
+                        'basisAt' => null,
+                    ]))->values(),
                 ])->values(),
             ],
         ]);
@@ -158,5 +216,18 @@ class InventoryTrendController extends Controller
             'grandTotal' => $amazon + $boss + $sku->free_stock + $sku->ec_stock,
             default => $amazon + $boss,
         };
+    }
+
+    private function preferImport(AmazonInventoryImport $import, ?Survey $survey): bool
+    {
+        if ($survey === null) {
+            return true;
+        }
+
+        if (! $import->basis_at->equalTo($survey->executed_at)) {
+            return $import->basis_at->greaterThan($survey->executed_at);
+        }
+
+        return ($import->completed_at ?? $import->created_at)->greaterThanOrEqualTo($survey->created_at);
     }
 }

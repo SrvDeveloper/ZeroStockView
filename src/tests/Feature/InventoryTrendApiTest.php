@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AmazonInventoryImport;
 use App\Models\Product;
 use App\Models\Sku;
 use App\Models\Survey;
@@ -82,6 +83,76 @@ class InventoryTrendApiTest extends TestCase
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=amazon')
             ->assertOk()
             ->assertJsonPath('data.series.0.points.0.quantity', 10);
+    }
+
+    public function test_api_only_product_is_available_in_amazon_trends_but_not_in_survey_csv(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'API-ONLY', 'brand' => 'API BRAND']);
+        Sku::factory()->for($product)->create(['sku_code' => 'API-ONLY-M', 'tq_size' => 'M', 'sort_order' => 1]);
+        $this->apiSnapshot('2026-09-27 09:00:00', 'API-ONLY', 'API-ONLY-M', 4, 6);
+        $this->apiSnapshot('2026-09-26 18:00:00', 'FAILED', 'FAILED-M', 80, 90, 'failed');
+        $this->assertSame('2026-09-27', AmazonInventoryImport::query()->first()->snapshot_date->toDateString());
+
+        $this->getJson('/api/inventory-trends/products')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.productCode', 'API-ONLY')
+            ->assertJsonPath('data.0.hasSurveyHistory', false)
+            ->assertJsonPath('dateRange.from', '2026-09-27');
+
+        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=amazon')
+            ->assertOk()
+            ->assertJsonPath('data.product.brand', 'API BRAND')
+            ->assertJsonPath('data.series.0.size', 'M')
+            ->assertJsonPath('data.series.0.points.0.quantity', 10)
+            ->assertJsonPath('data.series.0.points.0.source', 'sp_api')
+            ->assertJsonPath('data.dailySources.0.source', 'sp_api');
+
+        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=grandTotal')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.series');
+        $this->getJson('/api/inventory-trends/export?product_code=API-ONLY&from=2026-09-27&to=2026-09-27')
+            ->assertUnprocessable()->assertJsonValidationErrors('product_code');
+    }
+
+    public function test_amazon_trends_select_the_latest_basis_per_day_without_changing_other_scopes_or_csv(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'A-1001']);
+        Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
+        $this->snapshot('2026-09-27 10:00:00', 'A-1001', 'A-1001-M', amazonOwn: 11, bossOwn: 20);
+        $this->snapshot('2026-09-28 10:00:00', 'A-1001', 'A-1001-M', amazonOwn: 12, bossOwn: 30);
+        $this->snapshot('2026-09-30 10:00:00', 'A-1001', 'A-1001-M', amazonOwn: 13, bossOwn: 40);
+        $this->apiSnapshot('2026-09-27 09:00:00', 'A-1001', 'A-1001-M', 1, 1);
+        $this->apiSnapshot('2026-09-28 18:00:00', 'A-1001', 'A-1001-M', 2, 3);
+        $this->apiSnapshot('2026-09-29 19:00:00', 'A-1001', 'A-1001-M', 6, 7, completedAt: '2026-09-29 20:00:00');
+        $this->apiSnapshot('2026-09-29 18:00:00', 'A-1001', 'A-1001-M', 50, 60, completedAt: '2026-09-29 21:00:00');
+        $this->apiSnapshot('2026-09-30 20:00:00', 'A-1001', 'A-1001-M', 90, 90, 'failed');
+
+        $amazon = $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-30&scope=amazon')
+            ->assertOk()
+            ->assertJsonPath('data.series.0.points.0.quantity', 12)
+            ->assertJsonPath('data.series.0.points.1.quantity', 5)
+            ->assertJsonPath('data.series.0.points.2.quantity', 13)
+            ->assertJsonPath('data.series.0.points.3.quantity', 14)
+            ->assertJsonPath('data.dailySources.0.source', 'survey')
+            ->assertJsonPath('data.dailySources.1.source', 'sp_api')
+            ->assertJsonPath('data.dailySources.2.source', 'sp_api')
+            ->assertJsonPath('data.dailySources.3.source', 'survey');
+        $this->assertNotEmpty($amazon->json('data.dailySources.1.basisAt'));
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-30&scope=grandTotal')
+            ->assertOk()
+            ->assertJsonPath('data.series.0.points.1.quantity', 46)
+            ->assertJsonPath('data.series.0.points.2.quantity', null);
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-30&scope=boss')
+            ->assertOk()->assertJsonPath('data.series.0.points.1.quantity', 31);
+
+        $contents = file_get_contents($this->get('/api/inventory-trends/export?product_code=A-1001&from=2026-09-28&to=2026-09-28')->baseResponse->getFile()->getPathname());
+        $this->assertIsString($contents);
+        $this->assertStringContainsString('A-1001-M,', $contents);
+        $this->assertStringContainsString(',12,1,30,1,1,1', $contents);
     }
 
     public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void
@@ -197,6 +268,32 @@ class InventoryTrendApiTest extends TestCase
             'boss_rfc_stock' => $bossRfc,
             'free_stock' => $free,
             'ec_stock' => $stock,
+        ]);
+    }
+
+    private function apiSnapshot(
+        string $basisAt,
+        string $productCode,
+        string $skuCode,
+        int $own,
+        int $fba,
+        string $status = 'succeeded',
+        ?string $completedAt = null,
+    ): void {
+        $import = AmazonInventoryImport::query()->create([
+            'status' => $status,
+            'trigger_source' => 'manual',
+            'basis_at' => $basisAt,
+            'snapshot_date' => substr($basisAt, 0, 10),
+            'completed_at' => $completedAt ?? $basisAt,
+        ]);
+        $import->snapshots()->create([
+            'product_code' => $productCode,
+            'sku_code' => $skuCode,
+            'asin' => 'B012345678',
+            'amazon_own_stock' => $own,
+            'amazon_fba_stock' => $fba,
+            'basis_at' => $basisAt,
         ]);
     }
 }
