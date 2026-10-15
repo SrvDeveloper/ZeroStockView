@@ -194,6 +194,10 @@ async function confirmDelete() {
                                 <td class="px-5 py-3 text-slate-600">{{ survey.files.length }}</td>
                                 <td class="px-5 py-3">
                                     <BaseBadge v-if="survey.id === latestId" tone="brand">最新</BaseBadge>
+                                    <BaseBadge v-if="survey.amazonInventoryStatus === 'pending'" tone="warning">Amazon取込待ち</BaseBadge>
+                                    <BaseBadge v-else-if="survey.amazonInventoryStatus === 'partial'" tone="warning">Amazon一部未取得</BaseBadge>
+                                    <BaseBadge v-else-if="survey.amazonInventoryStatus === 'complete'" tone="success">Amazon取込済み</BaseBadge>
+                                    <BaseBadge v-else-if="survey.amazonInventoryStatus === 'legacy_file'" tone="neutral">Amazon旧ファイル</BaseBadge>
                                 </td>
                                 <td class="px-5 py-3 text-right">
                                     <div class="flex justify-end gap-2">

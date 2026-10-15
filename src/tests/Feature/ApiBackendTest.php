@@ -330,7 +330,8 @@ class ApiBackendTest extends TestCase
         ]);
 
         $response->assertCreated()
-            ->assertJsonPath('data.amazonSource', null)
+            ->assertJsonPath('data.amazonSource', 'sp_api')
+            ->assertJsonPath('data.amazonInventoryStatus', 'pending')
             ->assertJsonPath('data.amazonBasisAt', null)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', null)
