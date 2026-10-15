@@ -33,6 +33,17 @@ class Survey extends Model
         return $this->belongsTo(AmazonInventoryImport::class, 'amazon_inventory_import_id');
     }
 
+    public function hasSavedAmazonInventory(): bool
+    {
+        if ($this->includes_amazon_inventory) {
+            return true;
+        }
+
+        return $this->products->contains(fn ($product): bool => $product->skus->contains(
+            fn ($sku): bool => $sku->amazon_own_stock > 0 || $sku->amazon_fba_stock > 0,
+        ));
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

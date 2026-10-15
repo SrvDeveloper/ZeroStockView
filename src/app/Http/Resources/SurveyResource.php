@@ -14,6 +14,7 @@ class SurveyResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $hasSavedAmazonInventory = $this->hasSavedAmazonInventory();
         $amazonSnapshots = $this->amazonImport?->snapshots->keyBy('sku_code') ?? collect();
 
         return [
@@ -21,9 +22,9 @@ class SurveyResource extends JsonResource
             'executedAt' => $this->executed_at->toISOString(),
             'createdAt' => $this->created_at->toISOString(),
             'importSettingName' => $this->import_setting_name,
-            'includesAmazonInventory' => $this->includes_amazon_inventory,
-            'amazonSource' => $this->includes_amazon_inventory ? 'survey' : ($this->amazonImport === null ? null : 'sp_api'),
-            'amazonBasisAt' => $this->includes_amazon_inventory ? $this->executed_at->toISOString() : $this->amazonImport?->basis_at?->toISOString(),
+            'includesAmazonInventory' => $hasSavedAmazonInventory,
+            'amazonSource' => $hasSavedAmazonInventory ? 'survey' : ($this->amazonImport === null ? null : 'sp_api'),
+            'amazonBasisAt' => $hasSavedAmazonInventory ? $this->executed_at->toISOString() : $this->amazonImport?->basis_at?->toISOString(),
             'products' => $this->products->map(fn ($product): array => [
                 'id' => (string) $product->getKey(),
                 'productCode' => $product->product_code,
@@ -41,8 +42,8 @@ class SurveyResource extends JsonResource
                     'tqColorNo' => $sku->tq_color_no,
                     'tqSize' => $sku->tq_size,
                     'stock' => [
-                        'amazonOwn' => $this->includes_amazon_inventory ? $sku->amazon_own_stock : $amazonSnapshots->get($sku->sku_code)?->amazon_own_stock,
-                        'amazonFba' => $this->includes_amazon_inventory ? $sku->amazon_fba_stock : $amazonSnapshots->get($sku->sku_code)?->amazon_fba_stock,
+                        'amazonOwn' => $hasSavedAmazonInventory ? $sku->amazon_own_stock : $amazonSnapshots->get($sku->sku_code)?->amazon_own_stock,
+                        'amazonFba' => $hasSavedAmazonInventory ? $sku->amazon_fba_stock : $amazonSnapshots->get($sku->sku_code)?->amazon_fba_stock,
                         'bossOwn' => $sku->boss_own_stock,
                         'bossRfc' => $sku->boss_rfc_stock,
                         'freeStock' => $sku->free_stock,

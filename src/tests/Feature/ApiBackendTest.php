@@ -335,6 +335,14 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('data.amazonSource', 'survey')
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 4)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 7);
+
+        $survey->update(['includes_amazon_inventory' => false]);
+        $this->getJson('/api/surveys/'.$survey->id)
+            ->assertOk()
+            ->assertJsonPath('data.includesAmazonInventory', true)
+            ->assertJsonPath('data.amazonSource', 'survey')
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 4)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 7);
     }
 
     /** @return array<string, mixed> */

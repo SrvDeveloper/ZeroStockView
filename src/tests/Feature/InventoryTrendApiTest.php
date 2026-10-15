@@ -162,7 +162,7 @@ class InventoryTrendApiTest extends TestCase
         $this->actingAs(User::factory()->create());
         $product = Product::factory()->create(['product_code' => 'A-1001']);
         Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
-        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', bossOwn: 7, bossRfc: 2);
+        $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', amazonOwn: 0, amazonFba: 0, bossOwn: 7, bossRfc: 2);
         Survey::query()->update(['includes_amazon_inventory' => false]);
         $this->apiSnapshot('2026-09-27 09:00:00', 'A-1001', 'A-1001-M', 4, 6);
 

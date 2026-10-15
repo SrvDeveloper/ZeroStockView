@@ -84,7 +84,9 @@ class InventoryTrendController extends Controller
 
         $dailySurveys = Survey::query()
             ->whereBetween('executed_at', [$from, $to])
-            ->when(in_array($scope, ['amazon', 'mallTotal', 'grandTotal'], true), fn ($query) => $query->where('includes_amazon_inventory', true))
+            ->when(in_array($scope, ['amazon', 'mallTotal', 'grandTotal'], true), fn ($query) => $query->where(fn ($query) => $query
+                ->where('includes_amazon_inventory', true)
+                ->orWhereHas('products.skus', fn ($query) => $query->where('amazon_own_stock', '>', 0)->orWhere('amazon_fba_stock', '>', 0))))
             ->whereHas('products', fn ($query) => $query->where('product_code', $productCode))
             ->with(['products' => fn ($query) => $query->where('product_code', $productCode)->with('skus')])
             ->orderBy('executed_at')

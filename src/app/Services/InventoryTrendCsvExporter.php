@@ -65,8 +65,9 @@ class InventoryTrendCsvExporter
         $dailyProducts = [];
         foreach ($surveys as $survey) {
             $date = $survey->executed_at->toDateString();
+            $hasSavedAmazonInventory = $survey->hasSavedAmazonInventory();
             foreach ($survey->products as $product) {
-                $dailyProducts[$date][$product->product_code] = ['product' => $product, 'includes_amazon_inventory' => $survey->includes_amazon_inventory];
+                $dailyProducts[$date][$product->product_code] = ['product' => $product, 'includes_amazon_inventory' => $hasSavedAmazonInventory];
             }
         }
         ksort($dailyProducts);
