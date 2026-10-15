@@ -89,6 +89,23 @@ class SurveyPresentationTest extends TestCase
         $this->assertStringNotContainsString('<v>99</v>', $sheet);
     }
 
+    public function test_sku_without_asin_is_outside_amazon_scope_and_keeps_other_stock_totals(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $import = $this->import();
+        $survey = Survey::factory()->spApi()->create(['amazon_inventory_import_id' => $import->id]);
+        $product = SurveyProduct::factory()->for($survey)->create();
+        $this->sku($product, 'SKU-MATCHED', 2, 3);
+        $this->sku($product, 'SKU-NO-ASIN', null, null)->update(['child_asin' => null]);
+
+        $this->getJson('/api/surveys/'.$survey->id)
+            ->assertOk()
+            ->assertJsonPath('data.amazonInventoryStatus', 'complete')
+            ->assertJsonPath('data.products.0.skus.1.stock.amazonTotal', null)
+            ->assertJsonPath('data.products.0.skus.1.stock.mallTotal', 9)
+            ->assertJsonPath('data.products.0.skus.1.stock.grandTotal', 22);
+    }
+
     public function test_legacy_survey_retains_its_saved_amazon_values_and_source(): void
     {
         $this->actingAs(User::factory()->create());
@@ -144,6 +161,7 @@ class SurveyPresentationTest extends TestCase
     {
         return SurveySku::factory()->for($product, 'product')->create([
             'sku_code' => $code,
+            'child_asin' => 'B000000001',
             'sort_order' => $code === 'SKU-MATCHED' ? 1 : 2,
             'amazon_own_stock' => $own,
             'amazon_fba_stock' => $fba,
