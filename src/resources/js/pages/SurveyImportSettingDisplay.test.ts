@@ -1,4 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import axios from "axios";
 import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -321,7 +322,96 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
     });
 
-    it("shows Amazon import states in survey history", () => {
+    it("refreshes an open result after Amazon inventory succeeds and accepts a later same-day value", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].amazonInventoryStatus = "pending";
+        surveys.surveys[0].products = [
+            {
+                id: "product-1",
+                productCode: "A-1001",
+                brand: "A",
+                category: "A",
+                parentAsin: "PARENT",
+                memo: "",
+                skus: [
+                    {
+                        id: "sku-1",
+                        skuCode: "A-1001-M",
+                        colorName: "黒",
+                        size: "M",
+                        asin: "ASIN-1",
+                        tqCode: "TQ-1",
+                        tqColorNo: "01",
+                        tqSize: "M",
+                        memo: "",
+                        stock: { amazonOwn: null, amazonFba: null, bossOwn: 4, bossRfc: 0, freeStock: 0, ecStock: 0 },
+                    },
+                ],
+            },
+        ];
+        const first = JSON.parse(JSON.stringify(surveys.surveys[0]));
+        first.amazonInventoryStatus = "complete";
+        first.amazonBasisAt = "2026-09-16T02:00:00Z";
+        first.products[0].skus[0].stock.amazonOwn = 2;
+        first.products[0].skus[0].stock.amazonFba = 3;
+        const latest = JSON.parse(JSON.stringify(first));
+        latest.amazonBasisAt = "2026-09-16T04:00:00Z";
+        latest.products[0].skus[0].stock.amazonOwn = 0;
+        latest.products[0].skus[0].stock.amazonFba = 0;
+        const get = vi
+            .spyOn(axios, "get")
+            .mockResolvedValueOnce({ data: { data: first } })
+            .mockResolvedValueOnce({ data: { data: latest } });
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.text()).toContain("取込待ち");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
+        await wrapper.get('[data-testid="refresh-survey"]').trigger("click");
+        await flushPromises();
+        expect(get).toHaveBeenCalledWith("/api/surveys/1");
+        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("5");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("9");
+        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 02:00");
+
+        await wrapper.get('[data-testid="refresh-survey"]').trigger("click");
+        await flushPromises();
+        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("0");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("4");
+        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 04:00");
+        wrapper.unmount();
+        get.mockRestore();
+    });
+
+    it("checks an open SP-API result periodically and stops checking after leaving", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].amazonInventoryStatus = "pending";
+        let poll: (() => void) | undefined;
+        const interval = vi.spyOn(window, "setInterval").mockImplementation((handler) => {
+            poll = handler as () => void;
+            return 123;
+        });
+        const clear = vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
+        const refresh = vi.spyOn(surveys, "refreshSurvey").mockImplementation(async () => {
+            surveys.surveys[0].amazonInventoryStatus = "complete";
+            surveys.surveys[0].amazonBasisAt = "2026-09-16T02:00:00Z";
+            return surveys.surveys[0];
+        });
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(interval).toHaveBeenCalledWith(expect.any(Function), 30000);
+        poll?.();
+        await flushPromises();
+        expect(refresh).toHaveBeenCalledWith("1");
+        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 02:00");
+        wrapper.unmount();
+        expect(clear).toHaveBeenCalledWith(123);
+        interval.mockRestore();
+        clear.mockRestore();
+    });
+
+    it("shows Amazon import states in survey history and refreshes the basis time", async () => {
         const surveys = useSurveysStore();
         surveys.surveys = [
             { id: "pending", executedAt: "2026-09-18T12:00:00Z", importSettingName: "A", amazonInventoryStatus: "pending", products: [], files: [] },
@@ -335,6 +425,15 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-survey-id=partial]").text()).toContain("Amazon一部未取得");
         expect(wrapper.get("[data-survey-id=complete]").text()).toContain("Amazon取込済み");
         expect(wrapper.get("[data-survey-id=legacy]").text()).toContain("Amazon旧ファイル");
+        const load = vi.spyOn(surveys, "load").mockImplementation(async () => {
+            surveys.surveys[0].amazonInventoryStatus = "complete";
+            surveys.surveys[0].amazonBasisAt = "2026-09-18T10:00:00Z";
+        });
+        await wrapper.get('[data-testid="refresh-history"]').trigger("click");
+        await flushPromises();
+        expect(load).toHaveBeenCalledOnce();
+        expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon取込済み");
+        expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon基準: 2026/09/18 10:00");
     });
     it("dims Amazon stock when the SKU has no child ASIN", () => {
         const surveys = useSurveysStore();

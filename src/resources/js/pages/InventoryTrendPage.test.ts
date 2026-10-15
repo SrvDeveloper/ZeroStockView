@@ -120,7 +120,7 @@ describe("InventoryTrendPage", () => {
                         })),
                     },
                 ];
-                response.dailySources = [{ date: "2026-09-28", source: "sp_api", basisAt: "2026-09-28T09:00:00+09:00" }];
+                response.dailySources = [{ date: "2026-09-28", source: "sp_api", basisAt: "2026-09-28T09:00:00+09:00", amazonInventoryStatus: "complete" }];
             }
             return response;
         });
@@ -136,9 +136,37 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.get('[data-testid="inventory-trend-export"]').attributes("disabled")).toBeDefined();
         expect(wrapper.get('[data-source-date="2026-09-28"]').text()).toContain("SP-API");
+        expect(wrapper.get('[data-source-date="2026-09-28"]').text()).toContain("取込済み");
         expect(wrapper.get('[data-source-date="2026-09-28"]').text()).toContain("2026/09/28 09:00");
         expect(wrapper.get('[data-summary-sku="API-ONLY-M"]').text()).toContain("7点");
         expect(wrapper.find('[data-testid="survey-scope-note"]').exists()).toBe(false);
+    });
+
+    it("shows pending, partial and legacy states and refreshes the daily Amazon source", async () => {
+        let refreshed = false;
+        const wrapper = mountPage((params) => {
+            const response = trendResponse(params);
+            if (params.scope === "amazon") {
+                response.dailySources = [
+                    { date: "2026-09-26", source: "survey", basisAt: "2026-09-26T10:00:00+09:00", amazonBasisAt: null, amazonInventoryStatus: refreshed ? "complete" : "pending" },
+                    { date: "2026-09-27", source: "survey", basisAt: "2026-09-27T10:00:00+09:00", amazonBasisAt: "2026-09-27T09:00:00+09:00", amazonInventoryStatus: "partial" },
+                    { date: "2026-09-28", source: "survey", basisAt: "2026-09-28T10:00:00+09:00", amazonBasisAt: "2026-09-28T10:00:00+09:00", amazonInventoryStatus: "legacy_file" },
+                ];
+            }
+            return response;
+        });
+        await flushPromises();
+        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
+        await flushPromises();
+
+        expect(wrapper.get('[data-source-date="2026-09-26"]').text()).toContain("取込待ち");
+        expect(wrapper.get('[data-source-date="2026-09-26"]').text()).toContain("未確定");
+        expect(wrapper.get('[data-source-date="2026-09-27"]').text()).toContain("一部SKU未取得");
+        expect(wrapper.get('[data-source-date="2026-09-28"]').text()).toContain("旧ファイル");
+        refreshed = true;
+        await wrapper.get('[data-testid="refresh-trend"]').trigger("click");
+        await flushPromises();
+        expect(wrapper.get('[data-source-date="2026-09-26"]').text()).toContain("取込済み");
     });
 
     it("shows the daily inventory trends for every SKU", async () => {

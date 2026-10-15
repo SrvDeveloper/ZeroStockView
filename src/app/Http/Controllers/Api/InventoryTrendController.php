@@ -115,7 +115,7 @@ class InventoryTrendController extends Controller
             $import = $dailyImports->get($date);
             if ($survey === null && $import !== null && $import->snapshots->isNotEmpty()) {
                 $basisAt = $import->basis_at->toIso8601String();
-                $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt, 'amazonBasisAt' => $basisAt];
+                $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt, 'amazonBasisAt' => $basisAt, 'amazonInventoryStatus' => 'complete'];
                 foreach ($import->snapshots as $snapshot) {
                     $currentSku = $currentSkus?->get($snapshot->sku_code);
                     $skuMetadata[$snapshot->sku_code] = [
@@ -146,6 +146,7 @@ class InventoryTrendController extends Controller
                 'amazonBasisAt' => $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API
                     ? $survey->amazonImport?->basis_at?->toIso8601String()
                     : ($survey->hasSavedAmazonInventory() ? $basisAt : null),
+                'amazonInventoryStatus' => $survey->amazonInventoryStatus(),
             ];
             foreach ($selectedProductSnapshot->skus as $sku) {
                 $skuMetadata[$sku->sku_code] = [

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from "axios";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
@@ -28,6 +28,34 @@ const survey = computed(() => surveysStore.getSurvey(props.id));
 const includesAmazonInventory = computed(() => survey.value?.includesAmazonInventory !== false);
 const hasAmazonStock = computed(() => includesAmazonInventory.value || survey.value?.amazonSource === "sp_api");
 const amazonStatus = computed(() => survey.value?.amazonInventoryStatus ?? (survey.value?.amazonSource === "sp_api" ? (survey.value.amazonBasisAt ? "complete" : "pending") : "legacy_file"));
+const refreshingSurvey = ref(false);
+const refreshError = ref("");
+let refreshTimer: number | undefined;
+watch(
+    [() => props.id, () => survey.value?.amazonSource],
+    ([, source]) => {
+        if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
+        refreshTimer = undefined;
+        if (source === "sp_api") {
+            if (surveysStore.loaded) void refreshSurvey();
+            refreshTimer = window.setInterval(() => void refreshSurvey(), 30000);
+        }
+    },
+    { immediate: true },
+);
+
+async function refreshSurvey() {
+    if (refreshingSurvey.value) return;
+    refreshingSurvey.value = true;
+    try {
+        await surveysStore.refreshSurvey(props.id);
+        refreshError.value = "";
+    } catch {
+        refreshError.value = "調査結果を更新できませんでした。再読み込みしてください。";
+    } finally {
+        refreshingSurvey.value = false;
+    }
+}
 const isLatest = computed(() => surveysStore.latestSurvey?.id === props.id);
 const rerunSettingId = ref<string | null>(null);
 const rerunMenuOpen = ref(false);
@@ -72,6 +100,7 @@ onBeforeUnmount(() => {
     window.removeEventListener("keydown", updateControlKeyState);
     window.removeEventListener("keyup", updateControlKeyState);
     window.removeEventListener("blur", clearControlKeyState);
+    if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
 const ZERO_STOCK_BUTTONS = [
@@ -281,6 +310,7 @@ async function exportExcel(scope: "all" | "filtered") {
                     <BaseBadge v-if="isLatest" tone="brand">最新</BaseBadge>
                 </div>
                 <div class="flex flex-wrap gap-2">
+                    <BaseButton data-testid="refresh-survey" variant="secondary" icon="refresh" :loading="refreshingSurvey" @click="refreshSurvey">最新の在庫を再読込</BaseButton>
                     <BaseButton data-testid="rerun-menu-button" variant="secondary" icon="compare_arrows" :disabled="!hasReusableFiles" :aria-expanded="rerunMenuOpen" @click="rerunMenuOpen = true"
                         >別の取込設定で再照合</BaseButton
                     >
@@ -296,8 +326,9 @@ async function exportExcel(scope: "all" | "filtered") {
                 </p>
             </div>
         </div>
+        <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
         <p v-if="!hasReusableFiles" class="text-xs text-slate-400">取込ファイルが削除されているため、再照合機能は利用できません。</p>
-        <p v-if="amazonStatus === 'pending'" class="text-sm text-slate-500">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。</p>
+        <p v-if="amazonStatus === 'pending'" class="text-sm text-slate-500">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
         <p v-else-if="amazonStatus === 'partial'" class="text-sm text-slate-500">
             Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}
         </p>

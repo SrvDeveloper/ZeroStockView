@@ -16,6 +16,21 @@ import { formatDateTime } from "@/utils/format";
 const router = useRouter();
 const surveys = useSurveysStore();
 const toast = useUiStore();
+const refreshing = ref(false);
+const refreshError = ref("");
+
+async function refreshHistory() {
+    if (refreshing.value) return;
+    refreshing.value = true;
+    try {
+        await surveys.load();
+        refreshError.value = "";
+    } catch {
+        refreshError.value = "調査履歴を更新できませんでした。再読み込みしてください。";
+    } finally {
+        refreshing.value = false;
+    }
+}
 
 const PER_PAGE = 10;
 const page = ref(1);
@@ -109,12 +124,16 @@ async function confirmDelete() {
 
 <template>
     <div class="flex flex-col gap-6">
-        <div>
-            <h1 class="text-xl font-semibold text-slate-900">在庫調査履歴</h1>
-            <p class="mt-1 text-sm text-slate-500">
-                調査結果を新しい順に一覧表示します。履歴は削除するまで保持されます。全{{ allList.length }}件<span v-if="hasActiveFilters">中{{ list.length }}件を表示</span>。
-            </p>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h1 class="text-xl font-semibold text-slate-900">在庫調査履歴</h1>
+                <p class="mt-1 text-sm text-slate-500">
+                    調査結果を新しい順に一覧表示します。履歴は削除するまで保持されます。全{{ allList.length }}件<span v-if="hasActiveFilters">中{{ list.length }}件を表示</span>。
+                </p>
+            </div>
+            <BaseButton data-testid="refresh-history" variant="secondary" icon="refresh" :loading="refreshing" @click="refreshHistory">最新の在庫を再読込</BaseButton>
         </div>
+        <p v-if="refreshError" class="text-sm text-rose-600">{{ refreshError }}</p>
 
         <BaseCard v-if="allList.length === 0" :padded="false">
             <BaseEmpty icon="history" title="調査履歴がありません" />
@@ -198,6 +217,7 @@ async function confirmDelete() {
                                     <BaseBadge v-else-if="survey.amazonInventoryStatus === 'partial'" tone="warning">Amazon一部未取得</BaseBadge>
                                     <BaseBadge v-else-if="survey.amazonInventoryStatus === 'complete'" tone="success">Amazon取込済み</BaseBadge>
                                     <BaseBadge v-else-if="survey.amazonInventoryStatus === 'legacy_file'" tone="neutral">Amazon旧ファイル</BaseBadge>
+                                    <span v-if="survey.amazonBasisAt" class="mt-1 block text-xs text-slate-500">Amazon基準: {{ formatDateTime(survey.amazonBasisAt) }}</span>
                                 </td>
                                 <td class="px-5 py-3 text-right">
                                     <div class="flex justify-end gap-2">

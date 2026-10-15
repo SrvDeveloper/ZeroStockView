@@ -28,6 +28,13 @@ export const useSurveysStore = defineStore("surveys", {
         getSurvey(id: string): Survey | undefined {
             return this.surveys.find((s) => s.id === id);
         },
+        async refreshSurvey(id: string): Promise<Survey> {
+            const { data } = await axios.get<{ data: Survey }>(`/api/surveys/${id}`);
+            const index = this.surveys.findIndex((survey) => survey.id === id);
+            if (index === -1) this.surveys.push(data.data);
+            else this.surveys.splice(index, 1, data.data);
+            return data.data;
+        },
         async runImport(formData: FormData): Promise<Survey> {
             const { data } = await axios.post<{ data: Survey }>("/api/surveys", formData);
             const survey = data.data;
