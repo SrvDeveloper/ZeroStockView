@@ -2,12 +2,12 @@
 
 namespace App\Services;
 
-use App\Models\AmazonInventoryImport;
 use App\Models\ImportSetting;
 use App\Models\Survey;
 use Carbon\CarbonInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -21,7 +21,10 @@ class InventoryImportService
         'free_stock' => '在庫一覧照会表',
     ];
 
-    public function __construct(private CrossWalkerClient $crossWalker) {}
+    public function __construct(
+        private CrossWalkerClient $crossWalker,
+        private SurveyAmazonInventorySyncService $amazonSync,
+    ) {}
 
     public function reimport(Survey $source, ImportSetting $setting): Survey
     {
@@ -45,24 +48,16 @@ class InventoryImportService
             );
         }
 
-        return $this->import($files, $setting, $source->executed_at, $source->amazon_inventory_import_id);
+        return $this->import($files, $setting, $source->executed_at);
     }
 
     /**
      * @param  array<string, UploadedFile>  $files
      * @param  CarbonInterface|null  $executedAt  在庫データの基準日時。新規取込では現在日時、再照合では元の調査日時を使用する。
      */
-    public function import(array $files, ImportSetting $setting, ?CarbonInterface $executedAt = null, ?int $amazonImportId = null): Survey
+    public function import(array $files, ImportSetting $setting, ?CarbonInterface $executedAt = null): Survey
     {
         $basisAt = $executedAt ?? now();
-        if ($executedAt === null) {
-            $amazonImportId = AmazonInventoryImport::query()
-                ->where('status', 'succeeded')
-                ->where('basis_at', '<=', $basisAt)
-                ->orderByDesc('basis_at')
-                ->orderByDesc('id')
-                ->value('id');
-        }
 
         $targets = $setting->targets()
             ->with('product.skus')
@@ -84,8 +79,8 @@ class InventoryImportService
         $skus = $targets->pluck('product.skus')->flatten();
         $stocks = $skus->mapWithKeys(fn ($sku): array => [
             $sku->sku_code => [
-                'amazon_own_stock' => 0,
-                'amazon_fba_stock' => 0,
+                'amazon_own_stock' => null,
+                'amazon_fba_stock' => null,
                 'boss_own_stock' => 0,
                 'boss_rfc_stock' => 0,
                 'free_stock' => 0,
@@ -105,13 +100,13 @@ class InventoryImportService
         $storedFiles = [];
 
         try {
-            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, $basisAt, $amazonImportId, &$storedFiles): Survey {
+            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, $basisAt, &$storedFiles): Survey {
                 $survey = Survey::query()->create([
                     'executed_at' => $basisAt,
                     'import_setting_name' => $setting->name,
                     'includes_amazon_inventory' => false,
                     'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
-                    'amazon_inventory_import_id' => $amazonImportId,
+                    'amazon_inventory_import_id' => null,
                 ]);
 
                 foreach ($targets as $target) {
@@ -165,6 +160,8 @@ class InventoryImportService
                     ]);
                 }
 
+                $this->amazonSync->syncSurvey($survey->id);
+
                 return $survey;
             });
         } catch (\Throwable $exception) {
@@ -172,11 +169,21 @@ class InventoryImportService
             throw $exception;
         }
 
-        return $survey->load(['products.skus', 'files', 'amazonImport.snapshots']);
+        try {
+            // Catch an import that finished while the survey transaction was committing.
+            $this->amazonSync->syncSurvey($survey->id);
+        } catch (\Throwable $exception) {
+            Log::error('調査保存後のAmazon在庫再同期に失敗しました。', [
+                'survey_id' => $survey->id,
+                'reason' => $exception->getMessage(),
+            ]);
+        }
+
+        return $survey->refresh()->load(['products.skus', 'files', 'amazonImport.snapshots']);
     }
 
     /**
-     * @param  array<string, array<string, int>>  $stocks
+     * @param  array<string, array<string, int|null>>  $stocks
      * @param  array<string, string>  $skuLookup
      */
     private function applyBoss(array &$stocks, array $skuLookup, UploadedFile $file): void
@@ -210,7 +217,7 @@ class InventoryImportService
     }
 
     /**
-     * @param  array<string, array<string, int>>  $stocks
+     * @param  array<string, array<string, int|null>>  $stocks
      * @param  array<string, string>  $tqLookup
      */
     private function applyTq(array &$stocks, array $tqLookup, UploadedFile $file, string $quantityHeader, string $stockField, bool $sum): void

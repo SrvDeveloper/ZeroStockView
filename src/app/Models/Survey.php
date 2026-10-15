@@ -39,6 +39,12 @@ class Survey extends Model
 
     public function hasSavedAmazonInventory(): bool
     {
+        if ($this->amazon_source === self::AMAZON_SOURCE_SP_API) {
+            return false;
+        }
+        if ($this->amazon_source === self::AMAZON_SOURCE_LEGACY_FILE) {
+            return true;
+        }
         if ($this->includes_amazon_inventory) {
             return true;
         }

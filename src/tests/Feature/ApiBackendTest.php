@@ -8,6 +8,7 @@ use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\SurveyAmazonInventorySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
@@ -216,8 +217,8 @@ class ApiBackendTest extends TestCase
 
         $this->assertDatabaseHas('survey_skus', [
             'sku_code' => 'A-1001-01-M',
-            'amazon_own_stock' => 0,
-            'amazon_fba_stock' => 0,
+            'amazon_own_stock' => 2,
+            'amazon_fba_stock' => 3,
             'boss_own_stock' => 4,
             'boss_rfc_stock' => 5,
             'ec_stock' => 7,
@@ -267,13 +268,14 @@ class ApiBackendTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.importSettingName', '再照合設定')
             ->assertJsonPath('data.executedAt', $sourceExecutedAt)
-            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 99)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 99)
             ->assertJsonPath('data.amazonSource', 'sp_api')
             ->assertJsonCount(3, 'data.files');
         $this->assertNotSame($sourceCreatedAt, $rerunResponse->json('data.createdAt'));
         $this->assertDatabaseHas('surveys', [
             'id' => $rerunResponse->json('data.id'),
-            'amazon_inventory_import_id' => $amazonImport->id,
+            'amazon_inventory_import_id' => $newerAmazonImport->id,
         ]);
         $this->getJson('/api/surveys')
             ->assertOk()
@@ -294,6 +296,22 @@ class ApiBackendTest extends TestCase
         $settingId = $this->postJson('/api/import-settings', $this->targetPayload())
             ->assertCreated()
             ->json('id');
+        $previousBasisAt = now()->subDay();
+        $previousImport = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'basis_at' => $previousBasisAt,
+            'snapshot_date' => $previousBasisAt->toDateString(),
+            'completed_at' => $previousBasisAt,
+        ]);
+        $previousImport->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-01-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 12,
+            'amazon_fba_stock' => 13,
+            'basis_at' => $previousBasisAt,
+        ]);
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
@@ -317,6 +335,130 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', null)
             ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 3);
+        $this->assertDatabaseHas('surveys', [
+            'id' => $response->json('data.id'),
+            'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
+            'amazon_inventory_import_id' => null,
+        ]);
+        $this->assertDatabaseHas('survey_skus', [
+            'survey_product_id' => Survey::query()->findOrFail($response->json('data.id'))->products()->first()->id,
+            'amazon_own_stock' => null,
+            'amazon_fba_stock' => null,
+        ]);
+
+        $this->travel(1)->day();
+        $nextBasisAt = now();
+        $nextImport = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'basis_at' => $nextBasisAt,
+            'snapshot_date' => $nextBasisAt->toDateString(),
+            'completed_at' => $nextBasisAt,
+        ]);
+        $nextImport->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-01-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 20,
+            'amazon_fba_stock' => 21,
+            'basis_at' => $nextBasisAt,
+        ]);
+        $rerun = $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $settingId]);
+        $rerun->assertCreated()
+            ->assertJsonPath('data.executedAt', $response->json('data.executedAt'))
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null);
+        $this->assertDatabaseHas('surveys', [
+            'id' => $rerun->json('data.id'),
+            'amazon_inventory_import_id' => null,
+        ]);
+    }
+
+    public function test_survey_checks_again_after_saving_when_amazon_import_finishes_during_creation(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $sync = new class extends SurveyAmazonInventorySyncService
+        {
+            public int $calls = 0;
+
+            public function syncSurvey(int $surveyId): ?int
+            {
+                $this->calls++;
+                if ($this->calls === 2) {
+                    $basisAt = now();
+                    $import = AmazonInventoryImport::query()->create([
+                        'status' => 'succeeded',
+                        'trigger_source' => 'manual',
+                        'basis_at' => $basisAt,
+                        'snapshot_date' => $basisAt->toDateString(),
+                        'completed_at' => $basisAt,
+                    ]);
+                    $import->snapshots()->create([
+                        'product_code' => 'A-1001',
+                        'sku_code' => 'A-1001-01-M',
+                        'asin' => 'B000000001',
+                        'amazon_own_stock' => 8,
+                        'amazon_fba_stock' => 9,
+                        'basis_at' => $basisAt,
+                    ]);
+                }
+
+                return parent::syncSurvey($surveyId);
+            }
+        };
+        $this->app->instance(SurveyAmazonInventorySyncService::class, $sync);
+
+        $response = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'boss' => UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n"),
+            'ec_stock' => UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n"),
+            'free_stock' => UploadedFile::fake()->createWithContent('在庫一覧照会表.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n"),
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.amazonSource', 'sp_api')
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 8)
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 9);
+        $this->assertSame(2, $sync->calls);
+        $this->assertDatabaseHas('survey_skus', [
+            'survey_product_id' => Survey::query()->findOrFail($response->json('data.id'))->products()->first()->id,
+            'amazon_own_stock' => 8,
+            'amazon_fba_stock' => 9,
+        ]);
+    }
+
+    public function test_post_save_sync_failure_does_not_make_a_committed_survey_look_failed(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $sync = new class extends SurveyAmazonInventorySyncService
+        {
+            private int $calls = 0;
+
+            public function syncSurvey(int $surveyId): ?int
+            {
+                $this->calls++;
+                if ($this->calls === 2) {
+                    throw new \RuntimeException('一時的な再同期エラー');
+                }
+
+                return parent::syncSurvey($surveyId);
+            }
+        };
+        $this->app->instance(SurveyAmazonInventorySyncService::class, $sync);
+
+        $response = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'boss' => UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n"),
+            'ec_stock' => UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n"),
+            'free_stock' => UploadedFile::fake()->createWithContent('在庫一覧照会表.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n"),
+        ]);
+
+        $response->assertCreated()->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null);
+        $this->assertDatabaseCount('surveys', 1);
+        $this->assertDatabaseHas('surveys', ['id' => $response->json('data.id'), 'amazon_inventory_import_id' => null]);
     }
 
     public function test_existing_survey_keeps_its_saved_amazon_stock(): void
