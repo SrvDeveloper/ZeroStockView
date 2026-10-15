@@ -198,8 +198,8 @@ const matchedSkuCount = computed(() => {
     return filteredProducts.value.reduce((sum, p) => sum + (hasTextQuery ? p.skus.filter((sku) => sku.skuMatched).length : p.skus.length), 0);
 });
 
-function isZero(stock: StockQuantities): boolean {
-    return Object.values(stock).every((value) => value === 0);
+function isZero(stock: StockQuantities, asin: string): boolean {
+    return stockTotal(stock, asin) === 0;
 }
 
 function amazonStockTotal(stock: StockQuantities): number | null {
@@ -210,9 +210,10 @@ function bossStockTotal(stock: StockQuantities): number {
     return stock.bossOwn + stock.bossRfc;
 }
 
-function stockTotal(stock: StockQuantities): number | null {
+function stockTotal(stock: StockQuantities, asin: string): number | null {
     const amazon = amazonStockTotal(stock);
-    return amazon === null ? null : amazon + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
+    const contribution = amazon ?? (survey.value?.amazonSource === "sp_api" && !asin.trim() ? 0 : null);
+    return contribution === null ? null : contribution + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
 }
 
 function isLowStock(quantity: number): boolean {
@@ -225,8 +226,8 @@ function groupedStockClass(quantity: number): string {
     return "font-semibold text-slate-900";
 }
 
-function amazonStockClass(quantity: number | null, asin: string): string {
-    if (quantity === null || !asin.trim()) return "text-slate-300";
+function amazonStockClass(quantity: number | null): string {
+    if (quantity === null) return "text-slate-300";
     return groupedStockClass(quantity);
 }
 
@@ -469,7 +470,7 @@ async function exportExcel(scope: "all" | "filtered") {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <tr v-for="sku in product.skus" :key="sku.skuCode" class="group" :class="sku.skuMatched ? 'bg-sky-50' : isZero(sku.stock) ? 'bg-slate-50/60' : ''">
+                        <tr v-for="sku in product.skus" :key="sku.skuCode" class="group" :class="sku.skuMatched ? 'bg-sky-50' : isZero(sku.stock, sku.asin) ? 'bg-slate-50/60' : ''">
                             <td data-sku-cell class="px-3 py-2.5 transition-colors group-hover:bg-slate-100">
                                 <div class="flex flex-col">
                                     <span class="font-semibold" :class="sku.skuMatched ? 'text-sky-800' : 'text-slate-900'">{{ sku.skuCode }}</span>
@@ -482,9 +483,9 @@ async function exportExcel(scope: "all" | "filtered") {
                                 tabindex="0"
                                 aria-label="Amazon在庫合計"
                                 class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="amazonStockClass(amazonStockTotal(sku.stock), sku.asin)"
+                                :class="amazonStockClass(amazonStockTotal(sku.stock))"
                             >
-                                <span class="stock-total-value">{{ amazonStockTotal(sku.stock) ?? "—" }}</span>
+                                <span class="stock-total-value">{{ amazonStockTotal(sku.stock) ?? (survey?.amazonSource === "sp_api" && !sku.asin.trim() ? "対象外" : "—") }}</span>
                                 <div v-if="amazonStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
                                     <p class="mb-1.5 text-left text-[11px] font-semibold text-slate-500">Amazon内訳</p>
                                     <div class="grid grid-cols-2 divide-x divide-slate-200">
@@ -527,8 +528,13 @@ async function exportExcel(scope: "all" | "filtered") {
                             <td data-stock-field="ecStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.ecStock)">
                                 {{ sku.stock.ecStock }}
                             </td>
-                            <td v-if="hasAmazonStock" data-stock-field="total" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(stockTotal(sku.stock))">
-                                {{ stockTotal(sku.stock) ?? "—" }}
+                            <td
+                                v-if="hasAmazonStock"
+                                data-stock-field="total"
+                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
+                                :class="stockClass(stockTotal(sku.stock, sku.asin))"
+                            >
+                                {{ stockTotal(sku.stock, sku.asin) ?? "—" }}
                             </td>
                             <td class="border-l border-slate-200 px-3 py-2.5">
                                 <MemoField :model-value="sku.memo" placeholder="メモを入力" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />

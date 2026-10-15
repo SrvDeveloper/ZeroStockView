@@ -40,6 +40,7 @@ class SurveyResource extends JsonResource
                     $amazonTotal = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
                         ? null
                         : $sku->amazon_own_stock + $sku->amazon_fba_stock;
+                    $amazonContribution = $amazonTotal ?? ($this->amazon_source === Survey::AMAZON_SOURCE_SP_API && ! $sku->hasAmazonAsin() ? 0 : null);
 
                     return [
                         'id' => (string) $sku->getKey(),
@@ -58,8 +59,8 @@ class SurveyResource extends JsonResource
                             'bossRfc' => $sku->boss_rfc_stock,
                             'freeStock' => $sku->free_stock,
                             'ecStock' => $sku->ec_stock,
-                            'mallTotal' => $amazonTotal === null ? null : $amazonTotal + $sku->boss_own_stock + $sku->boss_rfc_stock,
-                            'grandTotal' => $amazonTotal === null ? null : $amazonTotal + $sku->boss_own_stock + $sku->boss_rfc_stock + $sku->free_stock + $sku->ec_stock,
+                            'mallTotal' => $amazonContribution === null ? null : $amazonContribution + $sku->boss_own_stock + $sku->boss_rfc_stock,
+                            'grandTotal' => $amazonContribution === null ? null : $amazonContribution + $sku->boss_own_stock + $sku->boss_rfc_stock + $sku->free_stock + $sku->ec_stock,
                         ],
                         'memo' => $sku->memo ?? '',
                     ];

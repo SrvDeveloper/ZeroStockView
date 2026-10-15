@@ -232,6 +232,7 @@ class InventoryTrendApiTest extends TestCase
         foreach ([['A-1001-M', 4, 5], ['A-1001-L', null, null]] as $index => [$code, $own, $fba]) {
             SurveySku::factory()->for($product, 'product')->create([
                 'sku_code' => $code,
+                'child_asin' => 'B000000001',
                 'sort_order' => $index + 1,
                 'amazon_own_stock' => $own,
                 'amazon_fba_stock' => $fba,
@@ -257,6 +258,34 @@ class InventoryTrendApiTest extends TestCase
         $this->assertSame(4, $rows[0]['amazonOwn']);
         $this->assertNull($rows[1]['amazonOwn']);
         $this->assertNull($rows[1]['amazonFba']);
+    }
+
+    public function test_asinless_sku_does_not_make_amazon_or_overall_trends_partial(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        $survey = Survey::factory()->spApi()->create(['executed_at' => '2026-09-27 10:00:00']);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        SurveySku::factory()->for($product, 'product')->create([
+            'sku_code' => 'A-1001-M',
+            'child_asin' => null,
+            'amazon_own_stock' => null,
+            'amazon_fba_stock' => null,
+            'boss_own_stock' => 4,
+            'boss_rfc_stock' => 5,
+            'free_stock' => 6,
+            'ec_stock' => 7,
+        ]);
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=amazon')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.series');
+
+        foreach (['mallTotal' => 9, 'grandTotal' => 22] as $scope => $expected) {
+            $this->getJson("/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope={$scope}")
+                ->assertOk()
+                ->assertJsonPath('data.series.0.points.0.quantity', $expected);
+        }
     }
 
     public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void
@@ -365,6 +394,7 @@ class InventoryTrendApiTest extends TestCase
         ]);
         SurveySku::factory()->for($surveyProduct, 'product')->create([
             'sku_code' => $skuCode,
+            'child_asin' => 'B000000001',
             'sort_order' => 1,
             'amazon_own_stock' => $amazonOwn,
             'amazon_fba_stock' => $amazonFba,

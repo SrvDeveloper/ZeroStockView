@@ -57,6 +57,7 @@ class SurveyAmazonInventorySyncServiceTest extends TestCase
 
         $morning = $this->survey('2026-10-15 08:00:00', Survey::AMAZON_SOURCE_SP_API);
         $morningMatch = $this->sku($morning, 'SKU-1', null, null);
+        $morningMatch->update(['child_asin' => null]);
         $morningMissing = $this->sku($morning, 'SKU-NO-ASIN', 0, 0);
         $evening = $this->survey('2026-10-15 20:00:00', Survey::AMAZON_SOURCE_SP_API);
         $eveningMatch = $this->sku($evening, 'SKU-1', 99, 99);
@@ -67,6 +68,7 @@ class SurveyAmazonInventorySyncServiceTest extends TestCase
         $this->assertSame($latest->id, $evening->fresh()->amazon_inventory_import_id);
         $this->assertSame(0, $morningMatch->fresh()->amazon_own_stock);
         $this->assertSame(6, $morningMatch->fresh()->amazon_fba_stock);
+        $this->assertSame('B000000001', $morningMatch->fresh()->child_asin);
         $this->assertNull($morningMissing->fresh()->amazon_own_stock);
         $this->assertNull($morningMissing->fresh()->amazon_fba_stock);
         $this->assertSame(0, $eveningMatch->fresh()->amazon_own_stock);
@@ -78,6 +80,19 @@ class SurveyAmazonInventorySyncServiceTest extends TestCase
         $this->travel(5)->minutes();
         $this->assertSame(2, $service->syncDate('2026-10-15'));
         $this->assertTrue($updatedAt->equalTo($morningMatch->fresh()->updated_at));
+    }
+
+    public function test_sync_restores_missing_survey_asin_from_matching_import_snapshot(): void
+    {
+        $import = $this->import('2026-10-15', '2026-10-15 10:00:00');
+        $this->snapshot($import, 'FLH-001PH-1-10', 0, 25);
+        $survey = $this->survey('2026-10-15 11:00:00', Survey::AMAZON_SOURCE_SP_API, $import->id);
+        $sku = $this->sku($survey, 'FLH-001PH-1-10', 0, 25);
+        $sku->update(['child_asin' => null]);
+
+        $this->assertSame($import->id, app(SurveyAmazonInventorySyncService::class)->syncSurvey($survey->id));
+        $this->assertSame('B000000001', $sku->fresh()->child_asin);
+        $this->assertSame(25, $sku->fresh()->amazon_fba_stock);
     }
 
     public function test_pending_retry_applies_latest_success_once_and_never_rolls_back_to_an_older_import(): void

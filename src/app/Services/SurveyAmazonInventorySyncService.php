@@ -39,9 +39,12 @@ class SurveyAmazonInventorySyncService
             foreach ($survey->products()->with('skus')->get() as $product) {
                 foreach ($product->skus as $sku) {
                     $snapshot = $snapshots->get($sku->sku_code);
+                    if ($snapshot !== null && ! $sku->hasAmazonAsin() && trim($snapshot->asin) !== '') {
+                        $sku->child_asin = $snapshot->asin;
+                    }
                     $sku->amazon_own_stock = $snapshot?->amazon_own_stock;
                     $sku->amazon_fba_stock = $snapshot?->amazon_fba_stock;
-                    if ($sku->isDirty(['amazon_own_stock', 'amazon_fba_stock'])) {
+                    if ($sku->isDirty(['child_asin', 'amazon_own_stock', 'amazon_fba_stock'])) {
                         $sku->save();
                     }
                 }

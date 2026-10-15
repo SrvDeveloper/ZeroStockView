@@ -149,13 +149,17 @@ class InventoryTrendController extends Controller
                 'amazonInventoryStatus' => $survey->amazonInventoryStatus(),
             ];
             foreach ($selectedProductSnapshot->skus as $sku) {
+                if ($scope === 'amazon' && $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API
+                    && ! $sku->hasAmazonAsin() && $sku->amazon_own_stock === null && $sku->amazon_fba_stock === null) {
+                    continue;
+                }
                 $skuMetadata[$sku->sku_code] = [
                     'skuCode' => $sku->sku_code,
                     'size' => $sku->tq_size,
                     'sortOrder' => $sku->sort_order,
                 ];
                 $quantities[$sku->sku_code][$date] = [
-                    'quantity' => $this->quantity($sku, $scope),
+                    'quantity' => $this->quantity($sku, $scope, $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API),
                     'source' => 'survey',
                     'basisAt' => $basisAt,
                 ];
@@ -209,11 +213,14 @@ class InventoryTrendController extends Controller
         ])->deleteFileAfterSend();
     }
 
-    private function quantity(SurveySku $sku, string $scope): ?int
+    private function quantity(SurveySku $sku, string $scope, bool $isSpApi): ?int
     {
         $amazon = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
             ? null
             : $sku->amazon_own_stock + $sku->amazon_fba_stock;
+        if ($amazon === null && $isSpApi && ! $sku->hasAmazonAsin()) {
+            $amazon = 0;
+        }
         $boss = $sku->boss_own_stock + $sku->boss_rfc_stock;
 
         return match ($scope) {

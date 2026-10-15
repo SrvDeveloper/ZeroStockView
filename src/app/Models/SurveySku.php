@@ -30,6 +30,11 @@ class SurveySku extends Model
     /** @use HasFactory<SurveySkuFactory> */
     use HasFactory;
 
+    public function hasAmazonAsin(): bool
+    {
+        return is_string($this->child_asin) && trim($this->child_asin) !== '';
+    }
+
     /** @return BelongsTo<SurveyProduct, $this> */
     public function product(): BelongsTo
     {

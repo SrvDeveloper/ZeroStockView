@@ -435,7 +435,7 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon取込済み");
         expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon基準: 2026/09/18 10:00");
     });
-    it("dims Amazon stock when the SKU has no child ASIN", () => {
+    it("shows saved Amazon stock normally even when the survey ASIN is missing", () => {
         const surveys = useSurveysStore();
         surveys.surveys[0].products = [
             {
@@ -471,11 +471,43 @@ describe("survey import setting display", () => {
         const ecStockCell = wrapper.get("[data-stock-field=ecStock]");
 
         expect(amazonCell.get(".stock-total-value").text()).toBe("5");
-        expect(amazonCell.classes()).toContain("text-slate-300");
-        expect(amazonCell.classes()).not.toContain("bg-amber-50");
-        expect(amazonCell.classes()).not.toContain("font-semibold");
+        expect(amazonCell.classes()).toContain("bg-amber-50");
+        expect(amazonCell.classes()).toContain("font-semibold");
         expect(freeStockCell.classes()).toContain("text-slate-300");
         expect(ecStockCell.classes()).toContain("text-slate-300");
+    });
+
+    it("labels an ASIN-less SP-API SKU as outside scope and includes its other stock in the total", () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].products = [
+            {
+                id: "product-1",
+                productCode: "A-1001",
+                brand: "A",
+                category: "A",
+                parentAsin: "",
+                memo: "",
+                skus: [
+                    {
+                        id: "sku-1",
+                        skuCode: "A-1001-M",
+                        colorName: "",
+                        size: "M",
+                        asin: "",
+                        tqCode: "",
+                        tqColorNo: "",
+                        tqSize: "M",
+                        memo: "",
+                        stock: { amazonOwn: null, amazonFba: null, bossOwn: 4, bossRfc: 5, freeStock: 6, ecStock: 7 },
+                    },
+                ],
+            },
+        ];
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("対象外");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("22");
     });
 
     it("reruns a survey with another setting only while all source files remain", async () => {

@@ -62,7 +62,8 @@ class Survey extends Model
             }
 
             return $this->products->contains(fn ($product): bool => $product->skus->contains(
-                fn ($sku): bool => $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null,
+                fn ($sku): bool => ($sku->hasAmazonAsin() || $sku->amazon_own_stock !== null || $sku->amazon_fba_stock !== null)
+                    && ($sku->amazon_own_stock === null || $sku->amazon_fba_stock === null),
             )) ? 'partial' : 'complete';
         }
 
