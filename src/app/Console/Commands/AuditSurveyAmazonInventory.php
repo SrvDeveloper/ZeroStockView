@@ -53,6 +53,7 @@ class AuditSurveyAmazonInventory extends Command
                     $files,
                     $skuCount,
                     $nonzeroCount,
+                    $survey->amazon_source,
                 );
 
                 $day = $survey->executed_at->setTimezone('Asia/Tokyo')->toDateString();
@@ -75,6 +76,7 @@ class AuditSurveyAmazonInventory extends Command
                     'surveyId' => $survey->id,
                     'surveyDate' => $day,
                     'classification' => $classification,
+                    'amazonSource' => $survey->amazon_source,
                     'reasons' => $reasons,
                     'fileTypes' => $files,
                     'skuCount' => $skuCount,

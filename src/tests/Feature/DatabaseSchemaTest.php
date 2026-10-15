@@ -27,7 +27,7 @@ class DatabaseSchemaTest extends TestCase
             'import_settings' => ['id', 'name'],
             'import_targets' => ['id', 'import_setting_id', 'product_id', 'sort_order'],
             'api_connection_settings' => ['id', 'enabled', 'api_key_hash', 'api_key_suffix', 'api_key_issued_at', 'allowed_networks'],
-            'surveys' => ['id', 'executed_at', 'import_setting_name'],
+            'surveys' => ['id', 'executed_at', 'import_setting_name', 'amazon_source'],
             'survey_products' => ['id', 'survey_id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'sort_order', 'memo'],
             'survey_skus' => [
                 'id',
@@ -56,6 +56,49 @@ class DatabaseSchemaTest extends TestCase
         }
 
         $this->assertTrue(Schema::hasIndex('survey_products', ['product_code']));
+        $this->assertTrue(Schema::hasIndex('surveys', ['amazon_source', 'executed_at']));
+    }
+
+    public function test_pending_amazon_stock_is_null_and_legacy_quantities_remain_numeric(): void
+    {
+        $legacy = Survey::factory()->legacyFile()->create();
+        $legacyProduct = SurveyProduct::factory()->for($legacy)->create();
+        $legacySku = SurveySku::factory()->for($legacyProduct, 'product')->create([
+            'amazon_own_stock' => 12,
+            'amazon_fba_stock' => 3,
+        ]);
+
+        $pending = Survey::factory()->spApi()->create();
+        $pendingProduct = SurveyProduct::factory()->for($pending)->create();
+        $pendingSku = SurveySku::factory()->pendingAmazon()->for($pendingProduct, 'product')->create();
+
+        $this->assertSame(Survey::AMAZON_SOURCE_LEGACY_FILE, $legacy->fresh()->amazon_source);
+        $this->assertSame(12, $legacySku->fresh()->amazon_own_stock);
+        $this->assertSame(3, $legacySku->fresh()->amazon_fba_stock);
+        $this->assertSame(Survey::AMAZON_SOURCE_SP_API, $pending->fresh()->amazon_source);
+        $this->assertNull($pendingSku->fresh()->amazon_own_stock);
+        $this->assertNull($pendingSku->fresh()->amazon_fba_stock);
+    }
+
+    public function test_schema_rollback_refuses_to_erase_pending_amazon_state(): void
+    {
+        $pending = Survey::factory()->spApi()->create();
+        $product = SurveyProduct::factory()->for($pending)->create();
+        SurveySku::factory()->pendingAmazon()->for($product, 'product')->create();
+
+        $migration = require database_path('migrations/2026_10_15_000000_allow_pending_amazon_stock_on_surveys.php');
+
+        $this->expectException(\RuntimeException::class);
+        $migration->down();
+    }
+
+    public function test_schema_rollback_refuses_to_erase_explicit_amazon_source(): void
+    {
+        Survey::factory()->spApi()->create();
+        $migration = require database_path('migrations/2026_10_15_000000_allow_pending_amazon_stock_on_surveys.php');
+
+        $this->expectException(\RuntimeException::class);
+        $migration->down();
     }
 
     public function test_current_product_data_and_survey_snapshots_have_independent_lifecycles(): void
