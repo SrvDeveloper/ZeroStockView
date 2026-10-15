@@ -54,6 +54,21 @@ class Survey extends Model
         ));
     }
 
+    public function amazonInventoryStatus(): string
+    {
+        if ($this->amazon_source === self::AMAZON_SOURCE_SP_API) {
+            if ($this->amazon_inventory_import_id === null) {
+                return 'pending';
+            }
+
+            return $this->products->contains(fn ($product): bool => $product->skus->contains(
+                fn ($sku): bool => $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null,
+            )) ? 'partial' : 'complete';
+        }
+
+        return $this->hasSavedAmazonInventory() ? 'legacy_file' : 'unclassified';
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {

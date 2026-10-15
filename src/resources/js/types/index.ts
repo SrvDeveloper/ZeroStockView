@@ -27,10 +27,13 @@ export interface ImportSetting {
 export interface StockQuantities {
     amazonOwn: number | null;
     amazonFba: number | null;
+    amazonTotal?: number | null;
     bossOwn: number;
     bossRfc: number;
     freeStock: number;
     ecStock: number;
+    mallTotal?: number | null;
+    grandTotal?: number | null;
 }
 
 export const STOCK_FIELDS: { key: keyof StockQuantities; label: string; group: "Amazon" | "BOSS" | "その他" }[] = [
@@ -90,6 +93,8 @@ export interface Survey {
     importSettingName: string | null;
     includesAmazonInventory?: boolean;
     amazonSource?: "survey" | "sp_api" | null;
+    amazonInventoryStatus?: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";
+    amazonInventoryImportId?: string | null;
     amazonBasisAt?: string | null;
     files: SurveyFile[];
 }

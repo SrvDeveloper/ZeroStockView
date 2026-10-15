@@ -239,10 +239,11 @@ describe("survey import setting display", () => {
         expect(wrapper.find("tbody tr").exists()).toBe(true);
     });
 
-    it("shows API Amazon stock separately from a three-file survey without a mixed total", () => {
+    it("shows the saved Amazon stock and a confirmed total for a three-file survey", () => {
         const surveys = useSurveysStore();
         surveys.surveys[0].includesAmazonInventory = false;
         surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].amazonInventoryStatus = "complete";
         surveys.surveys[0].amazonBasisAt = "2026-09-16T00:00:00Z";
         surveys.surveys[0].products = [
             {
@@ -273,9 +274,67 @@ describe("survey import setting display", () => {
 
         expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("5");
         expect(wrapper.get("[data-stock-field=boss] .stock-total-value").text()).toBe("9");
-        expect(wrapper.text()).toContain("SP-API の 2026/09/16 00:00 時点");
-        expect(wrapper.find("[data-stock-field=total]").exists()).toBe(false);
-        expect(wrapper.find("thead").text()).not.toContain("在庫総数");
+        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 00:00");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("27");
+        expect(wrapper.get("thead").text()).toContain("在庫総数");
+    });
+
+    it("keeps the total unknown until each SKU has Amazon stock", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].includesAmazonInventory = false;
+        surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].amazonInventoryStatus = "pending";
+        surveys.surveys[0].products = [
+            {
+                id: "product-1",
+                productCode: "A-1001",
+                brand: "ブランドA",
+                category: "カテゴリA",
+                parentAsin: "PARENT-ASIN",
+                memo: "",
+                skus: [
+                    {
+                        id: "sku-1",
+                        skuCode: "A-1001-01-M",
+                        colorName: "黒",
+                        size: "M",
+                        asin: "ASIN-1",
+                        tqCode: "TQ-1",
+                        tqColorNo: "01",
+                        tqSize: "M",
+                        stock: { amazonOwn: null, amazonFba: null, bossOwn: 4, bossRfc: 5, freeStock: 6, ecStock: 7 },
+                        memo: "",
+                    },
+                ],
+            },
+        ];
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.text()).toContain("Amazon 在庫は取込待ちです");
+        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("—");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
+
+        surveys.surveys[0].amazonInventoryStatus = "partial";
+        surveys.surveys[0].amazonBasisAt = "2026-09-16T00:00:00Z";
+        await nextTick();
+        expect(wrapper.text()).toContain("一部SKU未取得");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
+    });
+
+    it("shows Amazon import states in survey history", () => {
+        const surveys = useSurveysStore();
+        surveys.surveys = [
+            { id: "pending", executedAt: "2026-09-18T12:00:00Z", importSettingName: "A", amazonInventoryStatus: "pending", products: [], files: [] },
+            { id: "partial", executedAt: "2026-09-17T12:00:00Z", importSettingName: "B", amazonInventoryStatus: "partial", products: [], files: [] },
+            { id: "complete", executedAt: "2026-09-16T12:00:00Z", importSettingName: "C", amazonInventoryStatus: "complete", products: [], files: [] },
+            { id: "legacy", executedAt: "2026-09-15T12:00:00Z", importSettingName: "D", amazonInventoryStatus: "legacy_file", products: [], files: [] },
+        ];
+        const wrapper = mount(SurveyHistoryPage);
+
+        expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon取込待ち");
+        expect(wrapper.get("[data-survey-id=partial]").text()).toContain("Amazon一部未取得");
+        expect(wrapper.get("[data-survey-id=complete]").text()).toContain("Amazon取込済み");
+        expect(wrapper.get("[data-survey-id=legacy]").text()).toContain("Amazon旧ファイル");
     });
     it("dims Amazon stock when the SKU has no child ASIN", () => {
         const surveys = useSurveysStore();

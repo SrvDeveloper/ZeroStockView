@@ -27,6 +27,7 @@ const toast = useUiStore();
 const survey = computed(() => surveysStore.getSurvey(props.id));
 const includesAmazonInventory = computed(() => survey.value?.includesAmazonInventory !== false);
 const hasAmazonStock = computed(() => includesAmazonInventory.value || survey.value?.amazonSource === "sp_api");
+const amazonStatus = computed(() => survey.value?.amazonInventoryStatus ?? (survey.value?.amazonSource === "sp_api" ? (survey.value.amazonBasisAt ? "complete" : "pending") : "legacy_file"));
 const isLatest = computed(() => surveysStore.latestSurvey?.id === props.id);
 const rerunSettingId = ref<string | null>(null);
 const rerunMenuOpen = ref(false);
@@ -180,8 +181,9 @@ function bossStockTotal(stock: StockQuantities): number {
     return stock.bossOwn + stock.bossRfc;
 }
 
-function stockTotal(stock: StockQuantities): number {
-    return (amazonStockTotal(stock) ?? 0) + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
+function stockTotal(stock: StockQuantities): number | null {
+    const amazon = amazonStockTotal(stock);
+    return amazon === null ? null : amazon + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
 }
 
 function isLowStock(quantity: number): boolean {
@@ -199,8 +201,8 @@ function amazonStockClass(quantity: number | null, asin: string): string {
     return groupedStockClass(quantity);
 }
 
-function stockClass(quantity: number): string {
-    if (quantity === 0) return "text-slate-300";
+function stockClass(quantity: number | null): string {
+    if (quantity === null || quantity === 0) return "text-slate-300";
     return "font-semibold text-slate-900";
 }
 
@@ -295,8 +297,12 @@ async function exportExcel(scope: "all" | "filtered") {
             </div>
         </div>
         <p v-if="!hasReusableFiles" class="text-xs text-slate-400">取込ファイルが削除されているため、再照合機能は利用できません。</p>
-        <p v-if="!includesAmazonInventory && survey.amazonSource === 'sp_api'" class="text-sm text-slate-500">
-            Amazon 在庫は SP-API の {{ formatDateTime(survey.amazonBasisAt!) }} 時点の値です。ほかの在庫とは基準日時が異なるため、総数には合算しません。
+        <p v-if="amazonStatus === 'pending'" class="text-sm text-slate-500">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。</p>
+        <p v-else-if="amazonStatus === 'partial'" class="text-sm text-slate-500">
+            Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}
+        </p>
+        <p v-else-if="amazonStatus === 'complete'" class="text-sm text-slate-500">
+            Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}。ほかの在庫とは取得時刻が異なる同日の集計値です。
         </p>
         <p v-else-if="!includesAmazonInventory" class="text-sm text-slate-500">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
 
@@ -417,7 +423,7 @@ async function exportExcel(scope: "all" | "filtered") {
                         <col class="w-24" />
                         <col class="w-24" />
                         <col class="w-24" />
-                        <col v-if="includesAmazonInventory" class="w-24" />
+                        <col v-if="hasAmazonStock" class="w-24" />
                         <col />
                     </colgroup>
                     <thead class="border-b border-slate-200 bg-slate-50 text-xs tracking-wide text-slate-500">
@@ -427,7 +433,7 @@ async function exportExcel(scope: "all" | "filtered") {
                             <th class="border-l border-slate-200 px-3 py-2 text-center">BOSS</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">フリー在庫</th>
                             <th class="border-l border-slate-200 px-3 py-2 text-center">ECストック</th>
-                            <th v-if="includesAmazonInventory" class="border-l border-slate-200 px-3 py-2 text-center">在庫総数</th>
+                            <th v-if="hasAmazonStock" class="border-l border-slate-200 px-3 py-2 text-center">在庫総数</th>
                             <th class="border-l border-slate-200 px-3 py-2">メモ</th>
                         </tr>
                     </thead>
@@ -490,13 +496,8 @@ async function exportExcel(scope: "all" | "filtered") {
                             <td data-stock-field="ecStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.ecStock)">
                                 {{ sku.stock.ecStock }}
                             </td>
-                            <td
-                                v-if="includesAmazonInventory"
-                                data-stock-field="total"
-                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="stockClass(stockTotal(sku.stock))"
-                            >
-                                {{ stockTotal(sku.stock) }}
+                            <td v-if="hasAmazonStock" data-stock-field="total" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(stockTotal(sku.stock))">
+                                {{ stockTotal(sku.stock) ?? "—" }}
                             </td>
                             <td class="border-l border-slate-200 px-3 py-2.5">
                                 <MemoField :model-value="sku.memo" placeholder="メモを入力" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />

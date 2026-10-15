@@ -11,10 +11,10 @@ class SurveyExcelExporter
     /** @param array<int, int> $skuIds */
     public function export(Survey $survey, array $skuIds = []): string
     {
-        $survey->loadMissing(['products.skus', 'amazonImport.snapshots']);
+        $survey->loadMissing(['products.skus', 'amazonImport']);
         $hasSavedAmazonInventory = $survey->hasSavedAmazonInventory();
-        $amazonSnapshots = $survey->amazonImport?->snapshots->keyBy('sku_code') ?? collect();
-        $hasAmazon = $hasSavedAmazonInventory || $survey->amazonImport !== null;
+        $usesSpApi = $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API;
+        $hasAmazon = $hasSavedAmazonInventory || $usesSpApi;
         $allowedIds = array_fill_keys($skuIds, true);
         $headers = [
             '品番', 'ブランド', 'カテゴリ', '親ASIN', 'SKU', 'ASIN', 'TQ品番', 'TQカラーNo', 'TQサイズ',
@@ -22,7 +22,7 @@ class SurveyExcelExporter
         if ($hasAmazon) {
             array_push($headers, 'Amazon:自社', 'Amazon:FBA');
         }
-        if (! $hasSavedAmazonInventory && $survey->amazonImport !== null) {
+        if ($usesSpApi) {
             array_push($headers, 'Amazon取得元', 'Amazon基準日時');
         }
         array_push($headers, 'BOSS:自社', 'BOSS:RFC', 'フリー在庫', 'ECストック', '品番メモ', 'SKUメモ');
@@ -44,11 +44,11 @@ class SurveyExcelExporter
                     $sku->tq_color_no,
                     $sku->tq_size,
                 ];
-                if ($hasSavedAmazonInventory) {
-                    array_push($row, $sku->amazon_own_stock, $sku->amazon_fba_stock);
-                } elseif ($survey->amazonImport !== null) {
-                    $snapshot = $amazonSnapshots->get($sku->sku_code);
-                    array_push($row, $snapshot?->amazon_own_stock ?? '', $snapshot?->amazon_fba_stock ?? '', 'SP-API', $survey->amazonImport->basis_at->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s'));
+                if ($hasAmazon) {
+                    array_push($row, $sku->amazon_own_stock ?? '', $sku->amazon_fba_stock ?? '');
+                }
+                if ($usesSpApi) {
+                    array_push($row, 'SP-API', $survey->amazonImport?->basis_at?->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s') ?? '');
                 }
                 array_push($row,
                     $sku->boss_own_stock,

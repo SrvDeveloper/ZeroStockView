@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Survey;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -15,7 +16,7 @@ class SurveyResource extends JsonResource
     public function toArray(Request $request): array
     {
         $hasSavedAmazonInventory = $this->hasSavedAmazonInventory();
-        $amazonSnapshots = $this->amazonImport?->snapshots->keyBy('sku_code') ?? collect();
+        $amazonStatus = $this->amazonInventoryStatus();
 
         return [
             'id' => (string) $this->getKey(),
@@ -23,7 +24,10 @@ class SurveyResource extends JsonResource
             'createdAt' => $this->created_at->toISOString(),
             'importSettingName' => $this->import_setting_name,
             'includesAmazonInventory' => $hasSavedAmazonInventory,
-            'amazonSource' => $hasSavedAmazonInventory ? 'survey' : ($this->amazonImport === null ? null : 'sp_api'),
+            'amazonSource' => $hasSavedAmazonInventory ? 'survey' : ($this->amazon_source === Survey::AMAZON_SOURCE_SP_API ? 'sp_api' : null),
+            'amazonInventoryStatus' => $amazonStatus,
+            'amazonInventoryImportId' => $this->amazon_source === Survey::AMAZON_SOURCE_SP_API && $this->amazon_inventory_import_id !== null
+                ? (string) $this->amazon_inventory_import_id : null,
             'amazonBasisAt' => $hasSavedAmazonInventory ? $this->executed_at->toISOString() : $this->amazonImport?->basis_at?->toISOString(),
             'products' => $this->products->map(fn ($product): array => [
                 'id' => (string) $product->getKey(),
@@ -32,25 +36,34 @@ class SurveyResource extends JsonResource
                 'category' => $product->category,
                 'parentAsin' => $product->parent_asin ?? '',
                 'memo' => $product->memo ?? '',
-                'skus' => $product->skus->map(fn ($sku): array => [
-                    'id' => (string) $sku->getKey(),
-                    'skuCode' => $sku->sku_code,
-                    'colorName' => '',
-                    'size' => $sku->tq_size,
-                    'asin' => $sku->child_asin ?? '',
-                    'tqCode' => $sku->tq_item_no,
-                    'tqColorNo' => $sku->tq_color_no,
-                    'tqSize' => $sku->tq_size,
-                    'stock' => [
-                        'amazonOwn' => $hasSavedAmazonInventory ? $sku->amazon_own_stock : $amazonSnapshots->get($sku->sku_code)?->amazon_own_stock,
-                        'amazonFba' => $hasSavedAmazonInventory ? $sku->amazon_fba_stock : $amazonSnapshots->get($sku->sku_code)?->amazon_fba_stock,
-                        'bossOwn' => $sku->boss_own_stock,
-                        'bossRfc' => $sku->boss_rfc_stock,
-                        'freeStock' => $sku->free_stock,
-                        'ecStock' => $sku->ec_stock,
-                    ],
-                    'memo' => $sku->memo ?? '',
-                ])->values(),
+                'skus' => $product->skus->map(function ($sku): array {
+                    $amazonTotal = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
+                        ? null
+                        : $sku->amazon_own_stock + $sku->amazon_fba_stock;
+
+                    return [
+                        'id' => (string) $sku->getKey(),
+                        'skuCode' => $sku->sku_code,
+                        'colorName' => '',
+                        'size' => $sku->tq_size,
+                        'asin' => $sku->child_asin ?? '',
+                        'tqCode' => $sku->tq_item_no,
+                        'tqColorNo' => $sku->tq_color_no,
+                        'tqSize' => $sku->tq_size,
+                        'stock' => [
+                            'amazonOwn' => $sku->amazon_own_stock,
+                            'amazonFba' => $sku->amazon_fba_stock,
+                            'amazonTotal' => $amazonTotal,
+                            'bossOwn' => $sku->boss_own_stock,
+                            'bossRfc' => $sku->boss_rfc_stock,
+                            'freeStock' => $sku->free_stock,
+                            'ecStock' => $sku->ec_stock,
+                            'mallTotal' => $amazonTotal === null ? null : $amazonTotal + $sku->boss_own_stock + $sku->boss_rfc_stock,
+                            'grandTotal' => $amazonTotal === null ? null : $amazonTotal + $sku->boss_own_stock + $sku->boss_rfc_stock + $sku->free_stock + $sku->ec_stock,
+                        ],
+                        'memo' => $sku->memo ?? '',
+                    ];
+                })->values(),
             ])->values(),
             'files' => $this->files->map(fn ($file): array => [
                 'id' => (string) $file->getKey(),
