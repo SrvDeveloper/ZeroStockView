@@ -126,8 +126,8 @@ describe("InventoryTrendPage", () => {
         });
         await flushPromises();
 
-        expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("SP-API履歴は含みません");
-        expect(wrapper.text()).toContain("CSVは手動調査の日次全倉庫データ");
+        expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("Amazonが未確定のSKU");
+        expect(wrapper.text()).toContain("CSVは調査結果に保存された日次全倉庫データ");
         await wrapper.get('[data-testid="product-picker-button"]').trigger("click");
         await wrapper.get('[data-product-code="API-ONLY"]').trigger("click");
         await wrapper.get('[data-testid="apply-product-selection"]').trigger("click");
@@ -326,5 +326,34 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("ZS-2408-01-NV-S");
         expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("期間累計 1日");
         expect(wrapper.get("[data-tooltip-period-stockout-days]").text()).toContain("全SKUの期間累計欠品日数4日");
+    });
+
+    it("does not draw a partial product total or stockout count when one SKU is unconfirmed", async () => {
+        const wrapper = mountPage((params) => {
+            const response = trendResponse(params);
+            response.series[1]!.points[14]!.quantity = null;
+
+            return response;
+        });
+        await flushPromises();
+
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(29);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(29);
+    });
+
+    it("keeps the product total when a SKU was not part of that day's survey", async () => {
+        const wrapper = mountPage((params) => {
+            const response = trendResponse(params);
+            const point = response.series[1]!.points[14]!;
+            point.quantity = null;
+            point.source = null;
+            point.basisAt = null;
+
+            return response;
+        });
+        await flushPromises();
+
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
     });
 });

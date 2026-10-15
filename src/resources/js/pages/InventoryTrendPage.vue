@@ -130,10 +130,13 @@ const productChartSeries = computed<TrendSeries[]>(() => {
             color: SERIES_COLORS[0]!,
             points: selectedDates.value.map((date) => {
                 const quantities = rawSeries.value.flatMap((series) => {
-                    const quantity = series.points.find((point) => point.date === date)?.quantity;
-                    return quantity === null || quantity === undefined ? [] : [quantity];
+                    const point = series.points.find((item) => item.date === date);
+                    return point?.source == null ? [] : [point.quantity];
                 });
-                return { date, quantity: quantities.length === 0 ? null : quantities.reduce((total, quantity) => total + quantity, 0) };
+                return {
+                    date,
+                    quantity: quantities.length === 0 || quantities.some((quantity) => quantity === null) ? null : quantities.reduce<number>((total, quantity) => total + (quantity ?? 0), 0),
+                };
             }),
         },
     ];
@@ -141,7 +144,18 @@ const productChartSeries = computed<TrendSeries[]>(() => {
 const productStockoutSeries = computed<StockoutSeries | null>(() => {
     if (trendView.value !== "product" || rawSeries.value.length === 0) return null;
 
-    const stockoutDaysBySku = new Map(rawSeries.value.map((series) => [series.skuCode, series.points.filter((point) => point.quantity === 0).length]));
+    const completeDates = new Set(
+        selectedDates.value.filter((date) => {
+            const points = rawSeries.value.flatMap((series) => {
+                const point = series.points.find((item) => item.date === date);
+                return point?.source == null ? [] : [point];
+            });
+            return points.length > 0 && points.every((point) => point.quantity !== null);
+        }),
+    );
+    const stockoutDaysBySku = new Map(
+        rawSeries.value.map((series) => [series.skuCode, series.points.filter((point) => completeDates.has(point.date) && point.source !== null && point.quantity === 0).length]),
+    );
     const periodStockoutDays = [...stockoutDaysBySku.values()].reduce((total, days) => total + days, 0);
 
     return {
@@ -149,9 +163,12 @@ const productStockoutSeries = computed<StockoutSeries | null>(() => {
         color: "#e11d48",
         points: selectedDates.value.map((date) => {
             const availableSeries = rawSeries.value.flatMap((series) => {
-                const quantity = series.points.find((point) => point.date === date)?.quantity;
-                return quantity === null || quantity === undefined ? [] : [{ series, quantity }];
+                const point = series.points.find((item) => item.date === date);
+                return point?.source == null || point.quantity === null ? [] : [{ series, quantity: point.quantity }];
             });
+            if (!completeDates.has(date)) {
+                return { date, quantity: null, skus: [], periodStockoutDays };
+            }
             const stockoutSkus = availableSeries
                 .filter(({ quantity }) => quantity === 0)
                 .map(({ series }) => ({
@@ -161,7 +178,7 @@ const productStockoutSeries = computed<StockoutSeries | null>(() => {
 
             return {
                 date,
-                quantity: availableSeries.length === 0 ? null : stockoutSkus.length,
+                quantity: stockoutSkus.length,
                 skus: stockoutSkus,
                 periodStockoutDays,
             };
@@ -285,6 +302,11 @@ function formatBasisAt(value: string): string {
     }).format(new Date(value));
 }
 
+function formatAmazonBasis(source: InventoryTrendDailySource): string {
+    const value = source.amazonBasisAt ?? (source.source === "sp_api" ? source.basisAt : null);
+    return value === null ? "未確定" : formatBasisAt(value);
+}
+
 function formatSummaryQuantity(quantity: number | null): string {
     return quantity === null ? "—" : `${quantity}点`;
 }
@@ -386,7 +408,7 @@ async function exportCsv(scope: "selected" | "all") {
                     :disabled="!productCode || !selectedProduct?.hasSurveyHistory || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
                     @click="exportCsv('selected')"
                 >
-                    選択品番の手動調査CSV
+                    選択品番の調査CSV
                 </BaseButton>
                 <BaseButton
                     data-testid="inventory-trend-export-all"
@@ -396,12 +418,12 @@ async function exportCsv(scope: "selected" | "all") {
                     :disabled="!targetStart || !targetEnd || trendLoading || exportLoading !== null"
                     @click="exportCsv('all')"
                 >
-                    全品番の手動調査CSV
+                    全品番の調査CSV
                 </BaseButton>
             </div>
         </div>
 
-        <p class="text-xs text-slate-500">CSVは手動調査の日次全倉庫データです。SP-API履歴は含みません。</p>
+        <p class="text-xs text-slate-500">CSVは調査結果に保存された日次全倉庫データです。調査がないSP-API取得日は含みません。</p>
 
         <BaseAlert v-if="exportError" tone="danger" title="日次在庫を出力できませんでした">{{ exportError }}</BaseAlert>
 
@@ -485,7 +507,7 @@ async function exportCsv(scope: "selected" | "all") {
         </BaseCard>
 
         <p v-if="inventoryScope === 'mallTotal' || inventoryScope === 'grandTotal'" data-testid="survey-scope-note" class="text-sm text-slate-600">
-            この区分は同じ手動調査の在庫だけを合算しています。SP-API履歴は含みません。
+            この区分は調査日の保存済み在庫を合算します。Amazonが未確定のSKUと、調査がないSP-API取得日の合計は表示しません。
         </p>
 
         <BaseModal :open="productPickerOpen" title="対象品番を選択" description="ブランドやキーワードで対象品番を絞り込めます。" width="lg" @close="closeProductPicker">
@@ -622,7 +644,7 @@ async function exportCsv(scope: "selected" | "all") {
         <BaseCard
             v-if="inventoryScope === 'amazon' && dailySources.length > 0 && !trendLoading && !trendError"
             title="Amazon在庫の取得元"
-            description="日付ごとに採用した在庫の取得元と基準日時（日本時間）です。データがない日は表示しません。"
+            description="日付ごとのAmazon在庫の取得元と基準日時（日本時間）です。調査日の数量は調査に保存された値を使います。"
             :padded="false"
         >
             <div class="max-h-72 overflow-auto">
@@ -633,8 +655,8 @@ async function exportCsv(scope: "selected" | "all") {
                     <tbody class="divide-y divide-slate-100">
                         <tr v-for="dailySource in dailySources" :key="dailySource.date" :data-source-date="dailySource.date">
                             <td class="px-5 py-2">{{ formatTargetDate(dailySource.date) }}</td>
-                            <td class="px-4 py-2">{{ dailySource.source === "sp_api" ? "SP-API" : "手動調査" }}</td>
-                            <td class="px-5 py-2">{{ formatBasisAt(dailySource.basisAt) }}</td>
+                            <td class="px-4 py-2">{{ dailySource.source === "sp_api" ? "SP-API" : "在庫調査" }}</td>
+                            <td class="px-5 py-2">{{ formatAmazonBasis(dailySource) }}</td>
                         </tr>
                     </tbody>
                 </table>

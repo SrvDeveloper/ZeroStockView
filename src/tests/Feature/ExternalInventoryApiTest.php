@@ -2,11 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\AmazonInventoryImport;
 use App\Models\ApiConnectionSetting;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\InventoryTrendCsvExporter;
+use App\Services\SurveyAmazonInventorySyncService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -166,6 +170,72 @@ class ExternalInventoryApiTest extends TestCase
         $client->getJson('/api/v1/inventory/daily?from=2025-08-01&to=2026-08-01')
             ->assertUnprocessable()
             ->assertJsonValidationErrors('to');
+    }
+
+    public function test_external_daily_api_and_csv_follow_saved_survey_values_before_and_after_amazon_sync(): void
+    {
+        $this->configureApi(['203.0.113.42']);
+        $this->actingAs(User::factory()->create());
+        $survey = Survey::factory()->spApi()->create(['executed_at' => '2026-09-27 08:00:00']);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        foreach (['A-1001-M', 'A-1001-L'] as $index => $code) {
+            SurveySku::factory()->for($product, 'product')->pendingAmazon()->create([
+                'sku_code' => $code,
+                'sort_order' => $index + 1,
+                'boss_own_stock' => 4,
+                'boss_rfc_stock' => 5,
+            ]);
+        }
+        $import = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'snapshot_date' => '2026-09-27',
+            'basis_at' => '2026-09-27 09:00:00',
+            'completed_at' => '2026-09-27 09:05:00',
+        ]);
+        $import->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 2,
+            'amazon_fba_stock' => 3,
+            'basis_at' => $import->basis_at,
+        ]);
+        $url = '/api/v1/inventory/daily?product_code=A-1001&from=2026-09-27&to=2026-09-27';
+        $client = $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])->withHeader('X-API-Key', self::API_KEY);
+
+        $client->getJson($url)->assertOk()
+            ->assertJsonPath('data.0.amazonOwn', null)
+            ->assertJsonPath('data.1.amazonFba', null);
+        $exporter = app(InventoryTrendCsvExporter::class);
+        $this->assertNull($exporter->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'))[0]['amazonOwn']);
+        $path = $exporter->export('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        try {
+            $csv = file_get_contents($path);
+            $this->assertIsString($csv);
+            $lines = explode("\r\n", trim($csv));
+            $firstRow = str_getcsv($lines[1], ',', '"', '');
+            $this->assertSame('', $firstRow[6]);
+            $this->assertSame('', $firstRow[7]);
+        } finally {
+            unlink($path);
+        }
+
+        app(SurveyAmazonInventorySyncService::class)->syncSurvey($survey->id);
+
+        $client->getJson($url)->assertOk()
+            ->assertJsonPath('data.0.amazonOwn', 2)
+            ->assertJsonPath('data.0.amazonFba', 3)
+            ->assertJsonPath('data.0.bossOwn', 4)
+            ->assertJsonPath('data.1.amazonOwn', null)
+            ->assertJsonPath('data.1.amazonFba', null);
+        $rows = $exporter->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        $this->assertSame(2, $rows[0]['amazonOwn']);
+        $this->assertSame(3, $rows[0]['amazonFba']);
+        $this->assertNull($rows[1]['amazonOwn']);
+        $this->getJson('/api/surveys/'.$survey->id)->assertOk()
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', $rows[0]['amazonOwn'])
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', $rows[0]['amazonFba']);
     }
 
     /** @param array<int, string> $allowedNetworks */

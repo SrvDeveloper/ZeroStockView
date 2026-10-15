@@ -84,11 +84,8 @@ class InventoryTrendController extends Controller
 
         $dailySurveys = Survey::query()
             ->whereBetween('executed_at', [$from, $to])
-            ->when(in_array($scope, ['amazon', 'mallTotal', 'grandTotal'], true), fn ($query) => $query->where(fn ($query) => $query
-                ->where('includes_amazon_inventory', true)
-                ->orWhereHas('products.skus', fn ($query) => $query->where('amazon_own_stock', '>', 0)->orWhere('amazon_fba_stock', '>', 0))))
             ->whereHas('products', fn ($query) => $query->where('product_code', $productCode))
-            ->with(['products' => fn ($query) => $query->where('product_code', $productCode)->with('skus')])
+            ->with(['amazonImport', 'products' => fn ($query) => $query->where('product_code', $productCode)->with('skus')])
             ->orderBy('executed_at')
             ->orderBy('created_at')
             ->orderBy('id')
@@ -97,7 +94,7 @@ class InventoryTrendController extends Controller
         $dailyImports = $scope === 'amazon' ? AmazonInventoryImport::query()
             ->where('status', 'succeeded')
             ->whereBetween('snapshot_date', [$from->toDateString(), $to->toDateString()])
-            ->whereHas('snapshots', fn ($query) => $query->where('product_code', $productCode))
+            ->whereHas('snapshots')
             ->with(['snapshots' => fn ($query) => $query->where('product_code', $productCode)])
             ->orderBy('basis_at')->orderBy('completed_at')->orderBy('id')->get()
             ->keyBy(fn (AmazonInventoryImport $import): string => $import->snapshot_date->toDateString()) : collect();
@@ -116,9 +113,9 @@ class InventoryTrendController extends Controller
         foreach ($dates as $date) {
             $survey = $dailySurveys->get($date);
             $import = $dailyImports->get($date);
-            if ($import !== null && $this->preferImport($import, $survey)) {
+            if ($survey === null && $import !== null && $import->snapshots->isNotEmpty()) {
                 $basisAt = $import->basis_at->toIso8601String();
-                $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt];
+                $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt, 'amazonBasisAt' => $basisAt];
                 foreach ($import->snapshots as $snapshot) {
                     $currentSku = $currentSkus?->get($snapshot->sku_code);
                     $skuMetadata[$snapshot->sku_code] = [
@@ -142,9 +139,14 @@ class InventoryTrendController extends Controller
             }
             $productSnapshot = $selectedProductSnapshot;
             $basisAt = $survey->executed_at->toIso8601String();
-            if ($scope === 'amazon') {
-                $dailySources[] = ['date' => $date, 'source' => 'survey', 'basisAt' => $basisAt];
-            }
+            $dailySources[] = [
+                'date' => $date,
+                'source' => 'survey',
+                'basisAt' => $basisAt,
+                'amazonBasisAt' => $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API
+                    ? $survey->amazonImport?->basis_at?->toIso8601String()
+                    : ($survey->hasSavedAmazonInventory() ? $basisAt : null),
+            ];
             foreach ($selectedProductSnapshot->skus as $sku) {
                 $skuMetadata[$sku->sku_code] = [
                     'skuCode' => $sku->sku_code,
@@ -206,9 +208,11 @@ class InventoryTrendController extends Controller
         ])->deleteFileAfterSend();
     }
 
-    private function quantity(SurveySku $sku, string $scope): int
+    private function quantity(SurveySku $sku, string $scope): ?int
     {
-        $amazon = $sku->amazon_own_stock + $sku->amazon_fba_stock;
+        $amazon = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
+            ? null
+            : $sku->amazon_own_stock + $sku->amazon_fba_stock;
         $boss = $sku->boss_own_stock + $sku->boss_rfc_stock;
 
         return match ($scope) {
@@ -216,21 +220,8 @@ class InventoryTrendController extends Controller
             'boss' => $boss,
             'free' => $sku->free_stock,
             'stock' => $sku->ec_stock,
-            'grandTotal' => $amazon + $boss + $sku->free_stock + $sku->ec_stock,
-            default => $amazon + $boss,
+            'grandTotal' => $amazon === null ? null : $amazon + $boss + $sku->free_stock + $sku->ec_stock,
+            default => $amazon === null ? null : $amazon + $boss,
         };
-    }
-
-    private function preferImport(AmazonInventoryImport $import, ?Survey $survey): bool
-    {
-        if ($survey === null) {
-            return true;
-        }
-
-        if (! $import->basis_at->equalTo($survey->executed_at)) {
-            return $import->basis_at->greaterThan($survey->executed_at);
-        }
-
-        return ($import->completed_at ?? $import->created_at)->greaterThanOrEqualTo($survey->created_at);
     }
 }

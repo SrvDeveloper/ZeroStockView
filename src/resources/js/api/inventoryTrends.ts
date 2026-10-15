@@ -21,6 +21,7 @@ export interface InventoryTrendDailySource {
     date: string;
     source: "survey" | "sp_api";
     basisAt: string;
+    amazonBasisAt?: string | null;
 }
 
 export interface InventoryTrendSeries {

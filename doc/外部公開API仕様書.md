@@ -102,8 +102,8 @@ HTTPステータス: `200 OK`
 | `category` | string | カテゴリ名 |
 | `sku` | string | SKUコード |
 | `size` | string | サイズ |
-| `amazonOwn` | integer \| null | Amazon自社出荷在庫数。新しい3ファイル調査では取込元のAmazon数量を持たないため `null` |
-| `amazonFba` | integer \| null | Amazon FBA在庫数。新しい3ファイル調査では取込元のAmazon数量を持たないため `null` |
+| `amazonOwn` | integer \| null | 調査に保存されたAmazon自社出荷在庫数。取込待ち・未取得SKUは `null`。確定した0在庫は `0` |
+| `amazonFba` | integer \| null | 調査に保存されたAmazon FBA在庫数。取込待ち・未取得SKUは `null`。確定した0在庫は `0` |
 | `bossOwn` | integer | BOSS自社倉庫在庫数（実在庫数 - 引当済数） |
 | `bossRfc` | integer | BOSS RFC倉庫在庫数（実在庫数 - 引当済数） |
 | `freeStock` | integer | フリー在庫数 |
@@ -137,7 +137,7 @@ HTTPステータス: `200 OK`
 - 同じ日に同じ品番の調査が複数ある場合、最も新しい調査結果のみを返します。
 - 調査がない日の補間は行われず、その日のデータは返されません。
 - `data` は日付の昇順、品番の昇順、SKUの登録順で並びます。
-- BOSS・ECストック・フリー在庫は調査時点のファイル取込値です。旧5ファイル調査のAmazon数量も保存済みの値を返します。新しい3ファイル調査のAmazon数量は `null` とし、別管理のSP-API在庫はこのAPIに混ぜません。
+- BOSS・ECストック・フリー在庫は調査時点のファイル取込値です。Amazon数量は旧5ファイル調査、新しい3ファイル調査とも調査SKUに保存された値を返します。新しい3ファイル調査は当日のSP-API取得が反映されるまで `null` で、反映後は同じ調査日の値が更新されます。取得対象外のSKUは `null` のままです。
 - 返却後に行われた取込みや再照合により、同一条件の取得結果が変わる場合があります。
 
 ## 4. エラーレスポンス
