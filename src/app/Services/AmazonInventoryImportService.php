@@ -21,6 +21,7 @@ class AmazonInventoryImportService
     public function __construct(
         private CrossWalkerClient $crossWalker,
         private AmazonReportClient $reports,
+        private SurveyAmazonInventorySyncService $surveySync,
     ) {}
 
     public function queue(string $triggerSource): AmazonInventoryImport
@@ -113,7 +114,20 @@ class AmazonInventoryImportService
             Log::error('Amazon在庫取込に失敗しました。', ['import_id' => $importId, 'reason' => $message]);
         }
 
-        return AmazonInventoryImport::query()->with('snapshots')->findOrFail($importId);
+        $import = AmazonInventoryImport::query()->with('snapshots')->findOrFail($importId);
+        if ($import->status === 'succeeded') {
+            try {
+                $this->surveySync->syncDate($import->snapshot_date);
+            } catch (Throwable $exception) {
+                Log::error('Amazon在庫の取得後、調査履歴への反映に失敗しました。', [
+                    'import_id' => $import->id,
+                    'snapshot_date' => $import->snapshot_date->toDateString(),
+                    'exception' => $exception,
+                ]);
+            }
+        }
+
+        return $import;
     }
 
     public function expireStale(): void

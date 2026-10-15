@@ -6,6 +6,7 @@ use App\Models\AmazonInventoryImport;
 use App\Models\Survey;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -58,16 +59,10 @@ class SurveyAmazonInventorySyncService
     /** @return int Number of three-file surveys synchronized. */
     public function syncDate(CarbonInterface|string $date): int
     {
-        $day = is_string($date)
-            ? CarbonImmutable::parse($date, 'Asia/Tokyo')->startOfDay()
-            : CarbonImmutable::instance($date)->setTimezone('Asia/Tokyo')->startOfDay();
+        $day = $this->tokyoDay($date);
         $count = 0;
 
-        Survey::query()
-            ->where('amazon_source', Survey::AMAZON_SOURCE_SP_API)
-            ->where('includes_amazon_inventory', false)
-            ->where('executed_at', '>=', $day)
-            ->where('executed_at', '<', $day->addDay())
+        $this->surveysOn($day)
             ->orderBy('id')
             ->chunkById(100, function ($surveys) use (&$count): void {
                 foreach ($surveys as $survey) {
@@ -77,6 +72,46 @@ class SurveyAmazonInventorySyncService
             });
 
         return $count;
+    }
+
+    /** @return int Number of three-file surveys newly synchronized. */
+    public function syncPendingDate(CarbonInterface|string $date): int
+    {
+        $day = $this->tokyoDay($date);
+        $latest = $this->latestSuccessfulImport($day->toDateString());
+        if ($latest === null) {
+            return 0;
+        }
+
+        $count = 0;
+        $this->surveysOn($day)
+            ->where(fn ($query) => $query->whereNull('amazon_inventory_import_id')
+                ->orWhere('amazon_inventory_import_id', '!=', $latest->id))
+            ->orderBy('id')
+            ->chunkById(100, function ($surveys) use (&$count): void {
+                foreach ($surveys as $survey) {
+                    $this->syncSurvey($survey->id);
+                    $count++;
+                }
+            });
+
+        return $count;
+    }
+
+    private function tokyoDay(CarbonInterface|string $date): CarbonImmutable
+    {
+        return (is_string($date)
+            ? CarbonImmutable::parse($date, 'Asia/Tokyo')
+            : CarbonImmutable::instance($date)->setTimezone('Asia/Tokyo'))->startOfDay();
+    }
+
+    private function surveysOn(CarbonImmutable $day): Builder
+    {
+        return Survey::query()
+            ->where('amazon_source', Survey::AMAZON_SOURCE_SP_API)
+            ->where('includes_amazon_inventory', false)
+            ->where('executed_at', '>=', $day)
+            ->where('executed_at', '<', $day->addDay());
     }
 
     private function latestSuccessfulImport(string $day): ?AmazonInventoryImport

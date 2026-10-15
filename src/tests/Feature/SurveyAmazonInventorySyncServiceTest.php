@@ -80,6 +80,25 @@ class SurveyAmazonInventorySyncServiceTest extends TestCase
         $this->assertTrue($updatedAt->equalTo($morningMatch->fresh()->updated_at));
     }
 
+    public function test_pending_retry_applies_latest_success_once_and_never_rolls_back_to_an_older_import(): void
+    {
+        $old = $this->import('2026-10-15', '2026-10-15 09:00:00');
+        $this->snapshot($old, 'SKU-1', 2, 3);
+        $latest = $this->import('2026-10-15', '2026-10-15 10:00:00');
+        $this->snapshot($latest, 'SKU-1', 8, 9);
+        $survey = $this->survey('2026-10-15 08:00:00', Survey::AMAZON_SOURCE_SP_API, $old->id);
+        $sku = $this->sku($survey, 'SKU-1', 2, 3);
+        $service = app(SurveyAmazonInventorySyncService::class);
+
+        $this->assertSame(1, $service->syncPendingDate('2026-10-15'));
+        $this->assertSame($latest->id, $survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(8, $sku->fresh()->amazon_own_stock);
+        $this->assertSame(0, $service->syncPendingDate('2026-10-15'));
+        $this->assertSame(1, $service->syncDate('2026-10-15'));
+        $this->assertSame($latest->id, $survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(8, $sku->fresh()->amazon_own_stock);
+    }
+
     public function test_latest_success_is_selected_by_basis_completion_then_id(): void
     {
         $day = '2026-10-15';
