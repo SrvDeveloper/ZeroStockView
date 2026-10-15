@@ -110,6 +110,7 @@ class InventoryImportService
                     'executed_at' => $basisAt,
                     'import_setting_name' => $setting->name,
                     'includes_amazon_inventory' => false,
+                    'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
                     'amazon_inventory_import_id' => $amazonImportId,
                 ]);
 

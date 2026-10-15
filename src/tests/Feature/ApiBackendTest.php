@@ -229,6 +229,7 @@ class ApiBackendTest extends TestCase
         $this->assertDatabaseHas('surveys', [
             'id' => $response->json('data.id'),
             'includes_amazon_inventory' => false,
+            'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
             'amazon_inventory_import_id' => $amazonImport->id,
         ]);
 

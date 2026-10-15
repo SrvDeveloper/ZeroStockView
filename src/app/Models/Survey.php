@@ -9,11 +9,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['executed_at', 'import_setting_name', 'includes_amazon_inventory', 'amazon_inventory_import_id'])]
+#[Fillable(['executed_at', 'import_setting_name', 'includes_amazon_inventory', 'amazon_source', 'amazon_inventory_import_id'])]
 class Survey extends Model
 {
     /** @use HasFactory<SurveyFactory> */
     use HasFactory;
+
+    public const AMAZON_SOURCE_LEGACY_FILE = 'legacy_file';
+
+    public const AMAZON_SOURCE_SP_API = 'sp_api';
 
     /** @return HasMany<SurveyProduct, $this> */
     public function products(): HasMany

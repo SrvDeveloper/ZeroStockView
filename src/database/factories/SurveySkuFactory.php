@@ -36,4 +36,12 @@ class SurveySkuFactory extends Factory
             'memo' => null,
         ];
     }
+
+    public function pendingAmazon(): static
+    {
+        return $this->state(fn (): array => [
+            'amazon_own_stock' => null,
+            'amazon_fba_stock' => null,
+        ]);
+    }
 }
