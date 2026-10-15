@@ -118,7 +118,20 @@ class InventoryTrendApiTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('product_code');
     }
 
-    public function test_amazon_trends_select_the_latest_basis_per_day_without_changing_other_scopes_or_csv(): void
+    public function test_amazon_only_day_does_not_reuse_an_older_import_when_latest_success_omits_the_product(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'API-ONLY']);
+        $this->apiSnapshot('2026-09-27 09:00:00', 'API-ONLY', 'API-ONLY-M', 4, 6);
+        $this->apiSnapshot('2026-09-27 10:00:00', 'OTHER', 'OTHER-M', 8, 9);
+
+        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=amazon')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.series')
+            ->assertJsonCount(0, 'data.dailySources');
+    }
+
+    public function test_amazon_trends_use_the_survey_on_survey_days_and_imports_only_on_survey_free_days(): void
     {
         $this->actingAs(User::factory()->create());
         $product = Product::factory()->create(['product_code' => 'A-1001']);
@@ -131,15 +144,16 @@ class InventoryTrendApiTest extends TestCase
         $this->apiSnapshot('2026-09-29 19:00:00', 'A-1001', 'A-1001-M', 6, 7, completedAt: '2026-09-29 20:00:00');
         $this->apiSnapshot('2026-09-29 18:00:00', 'A-1001', 'A-1001-M', 50, 60, completedAt: '2026-09-29 21:00:00');
         $this->apiSnapshot('2026-09-30 20:00:00', 'A-1001', 'A-1001-M', 90, 90, 'failed');
+        Survey::query()->update(['amazon_source' => Survey::AMAZON_SOURCE_LEGACY_FILE, 'includes_amazon_inventory' => true]);
 
         $amazon = $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-30&scope=amazon')
             ->assertOk()
             ->assertJsonPath('data.series.0.points.0.quantity', 12)
-            ->assertJsonPath('data.series.0.points.1.quantity', 5)
+            ->assertJsonPath('data.series.0.points.1.quantity', 13)
             ->assertJsonPath('data.series.0.points.2.quantity', 13)
             ->assertJsonPath('data.series.0.points.3.quantity', 14)
             ->assertJsonPath('data.dailySources.0.source', 'survey')
-            ->assertJsonPath('data.dailySources.1.source', 'sp_api')
+            ->assertJsonPath('data.dailySources.1.source', 'survey')
             ->assertJsonPath('data.dailySources.2.source', 'sp_api')
             ->assertJsonPath('data.dailySources.3.source', 'survey');
         $this->assertNotEmpty($amazon->json('data.dailySources.1.basisAt'));
@@ -157,24 +171,26 @@ class InventoryTrendApiTest extends TestCase
         $this->assertStringContainsString(',12,1,30,1,1,1', $contents);
     }
 
-    public function test_three_file_survey_does_not_replace_amazon_api_history_or_report_unmeasured_totals(): void
+    public function test_pending_three_file_survey_takes_precedence_over_import_history_without_partial_totals(): void
     {
         $this->actingAs(User::factory()->create());
         $product = Product::factory()->create(['product_code' => 'A-1001']);
         Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
         $this->snapshot('2026-09-27 18:00:00', 'A-1001', 'A-1001-M', amazonOwn: 0, amazonFba: 0, bossOwn: 7, bossRfc: 2);
-        Survey::query()->update(['includes_amazon_inventory' => false]);
+        Survey::query()->update(['includes_amazon_inventory' => false, 'amazon_source' => Survey::AMAZON_SOURCE_SP_API]);
+        SurveySku::query()->update(['amazon_own_stock' => null, 'amazon_fba_stock' => null]);
         $this->apiSnapshot('2026-09-27 09:00:00', 'A-1001', 'A-1001-M', 4, 6);
 
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=amazon')
             ->assertOk()
-            ->assertJsonPath('data.series.0.points.0.quantity', 10)
-            ->assertJsonPath('data.series.0.points.0.source', 'sp_api');
+            ->assertJsonPath('data.series.0.points.0.quantity', null)
+            ->assertJsonPath('data.series.0.points.0.source', 'survey')
+            ->assertJsonPath('data.dailySources.0.amazonBasisAt', null);
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=boss')
             ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', 9);
         foreach (['mallTotal', 'grandTotal'] as $scope) {
             $this->getJson("/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope={$scope}")
-                ->assertOk()->assertJsonCount(0, 'data.series');
+                ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', null);
         }
 
         $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
@@ -182,6 +198,60 @@ class InventoryTrendApiTest extends TestCase
         $this->assertNull($rows[0]['amazonOwn']);
         $this->assertNull($rows[0]['amazonFba']);
         $this->assertSame(7, $rows[0]['bossOwn']);
+    }
+
+    public function test_latest_same_day_three_file_survey_supplies_saved_values_for_every_trend_scope(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        $import = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'snapshot_date' => '2026-09-27',
+            'basis_at' => '2026-09-27 20:00:00',
+            'completed_at' => '2026-09-27 20:05:00',
+        ]);
+        $import->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 99,
+            'amazon_fba_stock' => 99,
+            'basis_at' => $import->basis_at,
+        ]);
+        $this->snapshot('2026-09-27 08:00:00', 'A-1001', 'A-1001-M', amazonOwn: 1, amazonFba: 2);
+        $survey = Survey::factory()->spApi()->create([
+            'executed_at' => '2026-09-27 18:00:00',
+            'amazon_inventory_import_id' => $import->id,
+        ]);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001', 'sort_order' => 1]);
+        foreach ([['A-1001-M', 4, 5], ['A-1001-L', null, null]] as $index => [$code, $own, $fba]) {
+            SurveySku::factory()->for($product, 'product')->create([
+                'sku_code' => $code,
+                'sort_order' => $index + 1,
+                'amazon_own_stock' => $own,
+                'amazon_fba_stock' => $fba,
+                'boss_own_stock' => 4,
+                'boss_rfc_stock' => 5,
+                'free_stock' => 6,
+                'ec_stock' => 7,
+            ]);
+        }
+
+        foreach (['amazon' => 9, 'boss' => 9, 'mallTotal' => 18, 'grandTotal' => 31] as $scope => $expected) {
+            $this->getJson("/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope={$scope}")
+                ->assertOk()
+                ->assertJsonPath('data.series.0.points.0.quantity', $expected)
+                ->assertJsonPath('data.series.1.points.0.quantity', $scope === 'boss' ? 9 : null)
+                ->assertJsonPath('data.dailySources.0.source', 'survey')
+                ->assertJsonPath('data.dailySources.0.amazonBasisAt', $import->basis_at->toIso8601String());
+        }
+
+        $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        $this->assertCount(2, $rows);
+        $this->assertSame(4, $rows[0]['amazonOwn']);
+        $this->assertNull($rows[1]['amazonOwn']);
+        $this->assertNull($rows[1]['amazonFba']);
     }
 
     public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void

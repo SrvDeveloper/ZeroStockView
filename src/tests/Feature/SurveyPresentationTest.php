@@ -144,6 +144,7 @@ class SurveyPresentationTest extends TestCase
     {
         return SurveySku::factory()->for($product, 'product')->create([
             'sku_code' => $code,
+            'sort_order' => $code === 'SKU-MATCHED' ? 1 : 2,
             'amazon_own_stock' => $own,
             'amazon_fba_stock' => $fba,
             'boss_own_stock' => 4,

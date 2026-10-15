@@ -65,9 +65,8 @@ class InventoryTrendCsvExporter
         $dailyProducts = [];
         foreach ($surveys as $survey) {
             $date = $survey->executed_at->toDateString();
-            $hasSavedAmazonInventory = $survey->hasSavedAmazonInventory();
             foreach ($survey->products as $product) {
-                $dailyProducts[$date][$product->product_code] = ['product' => $product, 'includes_amazon_inventory' => $hasSavedAmazonInventory];
+                $dailyProducts[$date][$product->product_code] = $product;
             }
         }
         ksort($dailyProducts);
@@ -78,8 +77,7 @@ class InventoryTrendCsvExporter
 
         $rows = [];
         foreach ($dailyProducts as $date => $products) {
-            foreach ($products as $entry) {
-                $product = $entry['product'];
+            foreach ($products as $product) {
                 foreach ($product->skus as $sku) {
                     $rows[] = [
                         'date' => $date,
@@ -88,8 +86,8 @@ class InventoryTrendCsvExporter
                         'category' => $product->category,
                         'sku' => $sku->sku_code,
                         'size' => $sku->tq_size,
-                        'amazonOwn' => $entry['includes_amazon_inventory'] ? $sku->amazon_own_stock : null,
-                        'amazonFba' => $entry['includes_amazon_inventory'] ? $sku->amazon_fba_stock : null,
+                        'amazonOwn' => $sku->amazon_own_stock,
+                        'amazonFba' => $sku->amazon_fba_stock,
                         'bossOwn' => $sku->boss_own_stock,
                         'bossRfc' => $sku->boss_rfc_stock,
                         'freeStock' => $sku->free_stock,
