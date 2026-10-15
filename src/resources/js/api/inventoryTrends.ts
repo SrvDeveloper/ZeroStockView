@@ -22,6 +22,7 @@ export interface InventoryTrendDailySource {
     source: "survey" | "sp_api";
     basisAt: string;
     amazonBasisAt?: string | null;
+    amazonInventoryStatus: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";
 }
 
 export interface InventoryTrendSeries {

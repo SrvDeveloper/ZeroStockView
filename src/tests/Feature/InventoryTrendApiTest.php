@@ -109,7 +109,8 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonPath('data.series.0.size', 'M')
             ->assertJsonPath('data.series.0.points.0.quantity', 10)
             ->assertJsonPath('data.series.0.points.0.source', 'sp_api')
-            ->assertJsonPath('data.dailySources.0.source', 'sp_api');
+            ->assertJsonPath('data.dailySources.0.source', 'sp_api')
+            ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'complete');
 
         $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=grandTotal')
             ->assertOk()
@@ -155,7 +156,9 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonPath('data.dailySources.0.source', 'survey')
             ->assertJsonPath('data.dailySources.1.source', 'survey')
             ->assertJsonPath('data.dailySources.2.source', 'sp_api')
-            ->assertJsonPath('data.dailySources.3.source', 'survey');
+            ->assertJsonPath('data.dailySources.3.source', 'survey')
+            ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'legacy_file')
+            ->assertJsonPath('data.dailySources.2.amazonInventoryStatus', 'complete');
         $this->assertNotEmpty($amazon->json('data.dailySources.1.basisAt'));
 
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-30&scope=grandTotal')
@@ -185,7 +188,8 @@ class InventoryTrendApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.series.0.points.0.quantity', null)
             ->assertJsonPath('data.series.0.points.0.source', 'survey')
-            ->assertJsonPath('data.dailySources.0.amazonBasisAt', null);
+            ->assertJsonPath('data.dailySources.0.amazonBasisAt', null)
+            ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'pending');
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=boss')
             ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', 9);
         foreach (['mallTotal', 'grandTotal'] as $scope) {
@@ -244,6 +248,7 @@ class InventoryTrendApiTest extends TestCase
                 ->assertJsonPath('data.series.0.points.0.quantity', $expected)
                 ->assertJsonPath('data.series.1.points.0.quantity', $scope === 'boss' ? 9 : null)
                 ->assertJsonPath('data.dailySources.0.source', 'survey')
+                ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'partial')
                 ->assertJsonPath('data.dailySources.0.amazonBasisAt', $import->basis_at->toIso8601String());
         }
 

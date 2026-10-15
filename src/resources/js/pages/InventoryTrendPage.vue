@@ -307,6 +307,21 @@ function formatAmazonBasis(source: InventoryTrendDailySource): string {
     return value === null ? "未確定" : formatBasisAt(value);
 }
 
+function formatAmazonStatus(source: InventoryTrendDailySource): string {
+    switch (source.amazonInventoryStatus) {
+        case "pending":
+            return "取込待ち";
+        case "partial":
+            return "一部SKU未取得";
+        case "complete":
+            return "取込済み";
+        case "legacy_file":
+            return "旧ファイル";
+        default:
+            return "未分類";
+    }
+}
+
 function formatSummaryQuantity(quantity: number | null): string {
     return quantity === null ? "—" : `${quantity}点`;
 }
@@ -558,6 +573,7 @@ async function exportCsv(scope: "selected" | "all") {
 
         <BaseCard :title="chartTitle" :description="chartDescription">
             <template #actions>
+                <BaseButton data-testid="refresh-trend" size="sm" variant="secondary" icon="refresh" :loading="trendLoading" @click="() => loadTrend()">再読込</BaseButton>
                 <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="在庫推移の確認単位">
                     <button
                         type="button"
@@ -642,20 +658,24 @@ async function exportCsv(scope: "selected" | "all") {
         </BaseCard>
 
         <BaseCard
-            v-if="inventoryScope === 'amazon' && dailySources.length > 0 && !trendLoading && !trendError"
+            v-if="['amazon', 'mallTotal', 'grandTotal'].includes(inventoryScope) && dailySources.length > 0 && !trendLoading && !trendError"
             title="Amazon在庫の取得元"
-            description="日付ごとのAmazon在庫の取得元と基準日時（日本時間）です。調査日の数量は調査に保存された値を使います。"
+            description="選択した品番の日付ごとのAmazon在庫の状態と基準日時（日本時間）です。調査日の数量は調査に保存された値を使います。"
             :padded="false"
         >
             <div class="max-h-72 overflow-auto">
                 <table data-testid="amazon-daily-sources" class="w-full min-w-120 text-left text-sm">
                     <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
-                        <tr><th class="px-5 py-3 font-medium">日付</th><th class="px-4 py-3 font-medium">取得元</th><th class="px-5 py-3 font-medium">基準日時（日本時間）</th></tr>
+                        <tr
+                            ><th class="px-5 py-3 font-medium">日付</th><th class="px-4 py-3 font-medium">取得元</th><th class="px-4 py-3 font-medium">状態</th
+                            ><th class="px-5 py-3 font-medium">基準日時（日本時間）</th></tr
+                        >
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         <tr v-for="dailySource in dailySources" :key="dailySource.date" :data-source-date="dailySource.date">
                             <td class="px-5 py-2">{{ formatTargetDate(dailySource.date) }}</td>
                             <td class="px-4 py-2">{{ dailySource.source === "sp_api" ? "SP-API" : "在庫調査" }}</td>
+                            <td class="px-4 py-2">{{ formatAmazonStatus(dailySource) }}</td>
                             <td class="px-5 py-2">{{ formatAmazonBasis(dailySource) }}</td>
                         </tr>
                     </tbody>
