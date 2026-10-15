@@ -11,10 +11,13 @@ use App\Models\ImportTarget;
 use App\Models\Product;
 use App\Models\Sku;
 use App\Models\Survey;
+use App\Models\SurveyProduct;
+use App\Models\SurveySku;
 use App\Services\AmazonInventoryImportService;
 use App\Services\AmazonInventoryReport;
 use App\Services\AmazonReportClient;
 use App\Services\CrossWalkerClient;
+use App\Services\SurveyAmazonInventorySyncService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
@@ -161,6 +164,70 @@ class AmazonInventoryImportServiceTest extends TestCase
         $this->assertDatabaseHas('amazon_inventory_snapshots', ['amazon_inventory_import_id' => $second->id, 'amazon_own_stock' => 4]);
     }
 
+    public function test_success_updates_all_same_day_surveys_and_failed_import_does_not_clear_them(): void
+    {
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1, 3);
+        $morning = $this->surveySku('2026-10-14 08:00:00');
+        $evening = $this->surveySku('2026-10-14 20:00:00');
+        $previousDay = $this->surveySku('2026-10-13 20:00:00');
+        $legacy = $this->surveySku('2026-10-14 12:00:00', true);
+
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '2']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '3']]);
+        $service = app(AmazonInventoryImportService::class);
+        $first = $service->process($service->queue('manual')->id);
+        $this->assertSame($first->id, $morning->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame($first->id, $evening->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(2, $morning->fresh()->amazon_own_stock);
+        $this->assertSame(3, $evening->fresh()->amazon_fba_stock);
+        $this->assertNull($previousDay->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertNull($legacy->product->survey->fresh()->amazon_inventory_import_id);
+
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '4']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '5']]);
+        $second = app(AmazonInventoryImportService::class)->process($service->queue('scheduled')->id);
+        $this->assertSame($second->id, $morning->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame($second->id, $evening->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(4, $morning->fresh()->amazon_own_stock);
+        $this->assertSame(5, $evening->fresh()->amazon_fba_stock);
+
+        $reports = Mockery::mock(AmazonReportClient::class);
+        $reports->shouldReceive('fetchOwnInventory')->once()->andReturn($this->report('OWN', [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '9']]));
+        $reports->shouldReceive('fetchFbaInventory')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
+        $this->app->instance(AmazonReportClient::class, $reports);
+        $failed = app(AmazonInventoryImportService::class)->process($service->queue('manual')->id);
+
+        $this->assertSame('failed', $failed->status);
+        $this->assertSame($second->id, $morning->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(4, $morning->fresh()->amazon_own_stock);
+        $this->assertSame(5, $evening->fresh()->amazon_fba_stock);
+        $this->assertNull($legacy->product->survey->fresh()->amazon_inventory_import_id);
+    }
+
+    public function test_sync_failure_preserves_successful_import_and_manual_retry_repairs_the_survey(): void
+    {
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1);
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '7']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '8']]);
+        $sku = $this->surveySku('2026-10-14 10:00:00');
+        $sync = Mockery::mock(SurveyAmazonInventorySyncService::class);
+        $sync->shouldReceive('syncDate')->once()->andThrow(new \RuntimeException('simulated sync failure'));
+        $this->app->instance(SurveyAmazonInventorySyncService::class, $sync);
+
+        $service = app(AmazonInventoryImportService::class);
+        $import = $service->process($service->queue('manual')->id);
+
+        $this->assertSame('succeeded', $import->status);
+        $this->assertSame(1, $import->snapshots->count());
+        $this->assertNull($sku->fresh()->amazon_own_stock);
+        $this->assertNull($sku->product->survey->fresh()->amazon_inventory_import_id);
+
+        $this->app->forgetInstance(SurveyAmazonInventorySyncService::class);
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-10-14'])->assertSuccessful();
+        $this->assertSame($import->id, $sku->product->survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(7, $sku->fresh()->amazon_own_stock);
+        $this->assertSame(8, $sku->fresh()->amazon_fba_stock);
+    }
+
     public function test_rejects_report_without_identifiers_before_zero_filling(): void
     {
         $this->target('P-1', 'SKU-1', 'B000000001');
@@ -250,6 +317,22 @@ class AmazonInventoryImportServiceTest extends TestCase
         ImportTarget::query()->create(['import_setting_id' => $setting->id, 'product_id' => $product->id, 'sort_order' => 1]);
 
         return $product;
+    }
+
+    private function surveySku(string $executedAt, bool $legacy = false): SurveySku
+    {
+        $survey = Survey::factory()->create([
+            'executed_at' => $executedAt,
+            'amazon_source' => $legacy ? Survey::AMAZON_SOURCE_LEGACY_FILE : Survey::AMAZON_SOURCE_SP_API,
+            'includes_amazon_inventory' => $legacy,
+        ]);
+        $product = SurveyProduct::factory()->for($survey)->create();
+
+        return SurveySku::factory()->for($product, 'product')->create([
+            'sku_code' => 'SKU-1',
+            'amazon_own_stock' => $legacy ? 11 : null,
+            'amazon_fba_stock' => $legacy ? 12 : null,
+        ]);
     }
 
     private function fakeCrossWalker(int $targetCount, int $times = 1): void

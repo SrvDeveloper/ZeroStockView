@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use App\Jobs\ProcessAmazonInventoryImport;
 use App\Models\AmazonInventoryImport;
+use App\Models\Survey;
+use App\Models\SurveyProduct;
+use App\Models\SurveySku;
 use App\Services\AmazonInventoryImportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,6 +31,50 @@ class ScheduledAmazonInventoryImportTest extends TestCase
         $this->assertFalse($event->isDue($this->app));
         $this->travelTo(CarbonImmutable::parse('2026-10-14 09:00:00', 'Asia/Tokyo'));
         $this->assertTrue($event->isDue($this->app));
+    }
+
+    public function test_scheduler_retries_pending_survey_reflection_every_five_minutes(): void
+    {
+        $event = collect(Schedule::events())
+            ->first(fn ($event): bool => str_contains($event->command ?? '', 'survey:amazon-reconcile'));
+
+        $this->assertNotNull($event);
+        $this->assertSame('*/5 * * * *', $event->expression);
+        $this->assertTrue($event->withoutOverlapping);
+        $this->travelTo(CarbonImmutable::parse('2026-10-15 09:05:00', 'Asia/Tokyo'));
+        $this->assertTrue($event->isDue($this->app));
+        $this->travelTo(CarbonImmutable::parse('2026-10-15 09:06:00', 'Asia/Tokyo'));
+        $this->assertFalse($event->isDue($this->app));
+    }
+
+    public function test_reconcile_command_retries_today_and_accepts_a_past_date(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15 10:00:00', 'Asia/Tokyo'));
+        $import = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'manual',
+            'snapshot_date' => '2026-10-15',
+            'basis_at' => now(),
+            'completed_at' => now(),
+        ]);
+        $import->snapshots()->create([
+            'product_code' => 'P-1',
+            'sku_code' => 'SKU-1',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 4,
+            'amazon_fba_stock' => 5,
+            'basis_at' => now(),
+        ]);
+        $survey = Survey::factory()->spApi()->create(['executed_at' => '2026-10-15 08:00:00']);
+        $product = SurveyProduct::factory()->for($survey)->create();
+        $sku = SurveySku::factory()->for($product, 'product')->pendingAmazon()->create(['sku_code' => 'SKU-1']);
+
+        $this->artisan('survey:amazon-reconcile')->assertSuccessful();
+        $this->assertSame($import->id, $survey->fresh()->amazon_inventory_import_id);
+        $this->assertSame(4, $sku->fresh()->amazon_own_stock);
+        $this->artisan('survey:amazon-reconcile')->assertSuccessful();
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-10-15'])->assertSuccessful();
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-02-30'])->assertFailed();
     }
 
     public function test_scheduler_starts_a_short_lived_worker_only_when_jobs_are_queued(): void
