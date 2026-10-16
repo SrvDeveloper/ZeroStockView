@@ -417,7 +417,7 @@ async function exportExcel(scope: "all" | "filtered") {
             </div>
             <div class="flex flex-wrap gap-x-5 gap-y-1 text-[11.5px] text-muted">
                 <p
-                    >在庫基準日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.executedAt) }}</span></p
+                    >初回取込日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.executedAt) }}</span></p
                 >
                 <p v-if="survey.createdAt"
                     >結果作成日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.createdAt) }}</span></p
@@ -452,7 +452,7 @@ async function exportExcel(scope: "all" | "filtered") {
         <BaseModal
             :open="rerunMenuOpen"
             title="差異照合メニュー"
-            description="現在残っている取込ファイルと全品番グループの対象品番を再照合し、元の在庫基準日時の調査結果を更新します。ファイルがない種類は取込待ちになります。"
+            description="現在残っている取込ファイルと全品番グループの対象品番を再照合し、同じ日の調査結果を更新します（初回取込日時は変わりません）。ファイルがない種類は取込待ちになります。"
             width="md"
             @close="closeRerunMenu"
         >

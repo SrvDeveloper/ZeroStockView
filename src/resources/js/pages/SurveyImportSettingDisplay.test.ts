@@ -50,7 +50,7 @@ describe("survey import setting display", () => {
         expect(wrapper.text()).not.toContain("品番グループ");
         expect(wrapper.text()).not.toContain("売上TOP20");
         expect(wrapper.find("[data-testid=import-setting-filter]").exists()).toBe(false);
-        expect(wrapper.text()).toContain("在庫基準日時");
+        expect(wrapper.text()).toContain("初回取込日時");
         expect(wrapper.text()).toContain("結果作成: 2026/09/18 03:00");
     });
 
@@ -105,7 +105,8 @@ describe("survey import setting display", () => {
         });
 
         expect(wrapper.text()).not.toContain("品番グループ:");
-        expect(wrapper.text()).toContain("在庫基準日時: 2026/09/16 01:00");
+        expect(wrapper.text()).toContain("初回取込日時: 2026/09/16 01:00");
+        expect(wrapper.text()).not.toContain("在庫基準日時");
         expect(wrapper.text()).toContain("結果作成日時: 2026/09/18 03:00");
     });
 
