@@ -288,7 +288,7 @@ function showStockoutTooltip(point: TrendPoint, index: number, event: Event) {
     hovered.value = {
         date: point.date,
         entries,
-        activeColor: props.stockoutSeries?.color ?? "#e11d48",
+        activeColor: props.stockoutSeries?.color ?? "#11161a",
         x,
         y,
         totalQuantity: entries.reduce((total, entry) => total + entry.quantity, 0),
@@ -339,12 +339,12 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
             <desc id="inventory-chart-description">{{ stockoutSeries ? "品番の日別総在庫数と欠品SKU数を表すグラフです。" : "選択されたSKUの日別在庫数を表すグラフです。" }}</desc>
 
             <g v-for="tick in yTicks" :key="tick">
-                <line :x1="plot.left" :x2="width - plot.right" :y1="pointY(tick)" :y2="pointY(tick)" stroke="#e2e8f0" stroke-width="1" />
-                <text :x="plot.left - 12" :y="pointY(tick) + 4" text-anchor="end" class="fill-slate-400 text-[11px]">{{ tick }}</text>
+                <line :x1="plot.left" :x2="width - plot.right" :y1="pointY(tick)" :y2="pointY(tick)" stroke="rgb(17 22 26 / 0.12)" stroke-width="1" stroke-dasharray="2 4" />
+                <text :x="plot.left - 12" :y="pointY(tick) + 4" text-anchor="end" class="fill-muted font-mono text-[10px]">{{ tick }}</text>
             </g>
 
             <g v-if="stockoutSeries">
-                <text :x="width - plot.right + 12" :y="plot.top - 7" text-anchor="start" class="fill-rose-500 text-[10px]">欠品SKU</text>
+                <text :x="width - plot.right + 12" :y="plot.top - 7" text-anchor="start" class="fill-ink-2 text-[10px]">欠品SKU</text>
                 <text
                     v-for="tick in stockoutTicks"
                     :key="`stockout-${tick}`"
@@ -352,17 +352,17 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                     :x="width - plot.right + 12"
                     :y="stockoutY(tick) + 4"
                     text-anchor="start"
-                    class="fill-rose-500 text-[11px]"
+                    class="fill-ink-2 font-mono text-[10px]"
                 >
                     {{ tick }}
                 </text>
             </g>
 
-            <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight" stroke="#cbd5e1" stroke-width="1" />
+            <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight" stroke="rgb(17 22 26 / 0.35)" stroke-width="1" />
 
             <g v-for="index in xTickIndexes" :key="dates[index]">
-                <line :x1="pointX(index)" :x2="pointX(index)" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight + 5" stroke="#94a3b8" />
-                <text :x="pointX(index)" :y="height - 17" text-anchor="middle" class="fill-slate-400 text-[11px]">{{ formatDate(dates[index]!) }}</text>
+                <line :x1="pointX(index)" :x2="pointX(index)" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight + 5" stroke="rgb(17 22 26 / 0.35)" />
+                <text :x="pointX(index)" :y="height - 17" text-anchor="middle" class="fill-muted font-mono text-[10px]">{{ formatDate(dates[index]!) }}</text>
             </g>
 
             <template v-if="displayMode === 'line'">
@@ -451,16 +451,18 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                     stroke-linecap="round"
                     stroke-linejoin="round"
                 />
-                <circle
+                <rect
                     v-for="entry in availableStockoutPoints()"
                     :key="`stockout-marker-${entry.point.date}`"
                     data-stockout-point
-                    :cx="pointX(entry.index)"
-                    :cy="stockoutY(entry.point.quantity)"
-                    r="3"
-                    :fill="stockoutSeries.color"
-                    stroke="white"
-                    stroke-width="1.5"
+                    :x="pointX(entry.index) - 3.5"
+                    :y="stockoutY(entry.point.quantity) - 3.5"
+                    width="7"
+                    height="7"
+                    rx="1.5"
+                    fill="#f5c400"
+                    stroke="#11161a"
+                    stroke-width="1"
                     pointer-events="none"
                 />
                 <circle
@@ -485,7 +487,7 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                 :x2="hovered.x"
                 :y1="plot.top"
                 :y2="plot.top + plotHeight"
-                stroke="#94a3b8"
+                stroke="rgb(17 22 26 / 0.35)"
                 stroke-width="1"
                 stroke-dasharray="4 4"
                 pointer-events="none"
@@ -497,7 +499,7 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
             <div
                 v-if="hovered"
                 data-chart-tooltip
-                class="pointer-events-none fixed z-50 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg"
+                class="pointer-events-none fixed z-50 rounded-card border border-line bg-surface px-3 py-2 text-[11px] text-ink shadow-float"
                 :style="{
                     left: `${tooltipLeft(hovered.tooltipX, hovered.usesViewportCoordinates)}px`,
                     top: `${hovered.tooltipY}px`,
@@ -507,50 +509,50 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                     whiteSpace: 'nowrap',
                 }"
             >
-                <p class="flex items-center justify-between gap-4 text-slate-500">
-                    <span>{{ hovered.date.replaceAll("-", "/") }}</span>
-                    <span v-if="hovered.totalQuantity !== null && !stockoutSeries" class="font-medium text-slate-700">合計 {{ hovered.totalQuantity }}点</span>
+                <p class="flex items-center justify-between gap-4 text-muted">
+                    <span class="font-mono">{{ hovered.date.replaceAll("-", "/") }}</span>
+                    <span v-if="hovered.totalQuantity !== null && !stockoutSeries" class="font-medium text-ink-2">合計 {{ hovered.totalQuantity }}点</span>
                 </p>
                 <div v-if="stockoutSeries" class="mt-2 space-y-1.5">
-                    <p data-tooltip-total class="flex items-center justify-between gap-5 font-medium text-slate-700">
-                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-primary-600"></span>総在庫数</span>
-                        <span class="text-sm font-semibold text-slate-900"
-                            >{{ hovered.totalQuantity ?? "—" }}<span v-if="hovered.totalQuantity !== null" class="ml-0.5 text-xs font-normal text-slate-500">点</span></span
+                    <p data-tooltip-total class="flex items-center justify-between gap-5 font-medium text-ink-2">
+                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-xs bg-primary-400"></span>総在庫数</span>
+                        <span class="font-num text-sm font-semibold text-ink"
+                            >{{ hovered.totalQuantity ?? "—" }}<span v-if="hovered.totalQuantity !== null" class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span
                         >
                     </p>
-                    <p data-tooltip-stockout class="flex items-center justify-between gap-5 font-medium text-slate-700">
-                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full" :style="{ backgroundColor: stockoutSeries.color }"></span>{{ stockoutSeries.label }}</span>
-                        <span class="text-sm font-semibold text-slate-900"
-                            >{{ hovered.stockoutCount ?? "—" }}<span v-if="hovered.stockoutCount !== null" class="ml-0.5 text-xs font-normal text-slate-500">SKU</span></span
+                    <p data-tooltip-stockout class="flex items-center justify-between gap-5 font-medium text-ink-2">
+                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] border border-ink bg-signal"></span>{{ stockoutSeries.label }}</span>
+                        <span class="font-num text-sm font-semibold text-ink"
+                            >{{ hovered.stockoutCount ?? "—" }}<span v-if="hovered.stockoutCount !== null" class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">SKU</span></span
                         >
                     </p>
-                    <div v-if="hovered.stockoutSkus !== null" class="mt-2 border-t border-slate-200 pt-2" data-tooltip-stockout-details>
-                        <p class="mb-1.5 font-medium text-slate-500">この日の欠品SKU</p>
+                    <div v-if="hovered.stockoutSkus !== null" class="mt-2 border-t border-line pt-2" data-tooltip-stockout-details>
+                        <p class="mb-1.5 font-medium text-muted">この日の欠品SKU</p>
                         <div v-if="hovered.stockoutSkus.length > 0" class="max-h-40 space-y-1 overflow-y-auto pr-1">
-                            <p v-for="sku in hovered.stockoutSkus" :key="sku.skuCode" data-tooltip-stockout-sku class="flex items-center justify-between gap-4 text-slate-700">
-                                <span class="truncate font-medium" :title="sku.skuCode">{{ sku.skuCode }}</span>
-                                <span class="shrink-0 text-slate-500"
-                                    >期間累計 <span class="font-semibold text-slate-800">{{ sku.stockoutDays }}日</span></span
+                            <p v-for="sku in hovered.stockoutSkus" :key="sku.skuCode" data-tooltip-stockout-sku class="flex items-center justify-between gap-4 text-ink-2">
+                                <span class="truncate font-mono font-medium" :title="sku.skuCode">{{ sku.skuCode }}</span>
+                                <span class="shrink-0 text-muted"
+                                    >期間累計 <span class="font-semibold text-ink">{{ sku.stockoutDays }}日</span></span
                                 >
                             </p>
                         </div>
-                        <p v-else class="text-slate-500">欠品SKUはありません</p>
+                        <p v-else class="text-muted">欠品SKUはありません</p>
                         <p
                             v-if="hovered.periodStockoutDays !== null"
                             data-tooltip-period-stockout-days
-                            class="mt-2 flex items-center justify-between gap-4 border-t border-slate-100 pt-2 font-medium text-slate-600"
+                            class="mt-2 flex items-center justify-between gap-4 border-t border-line-2 pt-2 font-medium text-ink-2"
                         >
                             <span>全SKUの期間累計欠品日数</span>
-                            <span class="font-semibold text-slate-900">{{ hovered.periodStockoutDays }}日</span>
+                            <span class="font-semibold text-ink">{{ hovered.periodStockoutDays }}日</span>
                         </p>
                     </div>
                 </div>
                 <div v-else class="mt-1 grid gap-x-4 gap-y-1" :style="{ gridTemplateColumns: `repeat(${tooltipColumnCount}, minmax(0, 1fr))` }">
-                    <p v-for="entry in hovered.entries" :key="entry.series.skuCode" data-tooltip-series class="flex items-center justify-between gap-4 font-medium text-slate-700">
+                    <p v-for="entry in hovered.entries" :key="entry.series.skuCode" data-tooltip-series class="flex items-center justify-between gap-4 font-medium text-ink-2">
                         <span class="flex shrink-0 items-center gap-1.5"><span class="h-2 w-2 rounded-full" :style="{ backgroundColor: entry.series.color }"></span>{{ entry.series.label }}</span>
-                        <span class="shrink-0 text-sm font-semibold text-slate-900">
-                            {{ entry.quantity }}<span class="ml-0.5 text-xs font-normal text-slate-500">点</span>
-                            <span v-if="entry.percentage !== undefined" class="ml-2 text-xs font-normal text-slate-500">{{ formatPercentage(entry.percentage) }}</span>
+                        <span class="shrink-0 font-num text-sm font-semibold text-ink">
+                            {{ entry.quantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span>
+                            <span v-if="entry.percentage !== undefined" class="ml-2 font-sans text-[10.5px] font-normal text-muted">{{ formatPercentage(entry.percentage) }}</span>
                         </span>
                     </p>
                 </div>

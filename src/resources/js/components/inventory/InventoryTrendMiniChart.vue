@@ -80,8 +80,8 @@ function formatDate(date: string): string {
     <svg data-sku-mini-chart class="block w-full" :viewBox="`0 0 ${width} ${height}`" role="img" :aria-label="`${label}の日次在庫推移`">
         <desc>{{ label }}の選択期間における日別在庫数を表すグラフです。</desc>
 
-        <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight" stroke="#cbd5e1" stroke-width="1" />
-        <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight / 2" :y2="plot.top + plotHeight / 2" stroke="#f1f5f9" stroke-width="1" />
+        <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight" stroke="rgb(17 22 26 / 0.3)" stroke-width="1" />
+        <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight / 2" :y2="plot.top + plotHeight / 2" stroke="rgb(17 22 26 / 0.1)" stroke-width="1" stroke-dasharray="2 4" />
 
         <polygon v-for="(segment, index) in lineSegments.filter((item) => !item.dashed)" :key="`area-${index}`" data-mini-chart-area :points="areaPoints(segment)" :fill="color" fill-opacity="0.08" />
 
@@ -106,12 +106,14 @@ function formatDate(date: string): string {
             :cx="pointX(entry.index)"
             :cy="pointY(entry.point.quantity ?? 0)"
             :r="entry.point.quantity === 0 ? 3 : 1.75"
-            :fill="entry.point.quantity === 0 ? '#e11d48' : color"
+            :fill="entry.point.quantity === 0 ? '#f5c400' : color"
+            :stroke="entry.point.quantity === 0 ? '#11161a' : undefined"
+            :stroke-width="entry.point.quantity === 0 ? 1 : undefined"
         >
             <title>{{ entry.point.date.replaceAll("-", "/") }} 在庫{{ entry.point.quantity }}点</title>
         </circle>
 
-        <text :x="plot.left" :y="height - 5" text-anchor="start" class="fill-slate-400 text-[10px]">{{ formatDate(firstDate) }}</text>
-        <text :x="width - plot.right" :y="height - 5" text-anchor="end" class="fill-slate-400 text-[10px]">{{ formatDate(lastDate) }}</text>
+        <text :x="plot.left" :y="height - 5" text-anchor="start" class="fill-muted font-mono text-[10px]">{{ formatDate(firstDate) }}</text>
+        <text :x="width - plot.right" :y="height - 5" text-anchor="end" class="fill-muted font-mono text-[10px]">{{ formatDate(lastDate) }}</text>
     </svg>
 </template>
