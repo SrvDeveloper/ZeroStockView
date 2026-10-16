@@ -76,4 +76,27 @@ describe("ImportSettingsListPage", () => {
         expect(store.remove).toHaveBeenCalledWith("1");
         expect(wrapper.text()).not.toContain("売上TOP20");
     });
+
+    it("summarizes unique products and SKUs across groups and shows the last sync time", () => {
+        const store = configureStore();
+        const product = (productCode: string, skuCodes: string[]) => ({
+            productCode,
+            brand: "",
+            category: "",
+            parentAsin: "",
+            skus: skuCodes.map((skuCode) => ({ skuCode, colorName: "", size: "", asin: "", tqCode: "", tqColorNo: "", tqSize: "" })),
+        });
+        store.settings[0]!.products = [product("A-1001", ["A-1001-M", "A-1001-L"]), product("A-1002", ["A-1002-F"])];
+        store.settings[0]!.lastSyncedAt = "2026-10-14T08:32:00Z";
+        store.settings[1]!.productCodes = ["B-2001", "A-1001"];
+        store.settings[1]!.products = [product("B-2001", ["B-2001-F"]), product("A-1001", ["A-1001-M", "A-1001-L"])];
+        const wrapper = mount(ImportSettingsListPage);
+
+        const summary = wrapper.get("[data-target-summary]").text();
+        expect(summary).toContain("グループ 2");
+        expect(summary).toContain("取込対象の品番（重複を除く） 3");
+        expect(summary).toContain("取込対象の SKU 4");
+        expect(wrapper.get('[data-setting-id="1"] [data-last-synced]').text()).not.toBe("—");
+        expect(wrapper.get('[data-setting-id="2"] [data-last-synced]').text()).toBe("—");
+    });
 });

@@ -9,6 +9,7 @@ import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
+import StatusLamp from "@/components/ui/StatusLamp.vue";
 import BasePagination from "@/components/ui/BasePagination.vue";
 import { MAX_TARGET_PRODUCTS, useImportSettingsStore } from "@/stores/importSettings";
 import { useUiStore } from "@/stores/ui";
@@ -188,22 +189,18 @@ async function save() {
 </script>
 
 <template>
-    <div class="flex flex-col gap-6">
-        <BaseButton variant="ghost" size="sm" icon="arrow_back" class="w-fit" @click="router.push({ name: 'import-settings' })">一覧に戻る</BaseButton>
+    <div class="flex flex-col gap-4">
+        <BaseButton variant="ghost" size="sm" icon="chevron_left" class="-ml-2 w-fit" @click="router.push({ name: 'import-settings' })">一覧に戻る</BaseButton>
 
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div>
-                <h1 class="text-xl font-semibold text-slate-900">{{ isNew ? "品番グループを新規作成" : "品番グループを編集" }}</h1>
-                <p class="mt-1 text-sm text-slate-500">用途ごとに名前を付けて、表示する品番と並び順を設定します。登録した品番はすべて取込対象になります。</p>
+                <h1 class="text-[22px] leading-tight font-semibold">{{ isNew ? "品番グループを新規作成" : "品番グループを編集" }}</h1>
+                <p class="mt-1 text-[12.5px] text-ink-2">用途ごとに名前を付けて、表示する品番と並び順を設定します。登録した品番はすべて取込対象になります。</p>
             </div>
-            <div class="flex shrink-0 flex-col gap-2 sm:items-end">
-                <div class="flex flex-wrap gap-2">
-                    <BaseButton variant="primary" :disabled="!dirty" :loading="saving" @click="save">このグループを保存</BaseButton>
-                    <BaseButton variant="secondary" :disabled="!dirty || saving" @click="resetChanges">変更を取り消す</BaseButton>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <span v-if="dirty" class="text-xs font-medium text-amber-600">未保存の変更があります</span>
-                </div>
+            <div class="flex flex-wrap items-center gap-2 lg:ml-auto">
+                <StatusLamp v-if="dirty" state="warn" label="未保存の変更があります" class="mr-1 text-[11.5px] text-ink-2" data-dirty-indicator />
+                <BaseButton variant="secondary" :disabled="!dirty || saving" @click="resetChanges">変更を取り消す</BaseButton>
+                <BaseButton variant="primary" :disabled="!dirty" :loading="saving" @click="save">このグループを保存</BaseButton>
             </div>
         </div>
 
@@ -211,22 +208,26 @@ async function save() {
             <BaseInput v-model="settingName" class="max-w-xl" label="グループ名" placeholder="例: 売上TOP20" required :disabled="saving" />
         </BaseCard>
 
-        <div class="grid items-start gap-6 lg:grid-cols-2">
+        <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
             <BaseCard title="取込対象品番" description="ドラッグして表示順を並び替えられます。" :padded="false" class="lg:order-2">
                 <template #actions>
-                    <span class="text-xs font-medium text-slate-500">{{ workingCodes.length }} / {{ MAX_TARGET_PRODUCTS }}</span>
+                    <span class="flex items-center gap-2 font-mono text-[11px] text-ink-2" data-target-capacity>
+                        <span class="inline-block h-[5px] w-[110px] overflow-hidden rounded-xs bg-ink/8" aria-hidden="true"
+                            ><span class="block h-full rounded-xs bg-ink" :style="{ width: `${Math.min(100, (workingCodes.length / MAX_TARGET_PRODUCTS) * 100)}%` }"></span></span
+                        >{{ workingCodes.length }} / {{ MAX_TARGET_PRODUCTS }}
+                    </span>
                 </template>
 
                 <BaseEmpty v-if="selectedProducts.length === 0" title="対象品番が設定されていません" description="品番追加から追加してください。" />
 
-                <ul v-else class="max-h-144 divide-y divide-slate-100 overflow-y-auto">
+                <ul v-else class="max-h-144 divide-y divide-line-2 overflow-y-auto">
                     <li
                         v-for="(product, index) in selectedProducts"
                         :key="product.productCode"
                         draggable="true"
-                        class="flex items-center justify-between gap-3 px-4 py-3 transition-colors"
+                        class="flex items-center justify-between gap-3 px-[18px] py-2 transition-colors"
                         :class="{
-                            'bg-primary-50 ring-2 ring-primary-300 ring-inset': dragOverIndex === index && draggedIndex !== index,
+                            'bg-surface-2 ring-2 ring-ink/25 ring-inset': dragOverIndex === index && draggedIndex !== index,
                             'cursor-grabbing': draggedIndex !== null,
                             'cursor-grab': draggedIndex === null,
                             'opacity-50': draggedIndex === index,
@@ -237,12 +238,12 @@ async function save() {
                         @dragend="stopDragging"
                     >
                         <div class="flex min-w-0 items-center gap-2.5">
-                            <AppIcon name="drag_indicator" :size="20" class="text-slate-400" />
-                            <span class="w-5 shrink-0 text-center text-xs tabular-nums text-slate-400">{{ index + 1 }}</span>
+                            <AppIcon name="drag_indicator" :size="18" class="text-faint" />
+                            <span class="w-5 shrink-0 text-center font-mono text-[10.5px] text-muted">{{ `${index + 1}`.padStart(2, "0") }}</span>
                             <div class="min-w-0 flex flex-start items-center gap-2">
-                                <p class="truncate text-sm font-medium text-slate-900">
+                                <p class="truncate font-mono text-[13px] font-semibold text-ink">
                                     {{ product.productCode }}
-                                    <span class="text-xs text-slate-400">SKU {{ product.skus.length }}件</span>
+                                    <span class="ml-1 font-sans text-[11px] font-normal text-muted">SKU {{ product.skus.length }}件</span>
                                 </p>
                                 <div class="mt-1 flex flex-wrap items-center gap-1.5">
                                     <BaseBadge>{{ product.brand }}</BaseBadge>
@@ -256,35 +257,35 @@ async function save() {
             </BaseCard>
 
             <BaseCard title="品番を追加" :padded="false" class="lg:order-1">
-                <form class="border-b border-slate-200 px-5 py-4" @submit.prevent="searchCandidates">
+                <form class="border-b border-line-2 px-[18px] py-3.5" @submit.prevent="searchCandidates">
                     <div class="flex gap-2">
-                        <BaseInput v-model="search" class="min-w-0 flex-1" size="sm" placeholder="品番・SKU・ASIN・TQ情報で検索" :disabled="candidateLoading" />
-                        <BaseButton type="submit" variant="primary" size="sm" icon="search" :loading="candidateLoading" class="shrink-0">検索</BaseButton>
+                        <BaseInput v-model="search" class="min-w-0 flex-1 [&_input]:font-mono" placeholder="品番・SKU・ASIN・TQ情報で検索" :disabled="candidateLoading" />
+                        <BaseButton type="submit" variant="secondary" icon="search" :loading="candidateLoading" class="shrink-0">検索</BaseButton>
                     </div>
-                    <p class="mt-2 text-xs text-slate-500">CrossWalkerから有効な品番を検索します。</p>
+                    <p class="mt-2 text-[11px] text-muted">CrossWalker から有効な品番を検索します。</p>
                 </form>
 
-                <div v-if="candidateLoading" class="flex h-32 items-center justify-center gap-2 text-sm text-slate-500">
+                <div v-if="candidateLoading" class="flex h-32 items-center justify-center gap-2 text-[12.5px] text-muted">
                     <AppIcon name="refresh" :size="18" class="animate-spin" />
                     <span>品番を取得中…</span>
                 </div>
                 <BaseEmpty v-else-if="candidateError" icon="error" title="品番を取得できませんでした" :description="candidateError" />
                 <BaseEmpty v-else-if="candidateProducts.length === 0" icon="search_off" title="条件に一致する品番がありません" />
                 <div v-else class="flex max-h-122.25 flex-col">
-                    <ul class="min-h-0 divide-y divide-slate-100 overflow-y-auto">
+                    <ul class="min-h-0 divide-y divide-line-2 overflow-y-auto">
                         <li
                             v-for="product in candidateProducts"
                             :key="product.productCode"
                             data-testid="candidate-product-row"
                             :data-added="workingCodes.includes(product.productCode) ? 'true' : undefined"
-                            class="flex items-center justify-between gap-3 px-5 py-2.5 transition-colors"
-                            :class="workingCodes.includes(product.productCode) ? 'bg-slate-100' : 'bg-white'"
+                            class="flex items-center justify-between gap-3 px-[18px] py-2 transition-colors"
+                            :class="workingCodes.includes(product.productCode) ? 'bg-surface-2' : 'bg-surface'"
                         >
                             <div class="min-w-0">
-                                <p class="truncate text-sm font-medium" :class="workingCodes.includes(product.productCode) ? 'text-slate-500' : 'text-slate-900'">
+                                <p class="truncate font-mono text-[13px] font-semibold" :class="workingCodes.includes(product.productCode) ? 'text-muted' : 'text-ink'">
                                     {{ product.productCode }}
                                 </p>
-                                <p class="text-xs" :class="workingCodes.includes(product.productCode) ? 'text-slate-400' : 'text-slate-500'">
+                                <p class="text-[11px]" :class="workingCodes.includes(product.productCode) ? 'text-faint' : 'text-muted'">
                                     {{ product.brand }} ／ {{ product.category }} ／ SKU {{ product.skus.length }}件
                                 </p>
                             </div>
