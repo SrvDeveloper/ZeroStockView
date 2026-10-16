@@ -48,6 +48,10 @@
     --color-danger: #c0362c;
     --color-danger-soft: #fdeeec;
     --color-match: #eef3f7;
+    --color-ok-soft: #e6f4ec;
+    --color-ok-ink: #17673a;
+    --color-warn-soft: #fbf1d6;
+    --color-graphite-edge: #0b0f12;
     --color-lamp-ok: #1f9d55;
     --color-lamp-warn: #d99e00;
     --color-lamp-error: #d23a2f;
@@ -77,6 +81,8 @@
     --shadow-raised: 0 1px 2px rgb(16 24 32 / 0.06);
     --shadow-card: 0 1px 2px rgb(16 24 32 / 0.04), 0 3px 10px -4px rgb(16 24 32 / 0.1);
     --shadow-float: 0 16px 36px -14px rgb(16 24 32 / 0.32), 0 2px 6px rgb(16 24 32 / 0.06);
+    --shadow-graphite: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 1px 2px rgb(16 24 32 / 0.25);
+    --shadow-field: inset 0 1px 1px rgb(16 24 32 / 0.03);
 }
 
 /* 黄黒の斜線（倉庫の警告線） */

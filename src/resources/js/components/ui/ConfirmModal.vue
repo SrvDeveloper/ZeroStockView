@@ -21,7 +21,7 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>();
 
 <template>
     <BaseModal :open="open" :title="title" width="sm" @close="emit('cancel')">
-        <p class="text-sm text-slate-600">{{ message }}</p>
+        <p class="text-[13px] leading-relaxed text-ink-2">{{ message }}</p>
         <template #footer>
             <BaseButton variant="secondary" @click="emit('cancel')">キャンセル</BaseButton>
             <BaseButton :variant="danger ? 'danger' : 'primary'" @click="emit('confirm')">{{ confirmLabel }}</BaseButton>

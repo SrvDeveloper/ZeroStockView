@@ -41,36 +41,33 @@ function clear() {
 
 <template>
     <label
-        class="flex min-h-64 cursor-pointer flex-col rounded-lg border-2 border-dashed p-5 shadow-sm transition sm:p-6"
-        :class="[
-            props.modelValue ? 'border-primary-300 bg-primary-50/40' : 'border-slate-300 bg-white hover:border-primary-400',
-            dragging ? 'border-primary-500 bg-primary-50 ring-4 ring-primary-100' : '',
-        ]"
+        class="flex min-h-64 cursor-pointer flex-col rounded-card border-[1.5px] border-dashed p-5 transition sm:p-6"
+        :class="[props.modelValue ? 'border-ink-2/40 bg-surface' : 'border-line-stronger bg-surface-2 hover:border-ink-2/50', dragging ? 'border-ink bg-surface ring-3 ring-ink/10' : '']"
         @dragenter.prevent="dragging = true"
         @dragover.prevent="dragging = true"
         @dragleave.prevent="dragging = false"
         @drop.prevent.stop="onDrop"
     >
         <span v-if="props.title" class="flex items-start gap-4">
-            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-primary-100 text-primary-700">
-                <AppIcon :name="props.icon" :size="24" />
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-control bg-tint text-ink-2">
+                <AppIcon :name="props.icon" :size="22" />
             </span>
             <span class="min-w-0">
-                <span class="block font-semibold text-slate-950">{{ props.title }}</span>
-                <span v-if="props.description" class="block text-sm text-slate-500">{{ props.description }}</span>
+                <span class="block text-[13px] font-semibold text-ink">{{ props.title }}</span>
+                <span v-if="props.description" class="block text-[11.5px] text-muted">{{ props.description }}</span>
             </span>
         </span>
 
-        <span class="mt-6 flex flex-1 flex-col items-center justify-center rounded-md bg-slate-100 p-5 text-center">
-            <AppIcon :name="props.modelValue ? 'check_circle' : 'upload_file'" :size="32" class="text-slate-400" />
-            <span class="mt-2 text-sm font-semibold text-primary-700">{{ props.modelValue ? "選択済み" : "CSVをドロップまたはクリックして選択" }}</span>
-            <span class="mt-1 text-xs text-slate-500">{{ acceptHint }}</span>
+        <span class="mt-6 flex flex-1 flex-col items-center justify-center rounded-control bg-surface p-5 text-center">
+            <AppIcon :name="props.modelValue ? 'check_circle' : 'upload_file'" :size="30" class="text-muted" />
+            <span class="mt-2 text-[12.5px] font-semibold text-ink">{{ props.modelValue ? "選択済み" : "CSVをドロップまたはクリックして選択" }}</span>
+            <span class="mt-1 text-[11px] text-muted">{{ acceptHint }}</span>
         </span>
 
-        <span v-if="props.modelValue" class="mt-4 flex items-center gap-2 rounded-lg border border-primary-200 bg-white p-3 text-sm">
-            <AppIcon name="attach_file" :size="18" class="shrink-0 text-primary-600" />
-            <span class="min-w-0 flex-1 truncate text-slate-700">{{ props.modelValue.name }}（{{ formatSizeKb(Math.round(props.modelValue.size / 1024)) }}）</span>
-            <button type="button" class="shrink-0 text-slate-400 transition hover:text-slate-600" aria-label="削除" @click.prevent.stop="clear">
+        <span v-if="props.modelValue" class="mt-4 flex items-center gap-2 rounded-control border border-line bg-surface p-3 text-[12.5px] shadow-raised">
+            <AppIcon name="attach_file" :size="18" class="shrink-0 text-ink-2" />
+            <span class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink">{{ props.modelValue.name }}（{{ formatSizeKb(Math.round(props.modelValue.size / 1024)) }}）</span>
+            <button type="button" class="shrink-0 text-muted transition hover:text-ink" aria-label="削除" @click.prevent.stop="clear">
                 <AppIcon name="close" :size="18" />
             </button>
         </span>

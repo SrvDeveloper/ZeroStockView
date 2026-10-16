@@ -14,20 +14,20 @@ const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 const areaId = useId();
 
 const areaClass = computed(() => [
-    "w-full rounded-lg border py-2 text-sm text-slate-900 placeholder:text-slate-400 transition-colors",
+    "w-full rounded-control border py-2 text-[12.5px] text-ink placeholder:text-faint transition-colors",
     props.bordered ? "px-3" : "",
-    props.bordered ? "bg-white" : "bg-transparent focus:bg-white",
+    props.bordered ? "bg-surface shadow-field" : "bg-transparent hover:bg-tint focus:bg-surface",
     props.error
-        ? "border-rose-400 focus:outline focus:outline-2 focus:outline-rose-500"
+        ? "border-danger ring-3 ring-danger/12 focus:outline-none"
         : props.bordered
-          ? "border-slate-300 focus:border-primary-500 focus:outline focus:outline-2 focus:outline-primary-500/40"
-          : "border-transparent focus:outline-none",
+          ? "border-line-strong focus:border-ink-2 focus:outline-none focus:ring-3 focus:ring-ink/10"
+          : "border-transparent focus:border-line-strong focus:outline-none",
 ]);
 </script>
 
 <template>
     <div class="w-full">
-        <label v-if="label" :for="areaId" class="mb-1 block text-xs font-medium text-slate-600">{{ label }}</label>
+        <label v-if="label" :for="areaId" class="mb-1 block text-[11px] font-medium text-ink-2">{{ label }}</label>
         <textarea
             :id="areaId"
             :value="modelValue"
@@ -36,7 +36,7 @@ const areaClass = computed(() => [
             :class="areaClass"
             @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
         ></textarea>
-        <p v-if="error" class="mt-1 text-xs text-rose-600">{{ error }}</p>
-        <p v-else-if="hint" class="mt-1 text-xs text-slate-500">{{ hint }}</p>
+        <p v-if="error" class="mt-1 text-[11px] text-danger">{{ error }}</p>
+        <p v-else-if="hint" class="mt-1 text-[11px] text-muted">{{ hint }}</p>
     </div>
 </template>

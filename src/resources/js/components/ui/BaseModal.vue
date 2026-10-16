@@ -25,19 +25,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 <template>
     <Teleport to="body">
         <Transition enter-active-class="transition duration-150 ease-out" enter-from-class="opacity-0" leave-active-class="transition duration-100 ease-in" leave-to-class="opacity-0">
-            <div v-if="open" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 px-4 py-10 backdrop-blur-[1px]" @click.self="emit('close')">
-                <div class="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl" :class="widthClass[width]">
-                    <header class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+            <div v-if="open" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/45 px-4 py-10 backdrop-blur-[2px]" @click.self="emit('close')">
+                <div class="w-full overflow-hidden rounded-panel border border-line bg-surface shadow-float" :class="widthClass[width]">
+                    <header class="flex items-start justify-between gap-4 border-b border-line-2 px-5 py-4">
                         <div>
-                            <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
-                            <p v-if="description" class="mt-1 text-xs text-slate-500">{{ description }}</p>
+                            <h2 class="text-[15px] font-semibold text-ink">{{ title }}</h2>
+                            <p v-if="description" class="mt-1 text-[11.5px] text-muted">{{ description }}</p>
                         </div>
-                        <button type="button" class="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700" aria-label="閉じる" @click="emit('close')">
+                        <button type="button" class="rounded-chip p-1 text-muted transition-colors hover:bg-tint hover:text-ink" aria-label="閉じる" @click="emit('close')">
                             <AppIcon name="close" :size="18" />
                         </button>
                     </header>
                     <div class="px-5 py-4"><slot /></div>
-                    <footer v-if="$slots.footer" class="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3.5"><slot name="footer" /></footer>
+                    <footer v-if="$slots.footer" class="flex items-center justify-end gap-2 border-t border-line-2 bg-surface-2 px-5 py-3"><slot name="footer" /></footer>
                 </div>
             </div>
         </Transition>

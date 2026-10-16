@@ -30,14 +30,14 @@ function go(page: number) {
 </script>
 
 <template>
-    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-3">
-        <p class="text-xs text-slate-500">
-            全 <span class="font-semibold text-slate-700">{{ formatNumber(total) }}</span> 件中 {{ formatNumber(rangeStart) }} - {{ formatNumber(rangeEnd) }} 件を表示
+    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line-2 px-4 py-2.5">
+        <p class="text-[11.5px] text-muted">
+            全 <span class="font-semibold text-ink">{{ formatNumber(total) }}</span> 件中 {{ formatNumber(rangeStart) }} - {{ formatNumber(rangeEnd) }} 件を表示
         </p>
         <nav class="flex items-center gap-1" aria-label="ページ切替">
             <button
                 type="button"
-                class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+                class="flex h-[26px] w-[26px] items-center justify-center rounded-chip text-ink-2 transition-colors hover:bg-tint disabled:opacity-40"
                 :disabled="page <= 1"
                 aria-label="前のページ"
                 @click="go(page - 1)"
@@ -45,12 +45,12 @@ function go(page: number) {
                 <AppIcon name="chevron_left" :size="16" />
             </button>
             <template v-for="(entry, index) in pages" :key="`${entry}-${index}`">
-                <span v-if="entry === 'gap'" class="px-1 text-xs text-slate-400">...</span>
+                <span v-if="entry === 'gap'" class="px-1 text-xs text-faint">...</span>
                 <button
                     v-else
                     type="button"
-                    class="h-8 min-w-8 rounded-lg border px-2 text-xs font-medium transition-colors"
-                    :class="entry === page ? 'border-primary-600 bg-primary-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'"
+                    class="h-[26px] min-w-[26px] rounded-chip px-1.5 font-mono text-[11px] font-medium transition-colors"
+                    :class="entry === page ? 'bg-ink text-white' : 'text-ink-2 hover:bg-tint'"
                     @click="go(entry)"
                 >
                     {{ entry }}
@@ -58,7 +58,7 @@ function go(page: number) {
             </template>
             <button
                 type="button"
-                class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+                class="flex h-[26px] w-[26px] items-center justify-center rounded-chip text-ink-2 transition-colors hover:bg-tint disabled:opacity-40"
                 :disabled="page >= totalPages"
                 aria-label="次のページ"
                 @click="go(page + 1)"
