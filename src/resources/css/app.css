@@ -5,7 +5,7 @@
 
 @theme {
     /* 書体は vite.config.js の fonts で自前配信し、@fonts で読み込む */
-    --font-sans: "IBM Plex Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-sans: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, monospace;
     --font-num: "Barlow Condensed", "Arial Narrow", sans-serif;
 
@@ -114,6 +114,8 @@
 body {
     background-color: var(--color-canvas);
     color: var(--color-ink);
+    /* 和文の約物と仮名をプロポーショナルに詰める */
+    font-feature-settings: "palt" 1;
 }
 
 .skip-link {

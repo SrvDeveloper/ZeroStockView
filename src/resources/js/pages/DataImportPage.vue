@@ -205,9 +205,9 @@ async function runImport() {
                                 v-for="(file, index) in files"
                                 :key="`${file.name}-${index}`"
                                 data-file-card
-                                class="flex min-w-0 items-start gap-2 rounded-card border border-line bg-surface px-3 py-2.5 shadow-raised"
+                                class="flex min-w-0 items-center gap-2 rounded-card border border-line bg-surface px-3 py-2.5 shadow-raised"
                             >
-                                <AppIcon name="description" :size="18" class="mt-px shrink-0 text-ink-2" />
+                                <AppIcon name="description" :size="18" class="shrink-0 text-ink-2" />
                                 <div class="min-w-0 flex-1">
                                     <p class="truncate font-mono text-[11.5px] text-ink" :title="file.name">{{ file.name }}</p>
                                     <p class="text-[10.5px] text-muted">{{ formatSizeKb(Math.round(file.size / 1024)) }}</p>
