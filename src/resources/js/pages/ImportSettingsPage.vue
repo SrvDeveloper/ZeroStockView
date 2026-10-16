@@ -241,7 +241,7 @@ async function save() {
                             <AppIcon name="drag_indicator" :size="18" class="text-faint" />
                             <span class="w-5 shrink-0 text-center font-mono text-[10.5px] text-muted">{{ `${index + 1}`.padStart(2, "0") }}</span>
                             <div class="min-w-0 flex flex-start items-center gap-2">
-                                <p class="truncate font-mono text-[13px] font-semibold text-ink">
+                                <p class="truncate font-mono text-[13px] font-semibold text-ink uppercase">
                                     {{ product.productCode }}
                                     <span class="ml-1 font-sans text-[11px] font-normal text-muted">SKU {{ product.skus.length }}件</span>
                                 </p>
@@ -282,7 +282,7 @@ async function save() {
                             :class="workingCodes.includes(product.productCode) ? 'bg-surface-2' : 'bg-surface'"
                         >
                             <div class="min-w-0">
-                                <p class="truncate font-mono text-[13px] font-semibold" :class="workingCodes.includes(product.productCode) ? 'text-muted' : 'text-ink'">
+                                <p class="truncate font-mono text-[13px] font-semibold uppercase" :class="workingCodes.includes(product.productCode) ? 'text-muted' : 'text-ink'">
                                     {{ product.productCode }}
                                 </p>
                                 <p class="text-[11px]" :class="workingCodes.includes(product.productCode) ? 'text-faint' : 'text-muted'">

@@ -103,7 +103,7 @@ async function confirmDelete() {
                             </td>
                             <td class="px-4 py-2.5">
                                 <div class="flex flex-wrap items-center gap-1">
-                                    <code v-for="code in productCodeSummary(setting.productCodes)" :key="code" class="rounded-chip bg-tint px-1.5 py-px font-mono text-[10.5px] text-ink">{{
+                                    <code v-for="code in productCodeSummary(setting.productCodes)" :key="code" class="rounded-chip bg-tint px-1.5 py-px font-mono text-[10.5px] text-ink uppercase">{{
                                         code
                                     }}</code>
                                     <span v-if="setting.productCodes.length > 5" class="text-[10.5px] text-muted">ほか{{ setting.productCodes.length - 5 }}件</span>
