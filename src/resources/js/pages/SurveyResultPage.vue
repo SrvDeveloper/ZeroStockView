@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import axios from "axios";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
@@ -11,12 +12,16 @@ import BaseModal from "@/components/ui/BaseModal.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import BaseSelect from "@/components/ui/BaseSelect.vue";
 import MemoField from "@/components/ui/MemoField.vue";
+import SegmentedControl from "@/components/ui/SegmentedControl.vue";
+import StatCard from "@/components/ui/StatCard.vue";
+import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
+import StockCell from "@/components/ui/StockCell.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities } from "@/types";
 import { formatDateTime } from "@/utils/format";
-import { amazonStockState as amazonStockStateOf, amazonTotal, bossTotal, skuTotal, stockState, type StockState } from "@/utils/stock";
+import { amazonStockState as amazonStockStateOf, amazonTotal, bossTotal, previousSurvey, skuTotal, stockState, summarizeSurvey, type StockState } from "@/utils/stock";
 
 const props = defineProps<{ id: string; initialGroup?: string }>();
 
@@ -105,27 +110,46 @@ const categoryFilter = ref<string | null>(null);
 const productCodeQuery = ref("");
 const skuQuery = ref("");
 const asinQuery = ref("");
-const isControlPressed = ref(false);
-
-function updateControlKeyState(event: KeyboardEvent) {
-    if (event.key === "Control") isControlPressed.value = event.type === "keydown";
-}
-
-function clearControlKeyState() {
-    isControlPressed.value = false;
-}
-
-onMounted(() => {
-    window.addEventListener("keydown", updateControlKeyState);
-    window.addEventListener("keyup", updateControlKeyState);
-    window.addEventListener("blur", clearControlKeyState);
+onBeforeUnmount(() => {
+    if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
-onBeforeUnmount(() => {
-    window.removeEventListener("keydown", updateControlKeyState);
-    window.removeEventListener("keyup", updateControlKeyState);
-    window.removeEventListener("blur", clearControlKeyState);
-    if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
+const summary = computed(() => (survey.value ? summarizeSurvey(survey.value) : null));
+const previousSummary = computed(() => {
+    const previous = survey.value ? previousSurvey(surveysStore.surveys, survey.value) : null;
+    return previous ? summarizeSurvey(previous) : null;
+});
+
+/** 前回比。直前の調査がなければ空 */
+function compareWithPrevious(key: "skuCount" | "allZeroCount" | "partialZeroCount"): string {
+    if (!summary.value || !previousSummary.value) return "";
+    const diff = summary.value[key] - previousSummary.value[key];
+    if (diff === 0) return "前回比 ±0";
+    return diff > 0 ? `前回比 +${diff} ▲` : `前回比 −${Math.abs(diff)} ▼`;
+}
+
+const amazonLamp = computed<{ state: LampState; label: string }>(() => {
+    if (!hasAmazonStock.value) return { state: "warn", label: "取得なし" };
+    switch (amazonStatus.value) {
+        case "complete":
+            return { state: "ok", label: "取込済み" };
+        case "partial":
+            return { state: "warn", label: "一部未取得" };
+        case "pending":
+            return { state: "warn", label: "取込待ち" };
+        case "legacy_file":
+            return { state: "ok", label: "旧ファイル" };
+        default:
+            return { state: "warn", label: "判定不能" };
+    }
+});
+
+const amazonMatchNote = computed(() => {
+    const skus = survey.value?.products.flatMap((product) => product.skus) ?? [];
+    const targets = survey.value?.amazonSource === "sp_api" ? skus.filter((sku) => sku.asin.trim()) : skus;
+    const matched = targets.filter((sku) => amazonTotal(sku.stock) !== null).length;
+    const basis = survey.value?.amazonBasisAt ? `基準 ${formatDateTime(survey.value.amazonBasisAt).slice(11)} ・ ` : "";
+    return `${basis}照合 ${matched}/${targets.length}`;
 });
 
 const ZERO_STOCK_BUTTONS = [
@@ -242,27 +266,6 @@ function stockTotal(stock: StockQuantities, asin: string): number | null {
     return survey.value ? skuTotal(stock, asin, survey.value) : null;
 }
 
-function isLowStock(quantity: number): boolean {
-    return stockState(quantity, { low: true }) === "low";
-}
-
-function groupedStockClass(quantity: number | null): string {
-    if (quantity === null) return "text-slate-300";
-    if (quantity === 0) return "bg-rose-50 font-semibold text-rose-400";
-    if (isLowStock(quantity)) return "bg-amber-50 font-semibold text-amber-700";
-    return "font-semibold text-slate-900";
-}
-
-function amazonStockClass(quantity: number | null): string {
-    if (quantity === null) return "text-slate-300";
-    return groupedStockClass(quantity);
-}
-
-function stockClass(quantity: number | null): string {
-    if (quantity === null || quantity === 0) return "text-slate-300";
-    return "font-semibold text-slate-900";
-}
-
 function groupedStockState(quantity: number | null): StockState {
     return stockState(quantity, { low: true });
 }
@@ -279,6 +282,26 @@ function skuRowState(matched: boolean | undefined, stock: StockQuantities, asin:
     if (matched) return "matched";
     return isZero(stock, asin) ? "all-zero" : undefined;
 }
+
+/** 倉庫別の構成バーの区間。総数が未確定なら null */
+function compositionOf(stock: StockQuantities, asin: string): { key: string; width: number }[] | null {
+    const total = stockTotal(stock, asin);
+    if (total === null) return null;
+    if (total === 0) return [];
+    return [
+        { key: "bg-wh-amazon", value: hasAmazonStock.value ? (amazonStockTotal(stock) ?? 0) : 0 },
+        { key: "bg-wh-boss", value: bossStockTotal(stock) ?? 0 },
+        { key: "bg-wh-free", value: stock.freeStock ?? 0 },
+        { key: "bg-wh-ec", value: stock.ecStock ?? 0 },
+    ]
+        .filter((segment) => segment.value > 0)
+        .map((segment) => ({ key: segment.key, width: (segment.value / total) * 100 }));
+}
+
+const conditionOperatorOptions = [
+    { value: "and" as const, label: "AND" },
+    { value: "or" as const, label: "OR" },
+];
 
 function closeRerunMenu() {
     if (rerunRunning.value) return;
@@ -350,20 +373,19 @@ async function exportExcel(scope: "all" | "filtered") {
         </BaseEmpty>
     </BaseCard>
 
-    <div v-else class="flex flex-col gap-6" :class="{ 'stock-breakdown-enabled': isControlPressed }">
+    <div v-else class="flex flex-col gap-4">
         <div class="flex flex-col gap-2">
-            <RouterLink :to="{ name: 'survey-history' }" class="inline-flex w-fit items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-                </svg>
+            <RouterLink :to="{ name: 'survey-history' }" class="inline-flex w-fit items-center gap-0.5 text-xs text-muted hover:text-ink">
+                <AppIcon name="chevron_left" :size="16" />
                 調査履歴に戻る
             </RouterLink>
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div class="flex items-center gap-2">
-                    <h1 class="text-xl font-semibold text-slate-900">在庫調査結果</h1>
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <div class="flex flex-wrap items-center gap-3">
+                    <h1 class="text-[22px] leading-tight font-semibold">在庫調査結果</h1>
+                    <span class="font-mono text-xs text-muted">{{ formatDateTime(survey.executedAt).slice(0, 10) }}</span>
                     <BaseBadge v-if="isLatest" tone="brand">最新</BaseBadge>
                 </div>
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2 xl:ml-auto">
                     <BaseButton data-testid="refresh-survey" variant="secondary" icon="refresh" :loading="refreshingSurvey" @click="refreshSurvey">最新の在庫を再読込</BaseButton>
                     <BaseButton data-testid="rerun-menu-button" variant="secondary" icon="compare_arrows" :disabled="!hasReusableFiles" :aria-expanded="rerunMenuOpen" @click="rerunMenuOpen = true"
                         >保存ファイルで再照合</BaseButton
@@ -372,26 +394,46 @@ async function exportExcel(scope: "all" | "filtered") {
                     <BaseButton variant="primary" icon="download" @click="exportExcel('all')">全件をExcel出力</BaseButton>
                 </div>
             </div>
-            <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
-                <p>在庫基準日時: {{ formatDateTime(survey.executedAt) }}</p>
-                <p v-if="survey.createdAt">結果作成日時: {{ formatDateTime(survey.createdAt) }}</p>
-                <p v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt">結果更新日時: {{ formatDateTime(survey.updatedAt) }}</p>
+            <div class="flex flex-wrap gap-x-5 gap-y-1 text-[11.5px] text-muted">
+                <p
+                    >在庫基準日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.executedAt) }}</span></p
+                >
+                <p v-if="survey.createdAt"
+                    >結果作成日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.createdAt) }}</span></p
+                >
+                <p v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt"
+                    >結果更新日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.updatedAt) }}</span></p
+                >
                 <p>
-                    品番グループ: <span class="font-medium text-slate-700">{{ survey.groups?.map((group) => group.name).join("、") || survey.importSettingName || "記録なし" }}</span>
+                    品番グループ: <span class="font-medium text-ink-2">{{ survey.groups?.map((group) => group.name).join("、") || survey.importSettingName || "記録なし" }}</span>
                 </p>
             </div>
         </div>
+
+        <div v-if="summary" class="grid grid-cols-2 gap-3 xl:grid-cols-4" data-survey-summary>
+            <StatCard title="対象" :value="summary.skuCount" :unit="`SKU ／ ${summary.productCount} 品番`" :note="compareWithPrevious('skuCount')" />
+            <StatCard title="全倉庫ゼロ" :value="summary.allZeroCount" unit="SKU" :note="compareWithPrevious('allZeroCount')" alert data-summary="all-zero" />
+            <StatCard title="一部の倉庫でゼロ" :value="summary.partialZeroCount" unit="SKU" :note="compareWithPrevious('partialZeroCount')" data-summary="partial-zero" />
+            <StatCard title="Amazon 在庫" :note="hasAmazonStock ? amazonMatchNote : ''" data-summary="amazon">
+                <template #value>
+                    <StatusLamp :state="amazonLamp.state" :label="amazonLamp.label" class="py-1.5 text-lg font-semibold" />
+                </template>
+            </StatCard>
+        </div>
+
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
-        <p v-if="!hasReusableFiles" class="text-xs text-slate-400">取込ファイルが削除されているため、再照合機能は利用できません。</p>
-        <p v-if="amazonStatus === 'pending'" class="text-sm text-slate-500">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
-        <p v-else-if="amazonStatus === 'partial'" class="text-sm text-slate-500">
-            Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}
-        </p>
-        <p v-else-if="amazonStatus === 'complete'" class="text-sm text-slate-500">
-            Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}。ほかの在庫とは取得時刻が異なる同日の集計値です。
-        </p>
-        <p v-else-if="!includesAmazonInventory" class="text-sm text-slate-500">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
-        <p class="text-xs text-slate-500">在庫欄の「—」は取込待ち・未取得を示します。確定した在庫ゼロは「0」で表示します。</p>
+        <div class="flex flex-col gap-1 text-[11.5px] text-muted">
+            <p v-if="!hasReusableFiles">取込ファイルが削除されているため、再照合機能は利用できません。</p>
+            <p v-if="amazonStatus === 'pending'">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
+            <p v-else-if="amazonStatus === 'partial'">
+                Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}
+            </p>
+            <p v-else-if="amazonStatus === 'complete'"
+                >Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}。ほかの在庫とは取得時刻が異なる同日の集計値です。</p
+            >
+            <p v-else-if="!includesAmazonInventory">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
+            <p>「取込待ち」「—」は取込待ち・未取得を示します。確定した在庫ゼロは「0」で表示します。</p>
+        </div>
 
         <BaseModal
             :open="rerunMenuOpen"
@@ -401,7 +443,7 @@ async function exportExcel(scope: "all" | "filtered") {
             @close="closeRerunMenu"
         >
             <div class="flex flex-col gap-4">
-                <p v-if="rerunSettingOptions.length === 0" class="text-sm text-slate-500">利用できる品番グループがありません。</p>
+                <p v-if="rerunSettingOptions.length === 0" class="text-[12.5px] text-muted">利用できる品番グループがありません。</p>
                 <BaseSelect
                     data-testid="rerun-setting-select"
                     :model-value="rerunSettingId"
@@ -420,70 +462,52 @@ async function exportExcel(scope: "all" | "filtered") {
                 </BaseButton>
             </template>
         </BaseModal>
+
         <BaseCard>
-            <div class="flex flex-col gap-4">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div class="flex flex-col gap-3">
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-3 xl:grid-cols-6">
                     <BaseSelect v-model="selectedGroupKey" :options="groupOptions" placeholder="すべての品番グループ" />
                     <BaseSelect v-model="brandFilter" :options="brandOptions" placeholder="すべてのブランド" />
                     <BaseSelect v-model="categoryFilter" :options="categoryOptions" placeholder="すべてのカテゴリ" />
-                    <BaseInput v-model="productCodeQuery" placeholder="品番で絞込" clearable clear-label="品番の絞込をクリア" />
-                    <BaseInput v-model="skuQuery" placeholder="SKUで絞込" clearable clear-label="SKUの絞込をクリア" />
-                    <BaseInput v-model="asinQuery" placeholder="ASINで絞込" clearable clear-label="ASINの絞込をクリア" />
+                    <BaseInput v-model="productCodeQuery" class="[&_input]:font-mono" placeholder="品番で絞込" clearable clear-label="品番の絞込をクリア" />
+                    <BaseInput v-model="skuQuery" class="[&_input]:font-mono" placeholder="SKUで絞込" clearable clear-label="SKUの絞込をクリア" />
+                    <BaseInput v-model="asinQuery" class="[&_input]:font-mono" placeholder="ASINで絞込" clearable clear-label="ASINの絞込をクリア" />
                 </div>
 
-                <div class="flex flex-wrap items-center gap-1">
-                    <span class="text-xs font-medium text-slate-400">在庫ゼロ:</span>
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="mr-0.5 text-[11px] font-medium text-muted">在庫ゼロ</span>
                     <button
                         v-for="btn in zeroStockButtons"
                         :key="btn.key"
                         :data-stock-condition="btn.key"
+                        :aria-pressed="activeConditions.includes(btn.key)"
                         type="button"
-                        class="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
-                        :class="activeConditions.includes(btn.key) ? 'border-rose-500 bg-rose-500 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'"
+                        class="h-[26px] rounded-chip border px-3 text-[11.5px] transition-colors hover:cursor-pointer"
+                        :class="activeConditions.includes(btn.key) ? 'border-signal-border bg-signal font-semibold text-ink' : 'border-line-strong bg-surface text-ink-2 hover:bg-surface-2'"
                         @click="toggleCondition(btn.key)"
                     >
                         {{ btn.label }}
                     </button>
-                    <span class="ml-3 text-xs font-medium text-slate-400">在庫あり:</span>
+                    <span class="mr-0.5 ml-3 text-[11px] font-medium text-muted">在庫あり</span>
                     <button
                         v-for="btn in hasStockButtons"
                         :key="btn.key"
                         :data-stock-condition="btn.key"
+                        :aria-pressed="activeConditions.includes(btn.key)"
                         type="button"
-                        class="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
-                        :class="activeConditions.includes(btn.key) ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'"
+                        class="h-[26px] rounded-chip border px-3 text-[11.5px] transition-colors hover:cursor-pointer"
+                        :class="activeConditions.includes(btn.key) ? 'border-ink bg-ink font-semibold text-white' : 'border-line-strong bg-surface text-ink-2 hover:bg-surface-2'"
                         @click="toggleCondition(btn.key)"
                     >
                         {{ btn.label }}
                     </button>
-                    <span class="ml-3 text-xs font-medium text-slate-400">結合:</span>
-                    <div class="inline-flex" role="group" aria-label="在庫条件の結合方法">
-                        <button
-                            type="button"
-                            data-condition-operator="and"
-                            :aria-pressed="conditionOperator === 'and'"
-                            class="rounded-l-md w-14 border border-slate-300 px-2.5 py-1 text-xs font-semibold transition-colors"
-                            :class="conditionOperator === 'and' ? 'relative z-10 border-primary-500 bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'"
-                            @click="conditionOperator = 'and'"
-                            >AND</button
-                        >
-                        <button
-                            type="button"
-                            data-condition-operator="or"
-                            :aria-pressed="conditionOperator === 'or'"
-                            class="-ml-px w-14 rounded-r-md border border-slate-300 px-2.5 py-1 text-xs font-semibold transition-colors"
-                            :class="conditionOperator === 'or' ? 'relative z-10 border-primary-500 bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'"
-                            @click="conditionOperator = 'or'"
-                            >OR</button
-                        >
-                    </div>
-                    <button v-if="hasActiveFilters" type="button" data-clear-filters class="ml-auto text-xs font-medium text-primary-600 hover:underline" @click="clearFilters">条件をクリア</button>
+                    <span class="mr-0.5 ml-3 text-[11px] font-medium text-muted">結合</span>
+                    <SegmentedControl v-model="conditionOperator" data-condition-operator :options="conditionOperatorOptions" label="在庫条件の結合方法" size="sm" />
+                    <span class="ml-auto text-[11.5px] text-muted">
+                        該当 <span class="font-num text-lg font-semibold text-ink">{{ matchedSkuCount }}</span> ／ {{ totalSkuCount }} SKU
+                    </span>
+                    <BaseButton v-if="hasActiveFilters" data-clear-filters variant="ghost" size="sm" @click="clearFilters">条件をクリア</BaseButton>
                 </div>
-
-                <p class="text-xs text-slate-400">
-                    該当SKU: <span class="font-semibold text-slate-700">{{ matchedSkuCount }}</span> / 全{{ totalSkuCount }}件
-                    <span class="ml-3">Ctrlキーを押しながら{{ hasAmazonStock ? "Amazon・BOSS" : "BOSS" }}の数値にマウスを置くと内訳を表示します</span>
-                </p>
             </div>
         </BaseCard>
 
@@ -492,133 +516,122 @@ async function exportExcel(scope: "all" | "filtered") {
         </BaseCard>
 
         <BaseCard v-for="product in filteredProducts" :key="product.productCode" v-memo="[product]" :padded="false" class="survey-product-card">
-            <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-3.5 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                        <p class="text-sm font-semibold text-slate-900">{{ product.productCode }}</p>
-                        <span class="text-xs text-slate-400">{{ product.parentAsin || "—" }}</span>
-                    </div>
-                    <div class="mt-1 flex gap-1.5">
-                        <BaseBadge>{{ product.brand }}</BaseBadge>
-                        <BaseBadge>{{ product.category }}</BaseBadge>
-                    </div>
+            <div class="flex flex-col gap-2 border-b border-line-2 px-4 py-2.5 lg:flex-row lg:items-center lg:gap-3">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <p class="font-mono text-[15px] leading-relaxed font-semibold">{{ product.productCode }}</p>
+                    <span class="font-mono text-[11px] text-muted">{{ product.parentAsin || "—" }}</span>
+                    <BaseBadge>{{ product.brand }}</BaseBadge>
+                    <BaseBadge>{{ product.category }}</BaseBadge>
                 </div>
-                <div class="w-full lg:w-80">
-                    <label class="mb-1 block text-xs font-medium text-slate-400">メモ</label>
-                    <MemoField :model-value="product.memo" placeholder="メモを入力" @save="(v) => surveysStore.updateProductMemo(survey!.id, product.productCode, v)" />
+                <div class="w-full lg:ml-auto lg:w-[300px]">
+                    <MemoField :model-value="product.memo" framed placeholder="品番のメモを追加" @save="(v) => surveysStore.updateProductMemo(survey!.id, product.productCode, v)" />
                 </div>
             </div>
 
             <div class="overflow-x-auto">
-                <table class="w-full min-w-200 table-fixed text-left text-sm">
+                <table class="w-full min-w-[880px] table-fixed text-right tabular-nums">
                     <colgroup>
-                        <col class="w-40" />
-                        <col v-if="hasAmazonStock" class="w-24" />
-                        <col class="w-24" />
-                        <col class="w-24" />
-                        <col class="w-24" />
-                        <col v-if="hasAmazonStock" class="w-24" />
+                        <col class="w-[190px]" />
+                        <col v-if="hasAmazonStock" class="w-[92px]" />
+                        <col class="w-[92px]" />
+                        <col class="w-[92px]" />
+                        <col class="w-[92px]" />
+                        <col v-if="hasAmazonStock" class="w-[84px]" />
+                        <col class="w-[136px]" />
                         <col />
                     </colgroup>
-                    <thead class="border-b border-slate-200 bg-slate-50 text-xs tracking-wide text-slate-500">
-                        <tr>
-                            <th class="px-3 py-2">SKU</th>
-                            <th v-if="hasAmazonStock" class="border-l border-slate-200 px-3 py-2 text-center">Amazon</th>
-                            <th class="border-l border-slate-200 px-3 py-2 text-center">BOSS</th>
-                            <th class="border-l border-slate-200 px-3 py-2 text-center">フリー在庫</th>
-                            <th class="border-l border-slate-200 px-3 py-2 text-center">ECストック</th>
-                            <th v-if="hasAmazonStock" class="border-l border-slate-200 px-3 py-2 text-center">在庫総数</th>
-                            <th class="border-l border-slate-200 px-3 py-2">メモ</th>
+                    <thead class="border-b border-line text-[11px] text-muted">
+                        <tr class="align-bottom">
+                            <th class="py-2 pr-3 pl-[18px] text-left font-semibold">SKU<small class="block text-[10px] font-normal text-faint">ASIN</small></th>
+                            <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold">
+                                <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-amazon" aria-hidden="true"></span>Amazon<small class="block text-[10px] font-normal text-faint"
+                                    >自社／FBA</small
+                                >
+                            </th>
+                            <th class="px-3 py-2 font-semibold">
+                                <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-boss" aria-hidden="true"></span>BOSS<small class="block text-[10px] font-normal text-faint">自社／RFC</small>
+                            </th>
+                            <th class="px-3 py-2 font-semibold"><span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-free" aria-hidden="true"></span>フリー在庫</th>
+                            <th class="px-3 py-2 font-semibold"><span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-ec" aria-hidden="true"></span>ECストック</th>
+                            <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold">総数</th>
+                            <th class="px-3 py-2 text-left font-semibold">倉庫別の構成</th>
+                            <th class="px-3 py-2 text-left font-semibold">メモ</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100">
+                    <tbody>
                         <tr
                             v-for="sku in product.skus"
                             :key="sku.skuCode"
                             :data-row-state="skuRowState(sku.skuMatched, sku.stock, sku.asin)"
-                            class="group"
-                            :class="sku.skuMatched ? 'bg-sky-50' : isZero(sku.stock, sku.asin) ? 'bg-slate-50/60' : ''"
+                            class="border-t border-line-2 first:border-t-0"
+                            :class="{
+                                'bg-signal-row': skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero',
+                                'bg-match': skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'matched',
+                                'hover:bg-surface-2': !skuRowState(sku.skuMatched, sku.stock, sku.asin),
+                            }"
                         >
-                            <td data-sku-cell class="px-3 py-2.5 transition-colors group-hover:bg-slate-100">
-                                <div class="flex flex-col">
-                                    <span class="font-semibold" :class="sku.skuMatched ? 'text-sky-800' : 'text-slate-900'">{{ sku.skuCode }}</span>
-                                    <span class="flex items-center text-xs" :class="sku.skuMatched ? 'text-sky-700' : 'text-slate-400'">{{ sku.asin }}</span>
-                                </div>
+                            <td data-sku-cell class="relative py-1.5 pr-3 pl-[18px] text-left">
+                                <span
+                                    v-if="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
+                                    class="absolute top-[7px] bottom-[7px] left-1.5 w-[5px] rounded-[3px] bg-hazard"
+                                    aria-hidden="true"
+                                ></span>
+                                <span v-else-if="sku.skuMatched" class="absolute top-[9px] bottom-[9px] left-[7px] w-[3px] rounded-xs bg-ink" aria-hidden="true"></span>
+                                <span class="font-mono text-xs font-medium">{{ sku.skuCode }}</span>
+                                <span
+                                    v-if="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
+                                    class="ml-1.5 rounded-chip bg-ink px-1.5 align-[1px] text-[9.5px] font-bold tracking-wide text-signal"
+                                    >全倉庫ゼロ</span
+                                >
+                                <span class="block font-mono text-[10.5px] text-muted">{{ sku.asin || "ASIN未登録" }}</span>
                             </td>
-                            <td
-                                v-if="hasAmazonStock"
-                                data-stock-field="amazon"
-                                :data-stock-state="amazonStockState(sku.stock, sku.asin)"
-                                tabindex="0"
-                                aria-label="Amazon在庫合計"
-                                class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="amazonStockClass(amazonStockTotal(sku.stock))"
-                            >
-                                <span class="stock-total-value">{{ amazonStockTotal(sku.stock) ?? (survey?.amazonSource === "sp_api" && !sku.asin.trim() ? "対象外" : "—") }}</span>
-                                <div v-if="amazonStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
-                                    <p class="mb-1.5 text-left text-[11px] font-semibold text-slate-500">Amazon内訳</p>
-                                    <div class="grid grid-cols-2 divide-x divide-slate-200">
-                                        <div class="pr-2 text-center">
-                                            <span class="block text-[10px] text-slate-400">自社</span>
-                                            <strong class="text-sm text-slate-900">{{ sku.stock.amazonOwn }}</strong>
-                                        </div>
-                                        <div class="pl-2 text-center">
-                                            <span class="block text-[10px] text-slate-400">FBA</span>
-                                            <strong class="text-sm text-slate-900">{{ sku.stock.amazonFba }}</strong>
-                                        </div>
-                                    </div>
-                                </div>
+                            <td v-if="hasAmazonStock" data-stock-field="amazon" :data-stock-state="amazonStockState(sku.stock, sku.asin)" aria-label="Amazon在庫合計" class="px-3 py-1.5">
+                                <StockCell
+                                    :quantity="amazonStockTotal(sku.stock)"
+                                    :state="amazonStockState(sku.stock, sku.asin)"
+                                    :breakdown="[sku.stock.amazonOwn, sku.stock.amazonFba]"
+                                    pending-label="取込待ち"
+                                    :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
+                                />
                             </td>
-                            <td
-                                data-stock-field="boss"
-                                :data-stock-state="groupedStockState(bossStockTotal(sku.stock))"
-                                tabindex="0"
-                                aria-label="BOSS在庫合計"
-                                class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="groupedStockClass(bossStockTotal(sku.stock))"
-                            >
-                                <span class="stock-total-value">{{ bossStockTotal(sku.stock) ?? "—" }}</span>
-                                <div v-if="bossStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
-                                    <p class="mb-1.5 text-left text-[11px] font-semibold text-slate-500">BOSS内訳</p>
-                                    <div class="grid grid-cols-2 divide-x divide-slate-200">
-                                        <div class="pr-2 text-center">
-                                            <span class="block text-[10px] text-slate-400">自社</span>
-                                            <strong class="text-sm text-slate-900">{{ sku.stock.bossOwn }}</strong>
-                                        </div>
-                                        <div class="pl-2 text-center">
-                                            <span class="block text-[10px] text-slate-400">RFC</span>
-                                            <strong class="text-sm text-slate-900">{{ sku.stock.bossRfc }}</strong>
-                                        </div>
-                                    </div>
-                                </div>
+                            <td data-stock-field="boss" :data-stock-state="groupedStockState(bossStockTotal(sku.stock))" aria-label="BOSS在庫合計" class="px-3 py-1.5">
+                                <StockCell
+                                    :quantity="bossStockTotal(sku.stock)"
+                                    :state="groupedStockState(bossStockTotal(sku.stock))"
+                                    :breakdown="[sku.stock.bossOwn, sku.stock.bossRfc]"
+                                    :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
+                                />
                             </td>
-                            <td
-                                data-stock-field="freeStock"
-                                :data-stock-state="plainStockState(sku.stock.freeStock)"
-                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="stockClass(sku.stock.freeStock)"
-                            >
-                                {{ sku.stock.freeStock ?? "—" }}
+                            <td data-stock-field="freeStock" :data-stock-state="plainStockState(sku.stock.freeStock)" class="px-3 py-1.5">
+                                <StockCell :quantity="sku.stock.freeStock" :state="plainStockState(sku.stock.freeStock)" :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'" />
                             </td>
-                            <td
-                                data-stock-field="ecStock"
-                                :data-stock-state="plainStockState(sku.stock.ecStock)"
-                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="stockClass(sku.stock.ecStock)"
-                            >
-                                {{ sku.stock.ecStock ?? "—" }}
+                            <td data-stock-field="ecStock" :data-stock-state="plainStockState(sku.stock.ecStock)" class="px-3 py-1.5">
+                                <StockCell :quantity="sku.stock.ecStock" :state="plainStockState(sku.stock.ecStock)" :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'" />
                             </td>
                             <td
                                 v-if="hasAmazonStock"
                                 data-stock-field="total"
                                 :data-stock-state="plainStockState(stockTotal(sku.stock, sku.asin))"
-                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
-                                :class="stockClass(stockTotal(sku.stock, sku.asin))"
+                                class="px-3 py-1.5"
+                                :class="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero' ? 'bg-signal-row-strong' : 'bg-ink/[0.025]'"
                             >
-                                {{ stockTotal(sku.stock, sku.asin) ?? "—" }}
+                                <StockCell
+                                    :quantity="stockTotal(sku.stock, sku.asin)"
+                                    :state="plainStockState(stockTotal(sku.stock, sku.asin))"
+                                    total
+                                    :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
+                                />
                             </td>
-                            <td class="border-l border-slate-200 px-3 py-2.5">
-                                <MemoField :model-value="sku.memo" placeholder="メモを入力" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />
+                            <td class="px-3 py-1.5 text-left" data-composition>
+                                <span v-if="compositionOf(sku.stock, sku.asin) === null" class="text-[10.5px] font-semibold text-muted">{{
+                                    amazonStockState(sku.stock, sku.asin) === "pending" ? "Amazon 取込後に表示" : "取込後に表示"
+                                }}</span>
+                                <span v-else class="flex h-[7px] w-28 gap-0.5 overflow-hidden rounded-xs" :class="compositionOf(sku.stock, sku.asin)!.length === 0 ? 'bg-ink/[0.07]' : ''">
+                                    <i v-for="segment in compositionOf(sku.stock, sku.asin)" :key="segment.key" class="block h-full" :class="segment.key" :style="{ width: `${segment.width}%` }"></i>
+                                </span>
+                            </td>
+                            <td class="px-3 py-1.5 text-left text-[11.5px]">
+                                <MemoField :model-value="sku.memo" placeholder="メモを追加" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />
                             </td>
                         </tr>
                     </tbody>
@@ -632,62 +645,5 @@ async function exportExcel(scope: "all" | "filtered") {
 .survey-product-card {
     content-visibility: auto;
     contain-intrinsic-size: auto 16rem;
-}
-
-.stock-total-cell {
-    position: relative;
-}
-
-.stock-breakdown-enabled .stock-total-cell {
-    cursor: help;
-}
-
-.stock-breakdown-enabled .stock-total-cell:hover,
-.stock-breakdown-enabled .stock-total-cell:focus-within {
-    z-index: 30;
-}
-
-.stock-breakdown-enabled .stock-total-cell:focus-visible {
-    z-index: 30;
-    outline: 2px solid #6366f1;
-    outline-offset: -2px;
-}
-
-.stock-breakdown-tooltip {
-    position: absolute;
-    right: auto;
-    bottom: 0;
-    left: calc(100% + 0.5rem);
-    z-index: 40;
-    width: 9rem;
-    padding: 0.625rem 0.75rem;
-    color: #334155;
-    visibility: hidden;
-    pointer-events: none;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    box-shadow: 0 10px 25px -5px rgb(15 23 42 / 0.2);
-    opacity: 0;
-    transform: translateX(-0.25rem);
-    transition:
-        opacity 120ms ease,
-        transform 120ms ease,
-        visibility 0s linear 120ms;
-}
-
-.stock-breakdown-enabled .stock-total-cell:hover .stock-breakdown-tooltip {
-    visibility: visible;
-    opacity: 1;
-    transform: translateX(0);
-    transition-delay: 500ms;
-}
-
-.stock-breakdown-enabled .stock-total-cell:focus .stock-breakdown-tooltip,
-.stock-breakdown-enabled .stock-total-cell:focus-within .stock-breakdown-tooltip {
-    visibility: visible;
-    opacity: 1;
-    transform: translateX(0);
-    transition-delay: 0ms;
 }
 </style>

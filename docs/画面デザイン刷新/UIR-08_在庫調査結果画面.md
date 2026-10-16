@@ -83,3 +83,5 @@ npx vitest run resources/js/pages/SurveyImportSettingDisplay.test.ts
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** 状態のまとめ（`StatCard` 4 枚、前回比つき）、絞込（チップ、`SegmentedControl` による AND／OR）、品番カード（品番は囲みなしの等幅、品番メモは点線枠）、在庫表（`StockCell` で内訳を常時表示、全倉庫ゼロ行の黄色の地と斜線の帯、検索一致行、倉庫別の構成バー）を実装した。Ctrl＋ホバーの仕組み（キーイベント、`stock-breakdown-enabled`、ツールチップの CSS）は削除した。少数在庫は決定事項 A のとおり、Amazon と BOSS の列で数字を注意色の太字にする（フリー在庫・ECストック・総数は従来どおり強調しない）。日時の表示形式は、他画面と Excel 出力に合わせて `YYYY/MM/DD HH:mm` のまま、値だけを等幅にした。テストは `[data-stock-value]`、`[data-breakdown]`、`aria-checked` で確かめる形に更新し、状態のまとめと前回比のテストを追加した。
