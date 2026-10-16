@@ -47,7 +47,7 @@ const router = createRouter({
             path: "/surveys/:id",
             name: "survey-result",
             component: () => import("@/pages/SurveyResultPage.vue"),
-            props: true,
+            props: (route) => ({ id: route.params.id, initialGroup: typeof route.query.group === "string" ? route.query.group : "" }),
         },
         {
             path: "/files",

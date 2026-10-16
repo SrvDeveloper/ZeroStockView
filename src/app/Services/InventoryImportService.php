@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\ImportSetting;
+use App\Models\ImportTarget;
 use App\Models\Survey;
 use Carbon\CarbonInterface;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -31,15 +33,19 @@ class InventoryImportService
         $source->loadMissing('files');
         $files = [];
 
-        foreach (self::FILE_TYPES as $key => $type) {
-            $file = $source->files->firstWhere('file_type', $type);
-            if ($file === null || $file->expires_at === null || $file->expires_at->isPast() || ! Storage::disk($file->disk)->exists($file->stored_path)) {
+        $sourceFiles = $source->files->whereIn('file_type', array_values(self::FILE_TYPES));
+        if ($sourceFiles->isEmpty()) {
+            throw ValidationException::withMessages(['files' => ['取込ファイルが削除されているため、再照合できません。']]);
+        }
+
+        foreach ($sourceFiles as $file) {
+            if ($file->expires_at === null || $file->expires_at->isPast() || ! Storage::disk($file->disk)->exists($file->stored_path)) {
                 throw ValidationException::withMessages([
                     'files' => ['取込ファイルが削除されているため、再照合できません。'],
                 ]);
             }
 
-            $files[$key] = new UploadedFile(
+            $files[] = new UploadedFile(
                 Storage::disk($file->disk)->path($file->stored_path),
                 $file->original_name,
                 $file->mime_type,
@@ -48,125 +54,212 @@ class InventoryImportService
             );
         }
 
-        return $this->import($files, $setting, $source->executed_at);
+        return $this->import($files, $setting, $source->executed_at, $source);
     }
 
     /**
-     * @param  array<string, UploadedFile>  $files
+     * @param  array<int, UploadedFile>  $files
      * @param  CarbonInterface|null  $executedAt  在庫データの基準日時。新規取込では現在日時、再照合では元の調査日時を使用する。
      */
-    public function import(array $files, ImportSetting $setting, ?CarbonInterface $executedAt = null): Survey
+    public function import(array $files, ?ImportSetting $setting = null, ?CarbonInterface $executedAt = null, ?Survey $source = null): Survey
     {
         $basisAt = $executedAt ?? now();
+        $classifiedFiles = $this->classifyFiles($files);
 
-        $targets = $setting->targets()
-            ->with('product.skus')
-            ->orderBy('sort_order')
-            ->get();
+        $allTargets = ImportTarget::query()->with('setting', 'product.skus')
+            ->orderBy('import_setting_id')->orderBy('sort_order')->get();
+        $targets = $allTargets->unique('product_id')->values();
 
-        if ($targets->isEmpty() || $targets->count() > 50) {
+        if ($targets->isEmpty()) {
             throw ValidationException::withMessages([
-                'targets' => ['取込対象品番を1〜50件設定してください。'],
+                'targets' => ['品番グループに取込対象品番を設定してください。'],
             ]);
         }
 
         $this->crossWalker->refresh($targets);
-        $targets = $setting->targets()
-            ->with(['product.skus' => fn ($query) => $query->where('status', 'active')])
-            ->orderBy('sort_order')
-            ->get();
-
-        $skus = $targets->pluck('product.skus')->flatten();
-        $stocks = $skus->mapWithKeys(fn ($sku): array => [
-            $sku->sku_code => [
-                'amazon_own_stock' => null,
-                'amazon_fba_stock' => null,
-                'boss_own_stock' => 0,
-                'boss_rfc_stock' => 0,
-                'free_stock' => 0,
-                'ec_stock' => 0,
-            ],
-        ])->all();
-
-        $skuLookup = $skus->pluck('sku_code', 'sku_code')->all();
-        $tqLookup = $skus->mapWithKeys(fn ($sku): array => [
-            $this->tqKey($sku->tq_item_no, $sku->tq_color_no, $sku->tq_size) => $sku->sku_code,
-        ])->all();
-
-        $this->applyBoss($stocks, $skuLookup, $files['boss']);
-        $this->applyTq($stocks, $tqLookup, $files['ec_stock'], 'キープ残数', 'ec_stock', true);
-        $this->applyTq($stocks, $tqLookup, $files['free_stock'], '可能在庫数', 'free_stock', false);
+        $allTargets = ImportTarget::query()->with(['setting', 'product.skus' => fn ($query) => $query->where('status', 'active')])
+            ->orderBy('import_setting_id')->orderBy('sort_order')->get();
+        $targets = $allTargets->unique('product_id')->sortBy('product.product_code')->values();
+        $groupMemberships = $allTargets->groupBy('product_id')->map(fn ($members): array => $members->map(fn ($member): array => [
+            'key' => 'setting:'.$member->import_setting_id,
+            'name' => $member->setting->name,
+            'sortOrder' => $member->sort_order,
+        ])->all());
 
         $storedFiles = [];
+        $replacedFiles = [];
 
-        try {
-            $survey = DB::transaction(function () use ($targets, $stocks, $files, $setting, $basisAt, &$storedFiles): Survey {
-                $survey = Survey::query()->create([
-                    'executed_at' => $basisAt,
-                    'import_setting_name' => $setting->name,
-                    'includes_amazon_inventory' => false,
-                    'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
-                    'amazon_inventory_import_id' => null,
-                ]);
-
-                foreach ($targets as $target) {
-                    $product = $target->product;
-                    $surveyProduct = $survey->products()->create([
-                        'product_code' => $product->product_code,
-                        'brand' => $product->brand,
-                        'category' => $product->category,
-                        'parent_asin' => $product->parent_asin,
-                        'status' => $product->status,
-                        'source_updated_at' => $product->source_updated_at,
-                        'sort_order' => $target->sort_order,
-                    ]);
-
-                    foreach ($product->skus as $sku) {
-                        $surveyProduct->skus()->create(array_merge([
-                            'sku_code' => $sku->sku_code,
-                            'child_asin' => $sku->child_asin,
-                            'status' => $sku->status,
-                            'tq_item_no' => $sku->tq_item_no,
-                            'tq_color_no' => $sku->tq_color_no,
-                            'tq_size' => $sku->tq_size,
-                            'sort_order' => $sku->sort_order,
-                        ], $stocks[$sku->sku_code]));
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $survey = DB::transaction(function () use ($targets, $groupMemberships, $classifiedFiles, $setting, $basisAt, $source, &$storedFiles, &$replacedFiles): Survey {
+                    $date = $basisAt->toDateString();
+                    $survey = Survey::query()->where('survey_date', $date)->lockForUpdate()->first();
+                    if ($survey === null && $source !== null) {
+                        $survey = Survey::query()->whereKey($source->id)->lockForUpdate()->firstOrFail();
                     }
-                }
-
-                foreach (self::FILE_TYPES as $key => $type) {
-                    $file = $files[$key];
-                    $extension = strtolower($file->getClientOriginalExtension()) ?: 'dat';
-                    $path = $file->storeAs(
-                        'survey-imports/'.$survey->getKey(),
-                        Str::uuid().'.'.$extension,
-                        'local',
-                    );
-
-                    if ($path === false) {
-                        throw new RuntimeException('取込ファイルを保存できませんでした。');
+                    if ($survey === null) {
+                        $survey = Survey::query()
+                            ->whereDate('executed_at', $date)
+                            ->orderByDesc('executed_at')->orderByDesc('id')
+                            ->lockForUpdate()->first();
+                    }
+                    $previousSettingName = $survey?->import_setting_name;
+                    if ($survey === null) {
+                        $survey = Survey::query()->create([
+                            'executed_at' => $basisAt,
+                            'survey_date' => $date,
+                            'import_setting_name' => $setting?->name,
+                            'includes_amazon_inventory' => false,
+                            'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
+                            'amazon_inventory_import_id' => null,
+                        ]);
+                    } else {
+                        $survey->update([
+                            'survey_date' => $date,
+                            'import_setting_name' => $setting?->name,
+                            'includes_amazon_inventory' => false,
+                            'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
+                        ]);
+                        $survey->touch();
                     }
 
-                    $storedFiles[] = $path;
-                    $survey->files()->create([
-                        'file_type' => $type,
-                        'original_name' => $file->getClientOriginalName(),
-                        'disk' => 'local',
-                        'stored_path' => $path,
-                        'mime_type' => $file->getClientMimeType(),
-                        'size_bytes' => $file->getSize(),
-                        'uploaded_at' => now(),
-                        'expires_at' => now()->addDays(30),
-                    ]);
+                    $existingFiles = $survey->files()->get()->keyBy('file_type');
+                    $allFiles = $classifiedFiles;
+                    foreach (self::FILE_TYPES as $key => $type) {
+                        if (isset($allFiles[$key])) {
+                            continue;
+                        }
+                        $saved = $existingFiles->get($type);
+                        if ($saved !== null && $saved->expires_at?->isFuture() && Storage::disk($saved->disk)->exists($saved->stored_path)) {
+                            $allFiles[$key] = new UploadedFile(
+                                Storage::disk($saved->disk)->path($saved->stored_path),
+                                $saved->original_name,
+                                $saved->mime_type,
+                                null,
+                                true,
+                            );
+                        }
+                    }
+
+                    $skus = $targets->pluck('product.skus')->flatten();
+                    $stocks = $skus->mapWithKeys(fn ($sku): array => [
+                        $sku->sku_code => [
+                            'amazon_own_stock' => null,
+                            'amazon_fba_stock' => null,
+                            'boss_own_stock' => isset($allFiles['boss']) ? 0 : null,
+                            'boss_rfc_stock' => isset($allFiles['boss']) ? 0 : null,
+                            'free_stock' => isset($allFiles['free_stock']) ? 0 : null,
+                            'ec_stock' => isset($allFiles['ec_stock']) ? 0 : null,
+                        ],
+                    ])->all();
+                    $skuLookup = $skus->pluck('sku_code', 'sku_code')->all();
+                    $tqLookup = $skus->mapWithKeys(fn ($sku): array => [
+                        $this->tqKey($sku->tq_item_no, $sku->tq_color_no, $sku->tq_size) => $sku->sku_code,
+                    ])->all();
+                    if (isset($allFiles['boss'])) {
+                        $this->applyBoss($stocks, $skuLookup, $allFiles['boss']);
+                    }
+                    if (isset($allFiles['ec_stock'])) {
+                        $this->applyTq($stocks, $tqLookup, $allFiles['ec_stock'], 'キープ残数', 'ec_stock', true);
+                    }
+                    if (isset($allFiles['free_stock'])) {
+                        $this->applyTq($stocks, $tqLookup, $allFiles['free_stock'], '可能在庫数', 'free_stock', false);
+                    }
+
+                    $existingProducts = $survey->products()->with('skus')->get();
+                    $productMemos = $existingProducts->pluck('memo', 'product_code');
+                    $skuMemos = $existingProducts->flatMap->skus->pluck('memo', 'sku_code');
+                    $priorProducts = $existingProducts->keyBy('product_code');
+                    $survey->products()->delete();
+
+                    foreach ($targets as $index => $target) {
+                        $product = $target->product;
+                        $priorProduct = $priorProducts->get($product->product_code);
+                        $priorMemberships = collect($priorProduct?->group_memberships ?? []);
+                        if ($priorProduct !== null && $priorMemberships->isEmpty() && $previousSettingName !== null) {
+                            $priorMemberships->push(['key' => 'legacy:'.$previousSettingName, 'name' => $previousSettingName, 'sortOrder' => $priorProduct->sort_order]);
+                        }
+                        $memberships = $priorMemberships->concat($groupMemberships->get($product->id, []))
+                            ->unique('key')->values()->all();
+                        $surveyProduct = $survey->products()->create([
+                            'product_code' => $product->product_code,
+                            'brand' => $product->brand,
+                            'category' => $product->category,
+                            'parent_asin' => $product->parent_asin,
+                            'status' => $product->status,
+                            'source_updated_at' => $product->source_updated_at,
+                            'sort_order' => $index + 1,
+                            'group_memberships' => $memberships,
+                            'memo' => $productMemos->get($product->product_code),
+                        ]);
+
+                        foreach ($product->skus as $sku) {
+                            $surveyProduct->skus()->create(array_merge([
+                                'sku_code' => $sku->sku_code,
+                                'child_asin' => $sku->child_asin,
+                                'status' => $sku->status,
+                                'tq_item_no' => $sku->tq_item_no,
+                                'tq_color_no' => $sku->tq_color_no,
+                                'tq_size' => $sku->tq_size,
+                                'sort_order' => $sku->sort_order,
+                                'memo' => $skuMemos->get($sku->sku_code),
+                            ], $stocks[$sku->sku_code]));
+                        }
+                    }
+
+                    foreach ($classifiedFiles as $key => $file) {
+                        $type = self::FILE_TYPES[$key];
+                        $oldFile = $existingFiles->get($type);
+                        if ($oldFile !== null) {
+                            $replacedFiles[] = [$oldFile->disk, $oldFile->stored_path];
+                            $oldFile->delete();
+                        }
+                        $extension = strtolower($file->getClientOriginalExtension()) ?: 'dat';
+                        $path = $file->storeAs(
+                            'survey-imports/'.$survey->getKey(),
+                            Str::uuid().'.'.$extension,
+                            'local',
+                        );
+
+                        if ($path === false) {
+                            throw new RuntimeException('取込ファイルを保存できませんでした。');
+                        }
+
+                        $storedFiles[] = $path;
+                        $survey->files()->create([
+                            'file_type' => $type,
+                            'original_name' => $file->getClientOriginalName(),
+                            'disk' => 'local',
+                            'stored_path' => $path,
+                            'mime_type' => $file->getClientMimeType(),
+                            'size_bytes' => $file->getSize(),
+                            'uploaded_at' => now(),
+                            'expires_at' => now()->addDays(30),
+                        ]);
+                    }
+
+                    $this->amazonSync->syncSurvey($survey->id);
+
+                    return $survey;
+                });
+                break;
+            } catch (\Throwable $exception) {
+                Storage::disk('local')->delete($storedFiles);
+                if ($exception instanceof UniqueConstraintViolationException && $source === null
+                    && $attempt === 0 && str_contains($exception->getMessage(), 'survey_date')) {
+                    // Another request claimed this day first. Re-read and update that row.
+                    $storedFiles = [];
+                    $replacedFiles = [];
+
+                    continue;
                 }
 
-                $this->amazonSync->syncSurvey($survey->id);
+                throw $exception;
+            }
+        }
 
-                return $survey;
-            });
-        } catch (\Throwable $exception) {
-            Storage::disk('local')->delete($storedFiles);
-            throw $exception;
+        foreach ($replacedFiles as [$disk, $path]) {
+            Storage::disk($disk)->delete($path);
         }
 
         try {
@@ -180,6 +273,62 @@ class InventoryImportService
         }
 
         return $survey->refresh()->load(['products.skus', 'files', 'amazonImport.snapshots']);
+    }
+
+    /**
+     * @param  array<int, UploadedFile>  $files
+     * @return array<string, UploadedFile>
+     */
+    private function classifyFiles(array $files): array
+    {
+        if (count($files) < 1 || count($files) > count(self::FILE_TYPES)) {
+            throw ValidationException::withMessages(['files' => ['取込ファイルを1〜3件添付してください。']]);
+        }
+
+        $classified = [];
+        foreach ($files as $file) {
+            $contents = file_get_contents($file->getRealPath());
+            if ($contents === false) {
+                throw ValidationException::withMessages(['files' => [$file->getClientOriginalName().'を読み込めません。']]);
+            }
+            if (! mb_check_encoding($contents, 'UTF-8')) {
+                $contents = mb_convert_encoding($contents, 'UTF-8', 'SJIS-win');
+            }
+            $stream = fopen('php://temp', 'r+');
+            fwrite($stream, $contents);
+            rewind($stream);
+            $headerRow = fgetcsv($stream, separator: ',');
+            fclose($stream);
+            $headers = $headerRow === false ? [] : array_map($this->normalize(...), $headerRow);
+
+            $matchingTypes = array_keys(array_filter([
+                'boss' => $this->hasHeaders($headers, ['倉庫', 'SKUコード', '実在庫 (倉庫毎)', '引当済 (倉庫毎)']),
+                'ec_stock' => $this->hasHeaders($headers, ['品番', 'カラーNo', 'キープ残数']) && $this->hasAnyHeader($headers, ['サイズ', 'ｻｲｽﾞ']),
+                'free_stock' => $this->hasHeaders($headers, ['品番', 'カラーNo', '可能在庫数']) && $this->hasAnyHeader($headers, ['サイズ', 'ｻｲｽﾞ']),
+            ]));
+            if (count($matchingTypes) !== 1) {
+                throw ValidationException::withMessages(['files' => [$file->getClientOriginalName().'の種類を内容から判定できません。ヘッダーを確認してください。']]);
+            }
+            $type = $matchingTypes[0];
+            if (isset($classified[$type])) {
+                throw ValidationException::withMessages(['files' => [self::FILE_TYPES[$type].'のファイルが複数あります。']]);
+            }
+            $classified[$type] = $file;
+        }
+
+        return $classified;
+    }
+
+    /** @param array<int, string> $headers @param array<int, string> $required */
+    private function hasHeaders(array $headers, array $required): bool
+    {
+        return count(array_intersect($required, $headers)) === count($required);
+    }
+
+    /** @param array<int, string> $headers @param array<int, string> $candidates */
+    private function hasAnyHeader(array $headers, array $candidates): bool
+    {
+        return count(array_intersect($candidates, $headers)) > 0;
     }
 
     /**

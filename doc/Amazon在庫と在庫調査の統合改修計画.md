@@ -54,7 +54,7 @@
 - `SurveyResource` と `SurveyExcelExporter` の読取り時スナップショット合成を削除し、`survey_skus` のAmazon数量を返す。調査履歴一覧と結果画面には「取込待ち／取込済み／一部SKU未取得」とAmazon基準日時を表示する。取込成功後、開いている画面・次回表示時に調査データを再取得する。
 - `InventoryTrendController` は、調査がある日はAmazon・BOSS・モール全体・総数を同じ調査の `survey_skus` から算出する。Amazonのみ取得され調査がない日は、Amazon単独の推移に限り取得原本を表示し、モール全体・総数は表示しない。取得元とAmazon基準日時はメタデータとして示す。
 - 品番別の推移グラフは、対象日のSKUに未取得値があれば部分合計を出さず「取込待ち／未確定」とする。SKU別推移でも `NULL` を0として描画しない。
-- `InventoryTrendCsvExporter`、`/api/v1/inventory/daily`、Excelは `survey_skus` の数量を使用する。取込待ち・未取得のAmazon数量は空欄またはJSON `null` とし、取得後は同じ日付の再取得で数値を返す。外部API仕様書に値が後から確定・更新されることを記載する。
+- `InventoryTrendCsvExporter`、`/api/v1/inventory/daily`、Excelは調査がある品番・日付では `survey_skus` の数量を使用する。調査がない品番・日付では、日別CSVと外部APIに最新成功Amazon取込のSKU別Amazon数量だけを返し、他の在庫区分は空欄またはJSON `null` とする。取込待ち・未取得のAmazon数量も空欄またはJSON `null` とし、取得後は同じ日付の再取得で数値を返す。外部API仕様書に値が後から確定・更新されることを記載する。
 - 取込画面は3ファイルのままとし、Amazon取得の進行・成功・失敗を表示する。調査実行をAmazon取得待ちで止めない。
 
 ## 6. 既存データの移行

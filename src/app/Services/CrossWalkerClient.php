@@ -70,7 +70,11 @@ class CrossWalkerClient
     public function refresh(Collection $targets): void
     {
         $itemNos = $targets->pluck('product.product_code')->values()->all();
-        $items = collect($this->lookupItems($itemNos))->keyBy('item_no');
+        $items = collect();
+        foreach (array_chunk($itemNos, 50) as $batch) {
+            $items = $items->concat($this->lookupItems($batch));
+        }
+        $items = $items->keyBy('item_no');
 
         $missingCodes = collect($itemNos)->diff($items->keys());
         if ($missingCodes->isNotEmpty()) {

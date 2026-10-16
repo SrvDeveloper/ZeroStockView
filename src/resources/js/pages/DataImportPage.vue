@@ -1,19 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
-import FileDropzone from "@/components/ui/FileDropzone.vue";
-import BaseSelect from "@/components/ui/BaseSelect.vue";
+import AppIcon from "@/components/ui/AppIcon.vue";
 import { fetchAmazonInventoryImports, startAmazonInventoryImport, type AmazonInventoryImport, type AmazonImportStatus } from "@/api/amazonInventoryImports";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import { IMPORT_FILE_TYPES, type UploadFileType } from "@/types";
-import { formatDateTime } from "@/utils/format";
+import { formatDateTime, formatSizeKb } from "@/utils/format";
 
 const importSettings = useImportSettingsStore();
 const surveys = useSurveysStore();
@@ -74,74 +72,53 @@ onUnmounted(() => {
     if (amazonPollTimer !== undefined) window.clearInterval(amazonPollTimer);
 });
 
-const accepts: Record<UploadFileType, string> = {
-    倉庫毎の在庫数レポート: ".csv",
-    KEEP一覧表: ".csv",
-    在庫一覧照会表: ".csv",
-};
-const expectedFileNames = Object.fromEntries(IMPORT_FILE_TYPES.map(({ type, extension }) => [type, `${type}.${extension}`])) as Record<UploadFileType, string>;
-
-const files = reactive<Record<UploadFileType, File | null>>({
-    倉庫毎の在庫数レポート: null,
-    KEEP一覧表: null,
-    在庫一覧照会表: null,
-});
-
-const readyFileCount = computed(() => Object.values(files).filter((f) => f !== null).length);
-const allFilesReady = computed(() => readyFileCount.value === IMPORT_FILE_TYPES.length);
-const canRun = computed(() => importSettings.isConfigured && allFilesReady.value);
-const settingOptions = computed(() => importSettings.settings.map((setting) => ({ value: setting.id, label: `${setting.name}（${setting.productCodes.length}件）` })));
-
+const files = ref<File[]>([]);
 const running = ref(false);
+const canRun = computed(() => importSettings.settings.some((setting) => setting.productCodes.length > 0) && files.value.length > 0 && !running.value);
 const errorMessage = ref("");
+const fileInputRef = ref<HTMLInputElement | null>(null);
 const folderInputRef = ref<HTMLInputElement | null>(null);
-const folderSelectionMessage = ref("");
+const selectionMessage = ref("");
 const bulkDragging = ref(false);
 
-function setFile(type: UploadFileType, file: File | null) {
-    files[type] = file;
-    folderSelectionMessage.value = "";
+function openFilePicker() {
+    fileInputRef.value?.click();
 }
 
 function openFolderPicker() {
     folderInputRef.value?.click();
 }
 
-function assignImportFiles(selectedFiles: File[]) {
-    if (selectedFiles.length === 0) {
+function addFiles(selectedFiles: File[]) {
+    if (running.value || selectedFiles.length === 0) return;
+    if (files.value.length + selectedFiles.length > 3) {
+        selectionMessage.value = "ファイルは3件まで添付できます。不要なファイルを外してから選択してください。";
         return;
     }
-    const missingFileNames: string[] = [];
-    const duplicateFileNames: string[] = [];
-    for (const fileType of IMPORT_FILE_TYPES) {
-        const expectedFileName = expectedFileNames[fileType.type];
-        const matches = selectedFiles.filter((file) => file.name === expectedFileName);
-        files[fileType.type] = matches.length === 1 ? matches[0] : null;
-        if (matches.length === 0) {
-            missingFileNames.push(expectedFileName);
-        } else if (matches.length > 1) {
-            duplicateFileNames.push(expectedFileName);
-        }
-    }
-    const problems: string[] = [];
-    if (missingFileNames.length > 0) {
-        problems.push(`見つからないファイル: ${missingFileNames.join("、")}`);
-    }
-    if (duplicateFileNames.length > 0) {
-        problems.push(`同名ファイルが複数あります: ${duplicateFileNames.join("、")}`);
-    }
-    folderSelectionMessage.value = problems.join(" ");
+    files.value = [...files.value, ...selectedFiles];
+    selectionMessage.value = "";
+}
+
+function removeFile(index: number) {
+    files.value.splice(index, 1);
+    selectionMessage.value = "";
+}
+
+function onFileInputChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    addFiles(Array.from(input.files ?? []));
+    input.value = "";
 }
 
 function onFolderInputChange(event: Event) {
     const input = event.target as HTMLInputElement;
-    assignImportFiles(Array.from(input.files ?? []));
+    addFiles(Array.from(input.files ?? []));
     input.value = "";
 }
 
 function onBulkDrop(event: DragEvent) {
     bulkDragging.value = false;
-    assignImportFiles(Array.from(event.dataTransfer?.files ?? []));
+    addFiles(Array.from(event.dataTransfer?.files ?? []));
 }
 
 async function runImport() {
@@ -150,17 +127,9 @@ async function runImport() {
     running.value = true;
 
     const formData = new FormData();
-    const keys: Record<UploadFileType, string> = {
-        倉庫毎の在庫数レポート: "boss",
-        KEEP一覧表: "ec_stock",
-        在庫一覧照会表: "free_stock",
-    };
-    for (const [type, file] of Object.entries(files) as [UploadFileType, File | null][]) {
-        if (file) formData.append(keys[type], file);
-    }
+    files.value.forEach((file, index) => formData.append(`files[${index}]`, file));
 
     try {
-        formData.append("import_setting_id", importSettings.selectedSettingId as string);
         const survey = await surveys.runImport(formData);
         toast.push("取込・調査が完了しました");
         await router.push({ name: "survey-result", params: { id: survey.id } });
@@ -179,37 +148,32 @@ async function runImport() {
 
 <template>
     <div class="flex flex-col gap-6">
-        <div>
-            <h1 class="text-xl font-semibold text-slate-900">データ取込</h1>
-            <p class="mt-1 text-sm text-slate-500">BOSS・ECストック・フリー在庫の3種類のファイルを添付して取込・調査を実行します。</p>
-        </div>
-
-        <BaseCard v-if="importSettings.settings.length > 0">
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <BaseSelect
-                    class="min-w-0 flex-1"
-                    :model-value="importSettings.selectedSettingId"
-                    :options="settingOptions"
-                    label="利用する取込設定"
-                    placeholder="取込設定を選択してください"
-                    required
-                    :disabled="running"
-                    @update:model-value="(value) => importSettings.select(value === null ? null : String(value))"
-                />
-                <BaseButton data-testid="settings-change-button" variant="secondary" icon="settings" :disabled="running" @click="router.push({ name: 'import-settings' })">設定を変更</BaseButton>
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h1 class="text-xl font-semibold text-slate-900">データ取込</h1>
+                <p class="mt-1 text-sm text-slate-500">BOSS・ECストック・フリー在庫のCSVを1〜3件添付すると、全品番グループの対象品番を取り込みます。</p>
             </div>
-        </BaseCard>
+            <BaseButton
+                v-if="importSettings.settings.length > 0"
+                data-testid="settings-change-button"
+                variant="secondary"
+                icon="settings"
+                :disabled="running"
+                @click="router.push({ name: 'import-settings' })"
+                >グループを編集</BaseButton
+            >
+        </div>
 
         <BaseAlert v-if="importSettings.settings.length === 0" tone="warning">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span>取込設定がありません。先に名前と対象品番を設定してください。</span>
-                <BaseButton variant="primary" size="sm" @click="router.push({ name: 'import-settings' })">取込設定へ</BaseButton>
+                <span>品番グループがありません。先に名前と対象品番を設定してください。</span>
+                <BaseButton variant="primary" size="sm" @click="router.push({ name: 'import-settings' })">品番グループへ</BaseButton>
             </div>
         </BaseAlert>
 
         <BaseCard
             title="Amazon 在庫を取得"
-            description="保存済みの取込設定に含まれる品番について、Amazon の自社発送在庫と FBA 出荷可能在庫を取得します。下の3ファイルによる取込・調査とは別の履歴に保存されます。"
+            description="保存済みの全品番グループに含まれる品番について、Amazon の自社発送在庫と FBA 出荷可能在庫を取得します。ファイルによる取込・調査とは別の履歴に保存されます。"
         >
             <div class="flex flex-col gap-4">
                 <p class="text-xs text-slate-500">ASIN が登録されていない SKU は Amazon 在庫の取得対象に含まれません。</p>
@@ -239,49 +203,49 @@ async function runImport() {
             </div>
         </BaseCard>
 
-        <BaseCard>
+        <BaseCard title="ファイルを添付" description="CSVのヘッダーを確認して、BOSS・ECストック・フリー在庫を自動判定します。ファイル名は判定に使いません。">
             <div
                 data-testid="bulk-file-dropzone"
-                class="rounded-lg border-2 border-dashed p-4 transition"
+                class="rounded-xl border-2 border-dashed p-6 transition"
                 :class="bulkDragging ? 'border-primary-500 bg-primary-50 ring-4 ring-primary-100' : 'border-slate-300 bg-slate-50/60'"
                 @dragenter.prevent="bulkDragging = true"
                 @dragover.prevent="bulkDragging = true"
                 @dragleave.self.prevent="bulkDragging = false"
                 @drop.prevent.stop="onBulkDrop"
             >
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <p class="text-sm font-semibold text-slate-900">3ファイルを一括選択</p>
-                        <p class="mt-1 text-xs text-slate-500">3ファイルをまとめてドラッグ＆ドロップ、またはフォルダを選択すると自動設定します。</p>
+                        <p class="text-sm font-semibold text-slate-900">ここにCSVをドロップ</p>
+                        <p class="mt-1 text-xs text-slate-500">1件から実行できます。複数のファイルやフォルダも選べます（最大3件）。</p>
                     </div>
-                    <BaseButton icon="folder_open" @click="openFolderPicker">フォルダを選択</BaseButton>
+                    <div class="flex flex-wrap gap-2">
+                        <BaseButton variant="secondary" icon="upload_file" :disabled="running" @click="openFilePicker">ファイルを選択</BaseButton>
+                        <BaseButton variant="secondary" icon="folder_open" :disabled="running" @click="openFolderPicker">フォルダを選択</BaseButton>
+                    </div>
+                    <input ref="fileInputRef" type="file" class="sr-only" accept=".csv,.txt" multiple aria-label="取込ファイルを選択" @change="onFileInputChange" />
                     <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />
                 </div>
             </div>
+            <div v-if="files.length > 0" class="mt-4 space-y-2" data-testid="selected-files">
+                <div v-for="(file, index) in files" :key="index" class="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <AppIcon name="description" :size="20" class="shrink-0 text-primary-600" />
+                    <span class="min-w-0 flex-1 truncate text-slate-800">{{ file.name }}</span>
+                    <span class="shrink-0 text-xs text-slate-500">{{ formatSizeKb(Math.round(file.size / 1024)) }}</span>
+                    <button type="button" :aria-label="`${file.name}を外す`" class="rounded p-1 text-slate-500 hover:bg-slate-100" :disabled="running" @click="removeFile(index)">
+                        <AppIcon name="close" :size="18" />
+                    </button>
+                </div>
+            </div>
         </BaseCard>
-        <BaseAlert v-if="folderSelectionMessage" tone="warning" title="フォルダを確認してください">{{ folderSelectionMessage }}</BaseAlert>
-
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <FileDropzone
-                v-for="fileType in IMPORT_FILE_TYPES"
-                :key="fileType.type"
-                :accept="accepts[fileType.type]"
-                :model-value="files[fileType.type]"
-                :title="fileType.type"
-                :description="`${fileType.stockScope}`"
-                :icon="fileType.icon"
-                @update:model-value="(f) => setFile(fileType.type, f)"
-            />
-        </div>
+        <BaseAlert v-if="selectionMessage" tone="warning" title="ファイルを確認してください">{{ selectionMessage }}</BaseAlert>
 
         <BaseAlert v-if="errorMessage" tone="danger" title="取込に失敗しました">{{ errorMessage }}</BaseAlert>
 
         <BaseCard>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="text-sm text-slate-600">
-                    添付状況:
-                    <span class="font-semibold" :class="allFilesReady ? 'text-emerald-600' : 'text-slate-900'">{{ readyFileCount }} / {{ IMPORT_FILE_TYPES.length }}</span>
-                    ファイル
+                    添付ファイル: <span class="font-semibold text-slate-900">{{ files.length }}件</span>
+                    <span v-if="files.length > 0" class="ml-2 text-xs text-slate-500">未添付の種類は取込待ちとして表示します。同じ日の追加取込は履歴を更新します。</span>
                 </div>
                 <BaseButton variant="primary" icon="play_arrow" :disabled="!canRun" :loading="running" @click="runImport">
                     {{ running ? "実行中…" : "取込・調査を実行" }}

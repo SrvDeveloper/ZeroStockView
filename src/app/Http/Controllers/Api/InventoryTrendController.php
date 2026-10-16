@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
+use App\Rules\InventoryHistoryProductCode;
 use App\Rules\MaximumDateRange;
 use App\Services\InventoryTrendCsvExporter;
 use Carbon\CarbonImmutable;
@@ -196,7 +197,7 @@ class InventoryTrendController extends Controller
     public function export(Request $request, InventoryTrendCsvExporter $exporter): BinaryFileResponse
     {
         $data = $request->validate([
-            'product_code' => ['sometimes', 'string', 'max:100', 'exists:survey_products,product_code'],
+            'product_code' => ['sometimes', 'string', 'max:100', new InventoryHistoryProductCode],
             'from' => ['required', 'date_format:Y-m-d'],
             'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from', new MaximumDateRange($request->input('from'))],
         ]);
@@ -221,15 +222,17 @@ class InventoryTrendController extends Controller
         if ($amazon === null && $isSpApi && ! $sku->hasAmazonAsin()) {
             $amazon = 0;
         }
-        $boss = $sku->boss_own_stock + $sku->boss_rfc_stock;
+        $boss = $sku->boss_own_stock === null || $sku->boss_rfc_stock === null
+            ? null : $sku->boss_own_stock + $sku->boss_rfc_stock;
 
         return match ($scope) {
             'amazon' => $amazon,
             'boss' => $boss,
             'free' => $sku->free_stock,
             'stock' => $sku->ec_stock,
-            'grandTotal' => $amazon === null ? null : $amazon + $boss + $sku->free_stock + $sku->ec_stock,
-            default => $amazon === null ? null : $amazon + $boss,
+            'grandTotal' => $amazon === null || $boss === null || $sku->free_stock === null || $sku->ec_stock === null
+                ? null : $amazon + $boss + $sku->free_stock + $sku->ec_stock,
+            default => $amazon === null || $boss === null ? null : $amazon + $boss,
         };
     }
 }

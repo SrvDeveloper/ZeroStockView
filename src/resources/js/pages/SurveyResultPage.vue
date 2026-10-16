@@ -17,7 +17,7 @@ import { useUiStore } from "@/stores/ui";
 import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities } from "@/types";
 import { formatDateTime } from "@/utils/format";
 
-const props = defineProps<{ id: string }>();
+const props = defineProps<{ id: string; initialGroup?: string }>();
 
 const router = useRouter();
 const importSettingsStore = useImportSettingsStore();
@@ -63,17 +63,41 @@ const rerunRunning = ref(false);
 const rerunError = ref("");
 const hasReusableFiles = computed(() => {
     const fileTypes = new Set(survey.value?.files.map((file) => file.type) ?? []);
-    return IMPORT_FILE_TYPES.every(({ type }) => fileTypes.has(type));
+    return IMPORT_FILE_TYPES.some(({ type }) => fileTypes.has(type));
 });
-const rerunSettingOptions = computed<SelectOption[]>(() =>
-    importSettingsStore.settings
-        .filter((setting) => setting.name !== survey.value?.importSettingName)
-        .map((setting) => ({ value: setting.id, label: `${setting.name}（${setting.productCodes.length}件）` })),
-);
+const rerunSettingOptions = computed<SelectOption[]>(() => importSettingsStore.settings.map((setting) => ({ value: setting.id, label: `${setting.name}（${setting.productCodes.length}件）` })));
 const canRerun = computed(() => hasReusableFiles.value && rerunSettingId.value !== null && !rerunRunning.value);
 
-const brandOptions = computed<SelectOption[]>(() => Array.from(new Set(survey.value?.products.map((p) => p.brand) ?? [])).map((b) => ({ value: b, label: b })));
-const categoryOptions = computed<SelectOption[]>(() => Array.from(new Set(survey.value?.products.map((p) => p.category) ?? [])).map((c) => ({ value: c, label: c })));
+const selectedGroupKey = ref(props.initialGroup ?? "");
+watch(
+    () => props.initialGroup,
+    (group) => {
+        selectedGroupKey.value = group ?? "";
+    },
+);
+const groupOptions = computed<SelectOption[]>(() =>
+    (survey.value?.groups ?? (survey.value?.importSettingName ? [{ key: `legacy:${survey.value.importSettingName}`, name: survey.value.importSettingName }] : [])).map((group) => ({
+        value: group.key,
+        label: group.name,
+    })),
+);
+const groupProducts = computed(() =>
+    (survey.value?.products ?? [])
+        .filter(
+            (product) =>
+                !selectedGroupKey.value ||
+                product.groups?.some((group) => group.key === selectedGroupKey.value) ||
+                (!product.groups && survey.value?.importSettingName && selectedGroupKey.value === `legacy:${survey.value.importSettingName}`),
+        )
+        .sort((left, right) =>
+            selectedGroupKey.value
+                ? (left.groups?.find((group) => group.key === selectedGroupKey.value)?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+                  (right.groups?.find((group) => group.key === selectedGroupKey.value)?.sortOrder ?? Number.MAX_SAFE_INTEGER)
+                : 0,
+        ),
+);
+const brandOptions = computed<SelectOption[]>(() => Array.from(new Set(groupProducts.value.map((p) => p.brand))).map((b) => ({ value: b, label: b })));
+const categoryOptions = computed<SelectOption[]>(() => Array.from(new Set(groupProducts.value.map((p) => p.category))).map((c) => ({ value: c, label: c })));
 
 const brandFilter = ref<string | null>(null);
 const categoryFilter = ref<string | null>(null);
@@ -143,11 +167,11 @@ function matchesConditions(stock: StockQuantities): boolean {
             case "amazonHas":
                 return (stock.amazonOwn ?? 0) + (stock.amazonFba ?? 0) > 0;
             case "bossHas":
-                return stock.bossOwn + stock.bossRfc > 0;
+                return (stock.bossOwn ?? 0) + (stock.bossRfc ?? 0) > 0;
             case "freeHas":
-                return stock.freeStock > 0;
+                return stock.freeStock !== null && stock.freeStock > 0;
             case "ecHas":
-                return stock.ecStock > 0;
+                return stock.ecStock !== null && stock.ecStock > 0;
             default:
                 return true;
         }
@@ -156,9 +180,12 @@ function matchesConditions(stock: StockQuantities): boolean {
     return conditionOperator.value === "and" ? activeConditions.value.every(matches) : activeConditions.value.some(matches);
 }
 
-const hasActiveFilters = computed(() => Boolean(brandFilter.value || categoryFilter.value || productCodeQuery.value || skuQuery.value || asinQuery.value) || activeConditions.value.length > 0);
+const hasActiveFilters = computed(
+    () => Boolean(selectedGroupKey.value || brandFilter.value || categoryFilter.value || productCodeQuery.value || skuQuery.value || asinQuery.value) || activeConditions.value.length > 0,
+);
 
 function clearFilters() {
+    selectedGroupKey.value = "";
     brandFilter.value = null;
     categoryFilter.value = null;
     productCodeQuery.value = "";
@@ -176,7 +203,7 @@ const filteredProducts = computed(() => {
     const asinQ = asinQuery.value.trim().toLowerCase();
     const hasTextQuery = Boolean(skuQ || asinQ);
 
-    return s.products
+    return groupProducts.value
         .filter((p) => !brandFilter.value || p.brand === brandFilter.value)
         .filter((p) => !categoryFilter.value || p.category === categoryFilter.value)
         .filter((p) => !productQ || p.productCode.toLowerCase().includes(productQ))
@@ -192,7 +219,7 @@ const filteredProducts = computed(() => {
         .filter((p) => p.skus.length > 0 && (!hasTextQuery || p.skus.some((sku) => sku.skuMatched)));
 });
 
-const totalSkuCount = computed(() => survey.value?.products.reduce((sum, p) => sum + p.skus.length, 0) ?? 0);
+const totalSkuCount = computed(() => groupProducts.value.reduce((sum, p) => sum + p.skus.length, 0));
 const matchedSkuCount = computed(() => {
     const hasTextQuery = Boolean(skuQuery.value.trim() || asinQuery.value.trim());
     return filteredProducts.value.reduce((sum, p) => sum + (hasTextQuery ? p.skus.filter((sku) => sku.skuMatched).length : p.skus.length), 0);
@@ -206,21 +233,23 @@ function amazonStockTotal(stock: StockQuantities): number | null {
     return stock.amazonOwn === null || stock.amazonFba === null ? null : stock.amazonOwn + stock.amazonFba;
 }
 
-function bossStockTotal(stock: StockQuantities): number {
-    return stock.bossOwn + stock.bossRfc;
+function bossStockTotal(stock: StockQuantities): number | null {
+    return stock.bossOwn === null || stock.bossRfc === null ? null : stock.bossOwn + stock.bossRfc;
 }
 
 function stockTotal(stock: StockQuantities, asin: string): number | null {
     const amazon = amazonStockTotal(stock);
     const contribution = amazon ?? (survey.value?.amazonSource === "sp_api" && !asin.trim() ? 0 : null);
-    return contribution === null ? null : contribution + stock.bossOwn + stock.bossRfc + stock.freeStock + stock.ecStock;
+    const boss = bossStockTotal(stock);
+    return contribution === null || boss === null || stock.freeStock === null || stock.ecStock === null ? null : contribution + boss + stock.freeStock + stock.ecStock;
 }
 
 function isLowStock(quantity: number): boolean {
     return quantity > 0 && quantity <= 5;
 }
 
-function groupedStockClass(quantity: number): string {
+function groupedStockClass(quantity: number | null): string {
+    if (quantity === null) return "text-slate-300";
     if (quantity === 0) return "bg-rose-50 font-semibold text-rose-400";
     if (isLowStock(quantity)) return "bg-amber-50 font-semibold text-amber-700";
     return "font-semibold text-slate-900";
@@ -251,10 +280,10 @@ async function rerunSurvey() {
     rerunRunning.value = true;
     try {
         const rerunSurveyResult = await surveysStore.rerunImport(currentSurvey.id, settingId);
-        toast.push("別の取込設定で再照合しました");
+        toast.push("調査結果を再照合しました");
         rerunSettingId.value = null;
         rerunMenuOpen.value = false;
-        await router.push({ name: "survey-result", params: { id: rerunSurveyResult.id } });
+        await router.push({ name: "survey-result", params: { id: rerunSurveyResult.id }, query: { group: `setting:${settingId}` } });
     } catch (error) {
         if (axios.isAxiosError(error)) {
             const errors = error.response?.data?.errors as Record<string, string[]> | undefined;
@@ -269,8 +298,17 @@ async function rerunSurvey() {
 
 async function exportExcel(scope: "all" | "filtered") {
     if (!survey.value) return;
+    if ((scope === "filtered" && matchedSkuCount.value === 0) || (selectedGroupKey.value && groupProducts.value.length === 0)) {
+        toast.push("出力対象のSKUがありません", "error");
+        return;
+    }
     const hasTextQuery = Boolean(skuQuery.value.trim() || asinQuery.value.trim());
-    const skuIds = scope === "filtered" ? filteredProducts.value.flatMap((product) => product.skus.filter((sku) => !hasTextQuery || sku.skuMatched).map((sku) => Number(sku.id))) : undefined;
+    const skuIds =
+        scope === "filtered"
+            ? filteredProducts.value.flatMap((product) => product.skus.filter((sku) => !hasTextQuery || sku.skuMatched).map((sku) => Number(sku.id)))
+            : selectedGroupKey.value
+              ? groupProducts.value.flatMap((product) => product.skus.map((sku) => Number(sku.id)))
+              : undefined;
 
     try {
         const response = await axios.get(`/api/surveys/${survey.value.id}/export`, {
@@ -313,7 +351,7 @@ async function exportExcel(scope: "all" | "filtered") {
                 <div class="flex flex-wrap gap-2">
                     <BaseButton data-testid="refresh-survey" variant="secondary" icon="refresh" :loading="refreshingSurvey" @click="refreshSurvey">最新の在庫を再読込</BaseButton>
                     <BaseButton data-testid="rerun-menu-button" variant="secondary" icon="compare_arrows" :disabled="!hasReusableFiles" :aria-expanded="rerunMenuOpen" @click="rerunMenuOpen = true"
-                        >別の取込設定で再照合</BaseButton
+                        >保存ファイルで再照合</BaseButton
                     >
                     <BaseButton variant="secondary" icon="table_view" @click="exportExcel('filtered')">絞込結果をExcel出力</BaseButton>
                     <BaseButton variant="primary" icon="download" @click="exportExcel('all')">全件をExcel出力</BaseButton>
@@ -322,8 +360,9 @@ async function exportExcel(scope: "all" | "filtered") {
             <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
                 <p>在庫基準日時: {{ formatDateTime(survey.executedAt) }}</p>
                 <p v-if="survey.createdAt">結果作成日時: {{ formatDateTime(survey.createdAt) }}</p>
+                <p v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt">結果更新日時: {{ formatDateTime(survey.updatedAt) }}</p>
                 <p>
-                    取込設定: <span class="font-medium text-slate-700">{{ survey.importSettingName || "記録なし" }}</span>
+                    品番グループ: <span class="font-medium text-slate-700">{{ survey.groups?.map((group) => group.name).join("、") || survey.importSettingName || "記録なし" }}</span>
                 </p>
             </div>
         </div>
@@ -337,16 +376,23 @@ async function exportExcel(scope: "all" | "filtered") {
             Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}。ほかの在庫とは取得時刻が異なる同日の集計値です。
         </p>
         <p v-else-if="!includesAmazonInventory" class="text-sm text-slate-500">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
+        <p class="text-xs text-slate-500">在庫欄の「—」は取込待ち・未取得を示します。確定した在庫ゼロは「0」で表示します。</p>
 
-        <BaseModal :open="rerunMenuOpen" title="差異照合メニュー" description="保存済みの取込ファイルを使い、元の在庫基準日時を引き継いだ調査結果を作成します。" width="md" @close="closeRerunMenu">
+        <BaseModal
+            :open="rerunMenuOpen"
+            title="差異照合メニュー"
+            description="現在残っている取込ファイルと全品番グループの対象品番を再照合し、元の在庫基準日時の調査結果を更新します。ファイルがない種類は取込待ちになります。"
+            width="md"
+            @close="closeRerunMenu"
+        >
             <div class="flex flex-col gap-4">
-                <p v-if="rerunSettingOptions.length === 0" class="text-sm text-slate-500">利用できる別の取込設定がありません。</p>
+                <p v-if="rerunSettingOptions.length === 0" class="text-sm text-slate-500">利用できる品番グループがありません。</p>
                 <BaseSelect
                     data-testid="rerun-setting-select"
                     :model-value="rerunSettingId"
                     :options="rerunSettingOptions"
-                    label="再照合に利用する取込設定"
-                    placeholder="取込設定を選択してください"
+                    label="再照合後に表示する品番グループ"
+                    placeholder="品番グループを選択してください"
                     :disabled="rerunSettingOptions.length === 0 || rerunRunning"
                     @update:model-value="(value) => (rerunSettingId = value === null ? null : String(value))"
                 />
@@ -362,6 +408,7 @@ async function exportExcel(scope: "all" | "filtered") {
         <BaseCard>
             <div class="flex flex-col gap-4">
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <BaseSelect v-model="selectedGroupKey" :options="groupOptions" placeholder="すべての品番グループ" />
                     <BaseSelect v-model="brandFilter" :options="brandOptions" placeholder="すべてのブランド" />
                     <BaseSelect v-model="categoryFilter" :options="categoryOptions" placeholder="すべてのカテゴリ" />
                     <BaseInput v-model="productCodeQuery" placeholder="品番で絞込" clearable clear-label="品番の絞込をクリア" />
@@ -507,8 +554,8 @@ async function exportExcel(scope: "all" | "filtered") {
                                 class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
                                 :class="groupedStockClass(bossStockTotal(sku.stock))"
                             >
-                                <span class="stock-total-value">{{ bossStockTotal(sku.stock) }}</span>
-                                <div class="stock-breakdown-tooltip" role="tooltip">
+                                <span class="stock-total-value">{{ bossStockTotal(sku.stock) ?? "—" }}</span>
+                                <div v-if="bossStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
                                     <p class="mb-1.5 text-left text-[11px] font-semibold text-slate-500">BOSS内訳</p>
                                     <div class="grid grid-cols-2 divide-x divide-slate-200">
                                         <div class="pr-2 text-center">
@@ -523,10 +570,10 @@ async function exportExcel(scope: "all" | "filtered") {
                                 </div>
                             </td>
                             <td data-stock-field="freeStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.freeStock)">
-                                {{ sku.stock.freeStock }}
+                                {{ sku.stock.freeStock ?? "—" }}
                             </td>
                             <td data-stock-field="ecStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.ecStock)">
-                                {{ sku.stock.ecStock }}
+                                {{ sku.stock.ecStock ?? "—" }}
                             </td>
                             <td
                                 v-if="hasAmazonStock"

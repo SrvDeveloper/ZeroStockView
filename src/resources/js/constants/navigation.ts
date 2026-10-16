@@ -6,7 +6,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
     { name: "data-import", label: "データ取込", icon: "upload" },
-    { name: "import-settings", label: "取込設定", icon: "settings" },
+    { name: "import-settings", label: "品番グループ", icon: "settings" },
     { name: "survey-history", label: "在庫調査履歴", icon: "history" },
     { name: "inventory-trends", label: "在庫推移", icon: "show_chart" },
     { name: "file-management", label: "ファイル管理", icon: "files" },

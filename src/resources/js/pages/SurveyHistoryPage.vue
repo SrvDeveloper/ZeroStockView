@@ -6,11 +6,10 @@ import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import BasePagination from "@/components/ui/BasePagination.vue";
-import BaseSelect from "@/components/ui/BaseSelect.vue";
 import ConfirmModal from "@/components/ui/ConfirmModal.vue";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import type { SelectOption } from "@/types";
+import type { Survey } from "@/types";
 import { formatDateTime } from "@/utils/format";
 
 const router = useRouter();
@@ -36,20 +35,7 @@ const PER_PAGE = 10;
 const page = ref(1);
 const startDate = ref("");
 const endDate = ref("");
-const importSettingFilter = ref("");
-
-const NO_IMPORT_SETTING = "__no_import_setting__";
 const allList = computed(() => surveys.sortedSurveys);
-const importSettingOptions = computed<SelectOption[]>(() => {
-    const names = new Set(allList.value.map((survey) => survey.importSettingName).filter((name): name is string => Boolean(name)));
-    const options: SelectOption[] = [...names].sort((a, b) => a.localeCompare(b, "ja")).map((name) => ({ value: name, label: name }));
-
-    if (allList.value.some((survey) => !survey.importSettingName)) {
-        options.push({ value: NO_IMPORT_SETTING, label: "記録なし" });
-    }
-
-    return options;
-});
 
 function localDateKey(iso: string): string {
     const date = new Date(iso);
@@ -68,13 +54,10 @@ const list = computed(() => {
         const surveyDate = localDateKey(survey.executedAt);
         if (startDate.value && surveyDate < startDate.value) return false;
         if (endDate.value && surveyDate > endDate.value) return false;
-        if (importSettingFilter.value === NO_IMPORT_SETTING && survey.importSettingName) return false;
-        if (importSettingFilter.value && importSettingFilter.value !== NO_IMPORT_SETTING && survey.importSettingName !== importSettingFilter.value) return false;
-
         return true;
     });
 });
-const hasActiveFilters = computed(() => importSettingFilter.value !== "" || startDate.value !== "" || endDate.value !== "");
+const hasActiveFilters = computed(() => startDate.value !== "" || endDate.value !== "");
 const dateInputClass = computed(() =>
     invalidDateRange.value ? "border-rose-400 focus:border-rose-500 focus:outline-rose-500/40" : "border-slate-300 focus:border-primary-500 focus:outline-primary-500/40",
 );
@@ -82,7 +65,7 @@ const latestId = computed(() => surveys.latestSurvey?.id);
 const totalPages = computed(() => Math.max(1, Math.ceil(list.value.length / PER_PAGE)));
 const pagedList = computed(() => list.value.slice((page.value - 1) * PER_PAGE, page.value * PER_PAGE));
 
-watch([startDate, endDate, importSettingFilter], () => {
+watch([startDate, endDate], () => {
     page.value = 1;
 });
 
@@ -90,18 +73,13 @@ watch(totalPages, (tp) => {
     if (page.value > tp) page.value = tp;
 });
 
-function updateImportSettingFilter(value: string | number | null) {
-    importSettingFilter.value = value === null ? "" : String(value);
-}
-
 function resetFilters() {
     startDate.value = "";
     endDate.value = "";
-    importSettingFilter.value = "";
 }
 
-function skuCount(id: string): number {
-    return surveys.getSurvey(id)?.products.reduce((sum, p) => sum + p.skus.length, 0) ?? 0;
+function skuCount(survey: Survey): number {
+    return survey.products.reduce((sum, product) => sum + product.skus.length, 0);
 }
 
 const pendingDeleteId = ref<string | null>(null);
@@ -168,17 +146,6 @@ async function confirmDelete() {
                         <p v-if="invalidDateRange" class="mt-1 text-xs text-rose-600">開始日は終了日以前の日付を指定してください。</p>
                     </div>
 
-                    <div class="w-full lg:w-56">
-                        <BaseSelect
-                            :model-value="importSettingFilter"
-                            data-testid="import-setting-filter"
-                            :options="importSettingOptions"
-                            label="取込設定"
-                            placeholder="すべての取込設定"
-                            @update:model-value="updateImportSettingFilter"
-                        />
-                    </div>
-
                     <BaseButton data-testid="reset-filters" variant="ghost" icon="filter_alt_off" :disabled="!hasActiveFilters" @click="resetFilters"> クリア </BaseButton>
                 </div>
             </BaseCard>
@@ -193,7 +160,6 @@ async function confirmDelete() {
                         <thead class="bg-slate-50 text-xs tracking-wide text-slate-500 uppercase">
                             <tr>
                                 <th class="px-5 py-2.5">在庫基準日時</th>
-                                <th class="px-5 py-2.5">取込設定</th>
                                 <th class="px-5 py-2.5">対象品番数</th>
                                 <th class="px-5 py-2.5">SKU数</th>
                                 <th class="px-5 py-2.5">取込ファイル数</th>
@@ -206,10 +172,12 @@ async function confirmDelete() {
                                 <td class="px-5 py-3">
                                     <span class="block font-medium text-slate-900">{{ formatDateTime(survey.executedAt) }}</span>
                                     <span v-if="survey.createdAt" class="mt-0.5 block text-xs text-slate-400">結果作成: {{ formatDateTime(survey.createdAt) }}</span>
+                                    <span v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt" class="mt-0.5 block text-xs text-slate-400"
+                                        >最終更新: {{ formatDateTime(survey.updatedAt) }}</span
+                                    >
                                 </td>
-                                <td class="px-5 py-3 text-slate-600">{{ survey.importSettingName || "記録なし" }}</td>
                                 <td class="px-5 py-3 text-slate-600">{{ survey.products.length }}</td>
-                                <td class="px-5 py-3 text-slate-600">{{ skuCount(survey.id) }}</td>
+                                <td class="px-5 py-3 text-slate-600">{{ skuCount(survey) }}</td>
                                 <td class="px-5 py-3 text-slate-600">{{ survey.files.length }}</td>
                                 <td class="px-5 py-3">
                                     <BaseBadge v-if="survey.id === latestId" tone="brand">最新</BaseBadge>
@@ -221,7 +189,17 @@ async function confirmDelete() {
                                 </td>
                                 <td class="px-5 py-3 text-right">
                                     <div class="flex justify-end gap-2">
-                                        <BaseButton variant="secondary" size="sm" @click="router.push({ name: 'survey-result', params: { id: survey.id } })">結果を開く</BaseButton>
+                                        <BaseButton
+                                            variant="secondary"
+                                            size="sm"
+                                            @click="
+                                                router.push({
+                                                    name: 'survey-result',
+                                                    params: { id: survey.id },
+                                                })
+                                            "
+                                            >結果を開く</BaseButton
+                                        >
                                         <BaseButton variant="danger-ghost" size="sm" icon="delete" aria-label="削除" @click="requestDelete(survey.id)" />
                                     </div>
                                 </td>

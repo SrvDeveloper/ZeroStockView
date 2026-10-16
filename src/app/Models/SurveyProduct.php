@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['survey_id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'sort_order', 'memo'])]
+#[Fillable(['survey_id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'sort_order', 'group_memberships', 'memo'])]
 class SurveyProduct extends Model
 {
     /** @use HasFactory<SurveyProductFactory> */
@@ -32,6 +32,7 @@ class SurveyProduct extends Model
     {
         return [
             'source_updated_at' => 'datetime',
+            'group_memberships' => 'array',
         ];
     }
 }

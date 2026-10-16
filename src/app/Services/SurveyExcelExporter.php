@@ -8,14 +8,14 @@ use ZipArchive;
 
 class SurveyExcelExporter
 {
-    /** @param array<int, int> $skuIds */
-    public function export(Survey $survey, array $skuIds = []): string
+    /** @param array<int, int>|null $skuIds */
+    public function export(Survey $survey, ?array $skuIds = null): string
     {
         $survey->loadMissing(['products.skus', 'amazonImport']);
         $hasSavedAmazonInventory = $survey->hasSavedAmazonInventory();
         $usesSpApi = $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API;
         $hasAmazon = $hasSavedAmazonInventory || $usesSpApi;
-        $allowedIds = array_fill_keys($skuIds, true);
+        $allowedIds = $skuIds === null ? null : array_fill_keys($skuIds, true);
         $headers = [
             '品番', 'ブランド', 'カテゴリ', '親ASIN', 'SKU', 'ASIN', 'TQ品番', 'TQカラーNo', 'TQサイズ',
         ];
@@ -30,7 +30,7 @@ class SurveyExcelExporter
 
         foreach ($survey->products as $product) {
             foreach ($product->skus as $sku) {
-                if ($skuIds !== [] && ! isset($allowedIds[$sku->getKey()])) {
+                if ($allowedIds !== null && ! isset($allowedIds[$sku->getKey()])) {
                     continue;
                 }
                 $row = [
@@ -51,10 +51,10 @@ class SurveyExcelExporter
                     array_push($row, 'SP-API', $survey->amazonImport?->basis_at?->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s') ?? '');
                 }
                 array_push($row,
-                    $sku->boss_own_stock,
-                    $sku->boss_rfc_stock,
-                    $sku->free_stock,
-                    $sku->ec_stock,
+                    $sku->boss_own_stock ?? '',
+                    $sku->boss_rfc_stock ?? '',
+                    $sku->free_stock ?? '',
+                    $sku->ec_stock ?? '',
                     $product->memo ?? '',
                     $sku->memo ?? '',
                 );

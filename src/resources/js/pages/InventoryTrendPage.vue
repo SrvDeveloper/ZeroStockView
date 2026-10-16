@@ -1,14 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import {
-    exportInventoryTrend,
-    fetchInventoryTrend,
-    fetchInventoryTrendProducts,
-    type InventoryScope,
-    type InventoryTrendDailySource,
-    type InventoryTrendProduct,
-    type InventoryTrendSeries,
-} from "@/api/inventoryTrends";
+import { exportInventoryTrend, fetchInventoryTrend, fetchInventoryTrendProducts, type InventoryScope, type InventoryTrendProduct, type InventoryTrendSeries } from "@/api/inventoryTrends";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
 import InventoryTrendMiniChart from "@/components/inventory/InventoryTrendMiniChart.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
@@ -65,7 +57,6 @@ const activePreset = ref<14 | 30 | 90 | 365 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
-const dailySources = ref<InventoryTrendDailySource[]>([]);
 const productPickerOpen = ref(false);
 const pendingProductCode = ref("");
 const productBrandFilter = ref<string | null>(null);
@@ -251,11 +242,9 @@ async function loadTrend() {
         });
         if (requestId !== trendRequestId) return;
         rawSeries.value = response.series;
-        dailySources.value = response.dailySources;
     } catch {
         if (requestId !== trendRequestId) return;
         rawSeries.value = [];
-        dailySources.value = [];
         trendError.value = "在庫推移の読み込みに失敗しました。時間をおいて再度お試しください。";
     } finally {
         if (requestId === trendRequestId) trendLoading.value = false;
@@ -288,38 +277,6 @@ function addDays(date: string, amount: number): string {
 
 function formatTargetDate(date: string): string {
     return date.replaceAll("-", "/");
-}
-
-function formatBasisAt(value: string): string {
-    return new Intl.DateTimeFormat("ja-JP", {
-        timeZone: "Asia/Tokyo",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-    }).format(new Date(value));
-}
-
-function formatAmazonBasis(source: InventoryTrendDailySource): string {
-    const value = source.amazonBasisAt ?? (source.source === "sp_api" ? source.basisAt : null);
-    return value === null ? "未確定" : formatBasisAt(value);
-}
-
-function formatAmazonStatus(source: InventoryTrendDailySource): string {
-    switch (source.amazonInventoryStatus) {
-        case "pending":
-            return "取込待ち";
-        case "partial":
-            return "一部SKU未取得";
-        case "complete":
-            return "取込済み";
-        case "legacy_file":
-            return "旧ファイル";
-        default:
-            return "未分類";
-    }
 }
 
 function formatSummaryQuantity(quantity: number | null): string {
@@ -386,7 +343,7 @@ function updateTargetEnd(event: Event) {
 }
 
 async function exportCsv(scope: "selected" | "all") {
-    if (!targetStart.value || !targetEnd.value || (scope === "selected" && (!productCode.value || !selectedProduct.value?.hasSurveyHistory))) return;
+    if (!targetStart.value || !targetEnd.value || (scope === "selected" && !productCode.value)) return;
     exportLoading.value = scope;
     exportError.value = "";
     try {
@@ -420,10 +377,10 @@ async function exportCsv(scope: "selected" | "all") {
                     variant="secondary"
                     icon="download"
                     :loading="exportLoading === 'selected'"
-                    :disabled="!productCode || !selectedProduct?.hasSurveyHistory || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
+                    :disabled="!productCode || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
                     @click="exportCsv('selected')"
                 >
-                    選択品番の調査CSV
+                    選択品番の日次CSV
                 </BaseButton>
                 <BaseButton
                     data-testid="inventory-trend-export-all"
@@ -433,12 +390,12 @@ async function exportCsv(scope: "selected" | "all") {
                     :disabled="!targetStart || !targetEnd || trendLoading || exportLoading !== null"
                     @click="exportCsv('all')"
                 >
-                    全品番の調査CSV
+                    全品番の日次CSV
                 </BaseButton>
             </div>
         </div>
 
-        <p class="text-xs text-slate-500">CSVは調査結果に保存された日次全倉庫データです。調査がないSP-API取得日は含みません。</p>
+        <p class="text-xs text-slate-500">CSVには調査日の在庫と、調査がない日のAmazon取得結果を含みます。Amazon取得だけの日は他の在庫区分が空欄です。</p>
 
         <BaseAlert v-if="exportError" tone="danger" title="日次在庫を出力できませんでした">{{ exportError }}</BaseAlert>
 
@@ -654,32 +611,6 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
             <div v-else class="overflow-x-auto pb-1">
                 <InventoryTrendChart :series="productChartSeries" display-mode="bar" :stockout-series="productStockoutSeries" />
-            </div>
-        </BaseCard>
-
-        <BaseCard
-            v-if="['amazon', 'mallTotal', 'grandTotal'].includes(inventoryScope) && dailySources.length > 0 && !trendLoading && !trendError"
-            title="Amazon在庫の取得元"
-            description="選択した品番の日付ごとのAmazon在庫の状態と基準日時（日本時間）です。調査日の数量は調査に保存された値を使います。"
-            :padded="false"
-        >
-            <div class="max-h-72 overflow-auto">
-                <table data-testid="amazon-daily-sources" class="w-full min-w-120 text-left text-sm">
-                    <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-xs text-slate-600">
-                        <tr
-                            ><th class="px-5 py-3 font-medium">日付</th><th class="px-4 py-3 font-medium">取得元</th><th class="px-4 py-3 font-medium">状態</th
-                            ><th class="px-5 py-3 font-medium">基準日時（日本時間）</th></tr
-                        >
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <tr v-for="dailySource in dailySources" :key="dailySource.date" :data-source-date="dailySource.date">
-                            <td class="px-5 py-2">{{ formatTargetDate(dailySource.date) }}</td>
-                            <td class="px-4 py-2">{{ dailySource.source === "sp_api" ? "SP-API" : "在庫調査" }}</td>
-                            <td class="px-4 py-2">{{ formatAmazonStatus(dailySource) }}</td>
-                            <td class="px-5 py-2">{{ formatAmazonBasis(dailySource) }}</td>
-                        </tr>
-                    </tbody>
-                </table>
             </div>
         </BaseCard>
 

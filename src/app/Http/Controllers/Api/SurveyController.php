@@ -37,9 +37,10 @@ class SurveyController extends Controller
 
     public function store(RunSurveyRequest $request, InventoryImportService $importer): SurveyResource
     {
-        $files = $request->allFiles();
+        $files = $request->file('files');
 
-        $setting = ImportSetting::query()->findOrFail($request->integer('import_setting_id'));
+        $settingId = $request->validated('import_setting_id');
+        $setting = $settingId === null ? null : ImportSetting::query()->findOrFail($settingId);
 
         return new SurveyResource($importer->import($files, $setting));
     }
@@ -65,7 +66,7 @@ class SurveyController extends Controller
             'sku_ids' => ['sometimes', 'array'],
             'sku_ids.*' => ['integer'],
         ]);
-        $path = $exporter->export($survey, array_map('intval', $data['sku_ids'] ?? []));
+        $path = $exporter->export($survey, array_key_exists('sku_ids', $data) ? array_map('intval', $data['sku_ids']) : null);
         $fileName = $survey->executed_at->format('YmdHi').'_在庫調査結果.xlsx';
 
         return response()->download($path, $fileName, [
