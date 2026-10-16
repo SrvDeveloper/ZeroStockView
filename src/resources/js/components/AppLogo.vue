@@ -2,7 +2,8 @@
 /**
  * ZeroStockView のロゴ（角ばった棚枠・やや広い）。
  * 3 段の棚のうち真ん中の段だけを黄色にして「在庫ゼロの空き棚」を表す。
- * 形は public/favicon.svg と同じ。変える場合は両方を揃える。
+ * 形は public/favicon.svg と scripts/make-favicon.py と同じ。変える場合は 3 か所をそろえ、
+ * `python3 scripts/make-favicon.py public` で ICO と PNG を書き出し直す。
  */
 withDefaults(defineProps<{ size?: number; dark?: boolean }>(), { size: 28, dark: false });
 </script>
