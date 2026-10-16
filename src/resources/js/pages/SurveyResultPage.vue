@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from "axios";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
@@ -110,7 +110,28 @@ const categoryFilter = ref<string | null>(null);
 const productCodeQuery = ref("");
 const skuQuery = ref("");
 const asinQuery = ref("");
+
+/** Ctrl キーを押している間だけ、Amazon と BOSS の内訳（自社／FBA、自社／RFC）を吹き出しで出す */
+const isControlPressed = ref(false);
+
+function updateControlKeyState(event: KeyboardEvent) {
+    if (event.key === "Control") isControlPressed.value = event.type === "keydown";
+}
+
+function clearControlKeyState() {
+    isControlPressed.value = false;
+}
+
+onMounted(() => {
+    window.addEventListener("keydown", updateControlKeyState);
+    window.addEventListener("keyup", updateControlKeyState);
+    window.addEventListener("blur", clearControlKeyState);
+});
+
 onBeforeUnmount(() => {
+    window.removeEventListener("keydown", updateControlKeyState);
+    window.removeEventListener("keyup", updateControlKeyState);
+    window.removeEventListener("blur", clearControlKeyState);
     if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
@@ -373,7 +394,7 @@ async function exportExcel(scope: "all" | "filtered") {
         </BaseEmpty>
     </BaseCard>
 
-    <div v-else class="flex flex-col gap-4">
+    <div v-else class="flex flex-col gap-4" :class="{ 'stock-breakdown-enabled': isControlPressed }">
         <div class="flex flex-col gap-2">
             <RouterLink :to="{ name: 'survey-history' }" class="inline-flex w-fit items-center gap-0.5 text-xs text-muted hover:text-ink">
                 <AppIcon name="chevron_left" :size="16" />
@@ -430,6 +451,7 @@ async function exportExcel(scope: "all" | "filtered") {
             >
             <p v-else-if="!includesAmazonInventory">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
             <p>「取込待ち」「—」は取込待ち・未取得を示します。確定した在庫ゼロは「0」で表示します。</p>
+            <p>Ctrlキーを押しながら{{ hasAmazonStock ? "Amazon・BOSS" : "BOSS" }}の数値にマウスを置くと、内訳（自社／FBA、自社／RFC）を表示します。</p>
         </div>
 
         <BaseModal
@@ -540,14 +562,8 @@ async function exportExcel(scope: "all" | "filtered") {
                     <thead class="border-b border-line text-[11px] text-muted">
                         <tr class="align-bottom">
                             <th class="py-2 pr-3 pl-[18px] text-left font-semibold">SKU<small class="block text-[10px] font-normal text-faint">ASIN</small></th>
-                            <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold">
-                                <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-amazon" aria-hidden="true"></span>Amazon<small class="block text-[10px] font-normal text-faint"
-                                    >自社／FBA</small
-                                >
-                            </th>
-                            <th class="px-3 py-2 font-semibold">
-                                <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-boss" aria-hidden="true"></span>BOSS<small class="block text-[10px] font-normal text-faint">自社／RFC</small>
-                            </th>
+                            <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold"> <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-amazon" aria-hidden="true"></span>Amazon </th>
+                            <th class="px-3 py-2 font-semibold"> <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-boss" aria-hidden="true"></span>BOSS </th>
                             <th class="px-3 py-2 font-semibold"><span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-free" aria-hidden="true"></span>フリー在庫</th>
                             <th class="px-3 py-2 font-semibold"><span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-ec" aria-hidden="true"></span>ECストック</th>
                             <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold">総数</th>
@@ -582,22 +598,43 @@ async function exportExcel(scope: "all" | "filtered") {
                                 >
                                 <span class="block font-mono text-[10.5px] text-muted">{{ sku.asin || "ASIN未登録" }}</span>
                             </td>
-                            <td v-if="hasAmazonStock" data-stock-field="amazon" :data-stock-state="amazonStockState(sku.stock, sku.asin)" aria-label="Amazon在庫合計" class="px-3 py-1.5">
+                            <td
+                                v-if="hasAmazonStock"
+                                data-stock-field="amazon"
+                                :data-stock-state="amazonStockState(sku.stock, sku.asin)"
+                                tabindex="0"
+                                aria-label="Amazon在庫合計"
+                                class="stock-total-cell px-3 py-1.5"
+                            >
                                 <StockCell
                                     :quantity="amazonStockTotal(sku.stock)"
                                     :state="amazonStockState(sku.stock, sku.asin)"
-                                    :breakdown="[sku.stock.amazonOwn, sku.stock.amazonFba]"
                                     pending-label="取込待ち"
                                     :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
                                 />
+                                <span v-if="amazonStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
+                                    <span
+                                        >自社 <b>{{ sku.stock.amazonOwn }}</b></span
+                                    ><span aria-hidden="true">／</span
+                                    ><span
+                                        >FBA <b>{{ sku.stock.amazonFba }}</b></span
+                                    >
+                                </span>
                             </td>
-                            <td data-stock-field="boss" :data-stock-state="groupedStockState(bossStockTotal(sku.stock))" aria-label="BOSS在庫合計" class="px-3 py-1.5">
+                            <td data-stock-field="boss" :data-stock-state="groupedStockState(bossStockTotal(sku.stock))" tabindex="0" aria-label="BOSS在庫合計" class="stock-total-cell px-3 py-1.5">
                                 <StockCell
                                     :quantity="bossStockTotal(sku.stock)"
                                     :state="groupedStockState(bossStockTotal(sku.stock))"
-                                    :breakdown="[sku.stock.bossOwn, sku.stock.bossRfc]"
                                     :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
                                 />
+                                <span v-if="bossStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
+                                    <span
+                                        >自社 <b>{{ sku.stock.bossOwn }}</b></span
+                                    ><span aria-hidden="true">／</span
+                                    ><span
+                                        >RFC <b>{{ sku.stock.bossRfc }}</b></span
+                                    >
+                                </span>
                             </td>
                             <td data-stock-field="freeStock" :data-stock-state="plainStockState(sku.stock.freeStock)" class="px-3 py-1.5">
                                 <StockCell :quantity="sku.stock.freeStock" :state="plainStockState(sku.stock.freeStock)" :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'" />
@@ -642,5 +679,65 @@ async function exportExcel(scope: "all" | "filtered") {
 .survey-product-card {
     content-visibility: auto;
     contain-intrinsic-size: auto 16rem;
+}
+
+.stock-total-cell {
+    position: relative;
+}
+
+.stock-breakdown-enabled .stock-total-cell {
+    cursor: help;
+}
+
+.stock-breakdown-enabled .stock-total-cell:hover,
+.stock-breakdown-enabled .stock-total-cell:focus-within {
+    z-index: 30;
+}
+
+.stock-breakdown-enabled .stock-total-cell:focus-visible {
+    outline: 2px solid var(--color-ink-2);
+    outline-offset: -2px;
+}
+
+/* 数値の右に出す内訳の吹き出し。行の高さに収まるよう 1 行で表示する */
+.stock-breakdown-tooltip {
+    position: absolute;
+    top: 50%;
+    left: calc(100% - 0.375rem);
+    z-index: 40;
+    display: flex;
+    align-items: baseline;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--color-ink-2);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-float);
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-0.25rem, -50%);
+    transition:
+        opacity 120ms ease,
+        transform 120ms ease,
+        visibility 0s linear 120ms;
+}
+
+.stock-breakdown-tooltip b {
+    font-family: var(--font-num);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-ink);
+}
+
+.stock-breakdown-enabled .stock-total-cell:hover .stock-breakdown-tooltip,
+.stock-breakdown-enabled .stock-total-cell:focus .stock-breakdown-tooltip {
+    visibility: visible;
+    opacity: 1;
+    transform: translate(0, -50%);
+    transition-delay: 0ms;
 }
 </style>

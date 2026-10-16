@@ -178,7 +178,7 @@ describe("survey import setting display", () => {
         }
     });
 
-    it("shows combined Amazon and BOSS stock with their breakdowns always visible", async () => {
+    it("shows combined Amazon and BOSS stock with Ctrl-hover breakdowns", async () => {
         const surveys = useSurveysStore();
         surveys.surveys[0].products = [
             {
@@ -212,19 +212,36 @@ describe("survey import setting display", () => {
         const amazonCell = wrapper.get("[data-stock-field=amazon]");
         const bossCell = wrapper.get("[data-stock-field=boss]");
         const totalStockCell = wrapper.get("[data-stock-field=total]");
-        expect(wrapper.text()).not.toContain("Ctrlキー");
+        expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
+        expect(wrapper.text()).toContain("Ctrlキーを押しながらAmazon・BOSSの数値にマウスを置くと、内訳（自社／FBA、自社／RFC）を表示します。");
+
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control" }));
+        await nextTick();
+        expect(wrapper.classes()).toContain("stock-breakdown-enabled");
+
+        window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }));
+        await nextTick();
+        expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control" }));
+        await nextTick();
+        window.dispatchEvent(new Event("blur"));
+        await nextTick();
+        expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
 
         expect(wrapper.text()).not.toContain("合算表示");
         expect(wrapper.find("[data-stock-field=amazonOwn]").exists()).toBe(false);
         expect(wrapper.find("[data-stock-field=amazonFba]").exists()).toBe(false);
         expect(amazonCell.get("[data-stock-value]").text()).toBe("3");
         expect(amazonCell.attributes("data-stock-state")).toBe("low");
-        expect(amazonCell.get("[data-breakdown]").text()).toBe("（内訳 0 / 3）");
+        expect(amazonCell.attributes("tabindex")).toBe("0");
+        expect(amazonCell.get("[role=tooltip]").text()).toBe("自社 0／FBA 3");
+        expect(amazonCell.find("[data-breakdown]").exists()).toBe(false);
         expect(bossCell.get("[data-stock-value]").text()).toBe("0");
         expect(bossCell.attributes("data-stock-state")).toBe("zero");
-        expect(bossCell.find("[data-breakdown]").exists()).toBe(false);
+        expect(bossCell.get("[role=tooltip]").text()).toBe("自社 0／RFC 0");
         expect(wrapper.get("thead").text()).toContain("総数");
-        expect(wrapper.get("thead").text()).toContain("自社／FBA");
+        expect(wrapper.get("thead").text()).not.toContain("自社／FBA");
+        expect(wrapper.findAll("[role=tooltip]")).toHaveLength(2);
         expect(totalStockCell.text()).toBe("14");
         expect(totalStockCell.attributes("data-stock-state")).toBe("has");
         expect(wrapper.get("[data-stock-field=freeStock]").attributes("data-stock-state")).toBe("has");
