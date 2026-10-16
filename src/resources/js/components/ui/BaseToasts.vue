@@ -5,12 +5,12 @@ import { useUiStore } from "@/stores/ui";
 const ui = useUiStore();
 
 const toneClass = {
-    success: "border-emerald-200 bg-white text-emerald-800",
-    error: "border-rose-200 bg-white text-rose-800",
-    info: "border-slate-200 bg-white text-slate-800",
+    success: "text-lamp-ok",
+    error: "text-[#ff8a80]",
+    info: "text-faint",
 } as const;
 
-const iconName = { success: "check", error: "warning", info: "info" } as const;
+const iconName = { success: "check_circle", error: "error", info: "info" } as const;
 </script>
 
 <template>
@@ -21,10 +21,10 @@ const iconName = { success: "check", error: "warning", info: "info" } as const;
             leave-active-class="transition duration-150 ease-in"
             leave-to-class="translate-x-4 opacity-0"
         >
-            <div v-for="toast in ui.toasts" :key="toast.id" class="pointer-events-auto flex items-center gap-2.5 rounded-lg border px-3.5 py-3 shadow-lg" :class="toneClass[toast.type]">
-                <AppIcon :name="iconName[toast.type]" :size="16" />
-                <p class="flex-1 text-[13px] leading-relaxed">{{ toast.message }}</p>
-                <button type="button" class="text-slate-400 transition-colors hover:text-slate-600" aria-label="閉じる" @click="ui.dismiss(toast.id)"><AppIcon name="close" :size="14" /></button>
+            <div v-for="toast in ui.toasts" :key="toast.id" class="pointer-events-auto flex items-center gap-2.5 rounded-card bg-[#161b20] px-3.5 py-3 text-sidebar-strong shadow-float">
+                <AppIcon :name="iconName[toast.type]" :size="17" :class="toneClass[toast.type]" />
+                <p class="flex-1 text-[12.5px] leading-relaxed">{{ toast.message }}</p>
+                <button type="button" class="text-sidebar-dim transition-colors hover:text-white" aria-label="閉じる" @click="ui.dismiss(toast.id)"><AppIcon name="close" :size="14" /></button>
             </div>
         </TransitionGroup>
     </div>

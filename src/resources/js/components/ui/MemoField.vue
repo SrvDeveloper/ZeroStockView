@@ -10,11 +10,13 @@ const props = withDefaults(
         multiline?: boolean;
         placeholder?: string;
         rows?: number;
+        framed?: boolean;
     }>(),
     {
         multiline: false,
         placeholder: "メモを入力",
         rows: 2,
+        framed: false,
     },
 );
 
@@ -87,13 +89,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="relative" @focusin="beginEditing" @focusout="endEditing" @compositionstart="beginComposition" @compositionend="endComposition">
+    <div
+        class="relative"
+        :class="framed ? 'flex items-center gap-1 rounded-control border border-dashed border-line-stronger pl-2' : ''"
+        @focusin="beginEditing"
+        @focusout="endEditing"
+        @compositionstart="beginComposition"
+        @compositionend="endComposition"
+    >
+        <AppIcon v-if="framed" name="edit_note" :size="16" class="text-muted" />
         <BaseTextarea v-if="multiline" :model-value="text" :placeholder="placeholder" :rows="rows" :bordered="false" @update:model-value="onInput" />
         <BaseInput v-else :model-value="text" size="sm" :placeholder="placeholder" :bordered="false" @update:model-value="onInput" />
         <Transition name="fade">
             <span v-if="state !== 'idle'" class="pointer-events-none absolute top-1/2 right-1.5 z-10 -translate-y-1/2">
-                <AppIcon v-if="state === 'saving'" name="refresh" :size="14" class="animate-spin text-slate-400" />
-                <AppIcon v-else name="check_circle" :size="14" class="text-emerald-600" />
+                <AppIcon v-if="state === 'saving'" name="refresh" :size="14" class="animate-spin text-muted" />
+                <AppIcon v-else name="check_circle" :size="14" class="text-lamp-ok" />
             </span>
         </Transition>
     </div>

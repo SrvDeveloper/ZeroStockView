@@ -6,14 +6,14 @@ type Tone = "neutral" | "brand" | "success" | "warning" | "danger";
 const props = withDefaults(defineProps<{ tone?: Tone; mono?: boolean }>(), { tone: "neutral", mono: false });
 
 const toneClass: Record<Tone, string> = {
-    neutral: "bg-slate-100 text-slate-700 ring-slate-200",
-    brand: "bg-primary-50 text-primary-700 ring-primary-200",
-    success: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    warning: "bg-amber-50 text-amber-700 ring-amber-200",
-    danger: "bg-rose-50 text-rose-700 ring-rose-200",
+    neutral: "bg-tint text-ink-2",
+    brand: "bg-ink text-white",
+    success: "bg-ok-soft text-ok-ink",
+    warning: "bg-warn-soft text-caution",
+    danger: "bg-danger-soft text-danger",
 };
 
-const classes = computed(() => ["inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset", toneClass[props.tone], props.mono ? "font-mono tracking-tight" : ""]);
+const classes = computed(() => ["inline-flex items-center rounded-chip px-2 py-0.5 text-[11px] leading-snug font-semibold whitespace-nowrap", toneClass[props.tone], props.mono ? "font-mono" : ""]);
 </script>
 
 <template>

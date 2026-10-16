@@ -42,3 +42,5 @@ grep -nE "slate-|blue-|indigo-|sky-" resources/js/components/ui/*.vue || echo "�
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** 表の部品をトークン指定に置き換えた。props とイベントは変えていない。追加したのは `MemoField` の `framed`（品番メモ用の点線枠）だけ。`BaseAlert` と `BaseToasts` のアイコンを `check_circle`／`error` に変えた。補助トークン（`ok-soft`、`warn-soft`、`graphite-edge`、`shadow-graphite`、`shadow-field`）を `app.css` に足した。`FileDropzone` は現在どの画面からも使われていないが、表のとおり見た目だけ揃えた。
