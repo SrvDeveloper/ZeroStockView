@@ -19,7 +19,7 @@ const sections = [
 <template>
     <div class="flex flex-col gap-6">
         <div>
-            <h1 class="text-xl font-black text-slate-900">操作マニュアル</h1>
+            <h1 class="text-xl font-extrabold tracking-[0.04em] text-slate-900">操作マニュアル</h1>
             <p class="mt-1 text-sm text-slate-500">システムの操作方法をご案内します。</p>
         </div>
 

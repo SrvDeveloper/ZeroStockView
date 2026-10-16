@@ -192,7 +192,7 @@ function openResult(id: string) {
     <div class="flex flex-col gap-4">
         <div class="flex flex-wrap items-center gap-3">
             <div>
-                <h1 class="text-[22px] leading-tight font-black">在庫調査履歴</h1>
+                <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">在庫調査履歴</h1>
                 <p class="mt-1 text-[12.5px] text-ink-2">
                     在庫調査は 1 日に 1 件です。履歴は削除するまで保持されます。全{{ allList.length }}件<span v-if="view === 'list' && hasActiveFilters">中{{ list.length }}件を表示</span>。
                 </p>
