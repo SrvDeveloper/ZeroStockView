@@ -16,6 +16,7 @@ import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities } from "@/types";
 import { formatDateTime } from "@/utils/format";
+import { amazonStockState as amazonStockStateOf, amazonTotal, bossTotal, skuTotal, stockState, type StockState } from "@/utils/stock";
 
 const props = defineProps<{ id: string; initialGroup?: string }>();
 
@@ -230,22 +231,19 @@ function isZero(stock: StockQuantities, asin: string): boolean {
 }
 
 function amazonStockTotal(stock: StockQuantities): number | null {
-    return stock.amazonOwn === null || stock.amazonFba === null ? null : stock.amazonOwn + stock.amazonFba;
+    return amazonTotal(stock);
 }
 
 function bossStockTotal(stock: StockQuantities): number | null {
-    return stock.bossOwn === null || stock.bossRfc === null ? null : stock.bossOwn + stock.bossRfc;
+    return bossTotal(stock);
 }
 
 function stockTotal(stock: StockQuantities, asin: string): number | null {
-    const amazon = amazonStockTotal(stock);
-    const contribution = amazon ?? (survey.value?.amazonSource === "sp_api" && !asin.trim() ? 0 : null);
-    const boss = bossStockTotal(stock);
-    return contribution === null || boss === null || stock.freeStock === null || stock.ecStock === null ? null : contribution + boss + stock.freeStock + stock.ecStock;
+    return survey.value ? skuTotal(stock, asin, survey.value) : null;
 }
 
 function isLowStock(quantity: number): boolean {
-    return quantity > 0 && quantity <= 5;
+    return stockState(quantity, { low: true }) === "low";
 }
 
 function groupedStockClass(quantity: number | null): string {
@@ -265,23 +263,16 @@ function stockClass(quantity: number | null): string {
     return "font-semibold text-slate-900";
 }
 
-type StockState = "has" | "low" | "zero" | "pending" | "na";
-
 function groupedStockState(quantity: number | null): StockState {
-    if (quantity === null) return "pending";
-    if (quantity === 0) return "zero";
-    return isLowStock(quantity) ? "low" : "has";
+    return stockState(quantity, { low: true });
 }
 
 function amazonStockState(stock: StockQuantities, asin: string): StockState {
-    const quantity = amazonStockTotal(stock);
-    if (quantity === null && survey.value?.amazonSource === "sp_api" && !asin.trim()) return "na";
-    return groupedStockState(quantity);
+    return survey.value ? amazonStockStateOf(stock, asin, survey.value) : "pending";
 }
 
 function plainStockState(quantity: number | null): StockState {
-    if (quantity === null) return "pending";
-    return quantity === 0 ? "zero" : "has";
+    return stockState(quantity);
 }
 
 function skuRowState(matched: boolean | undefined, stock: StockQuantities, asin: string): "matched" | "all-zero" | undefined {
