@@ -36,3 +36,5 @@ grep -n "inventory/daily\|throttle" routes/web.php
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** 左列に「API有効状態」（ランプ）、「APIキー」、「接続情報」（新規・表示のみ）、右列に「許可IPアドレス / CIDR」を置く 2 列構成にした。「保存」はタイトル行の右へ移した。接続情報の値（`GET /api/v1/inventory/daily`、`X-API-Key`、60 回 / 分）は `routes/web.php` の定義（`throttle:60,1`）と照合し、画面側の定数 `API_ENDPOINT` に持たせた。既存のテストは変更なしで通る。

@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import axios from "axios";
 import { computed, onMounted, ref } from "vue";
-import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
-import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import BaseModal from "@/components/ui/BaseModal.vue";
 import BaseToggle from "@/components/ui/BaseToggle.vue";
+import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { useUiStore } from "@/stores/ui";
 import { formatDateTime } from "@/utils/format";
 
@@ -136,13 +135,19 @@ async function saveSetting() {
         saving.value = false;
     }
 }
+
+/** 外部公開 API の接続情報（routes/web.php と doc/外部公開API仕様書.md に合わせる） */
+const API_ENDPOINT = { method: "GET", path: "/api/v1/inventory/daily", baseUrl: "/api/v1", header: "X-API-Key", rateLimit: "60 回 / 分" } as const;
 </script>
 
 <template>
-    <div class="flex flex-col gap-5">
-        <div>
-            <h1 class="text-xl font-semibold text-slate-900">API連携設定</h1>
-            <p class="mt-1 text-sm text-slate-500">外部システムから日次在庫データを取得するための認証情報と接続元を設定します。</p>
+    <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div>
+                <h1 class="text-[22px] leading-tight font-semibold">API連携設定</h1>
+                <p class="mt-1 text-[12.5px] text-ink-2">外部システムから日次在庫データを取得するための認証情報と接続元を設定します。</p>
+            </div>
+            <BaseButton v-if="!loading" data-testid="save-api-settings" class="sm:ml-auto" variant="primary" icon="check" :loading="saving" @click="saveSetting">保存</BaseButton>
         </div>
 
         <BaseAlert v-if="loadError" tone="danger" title="設定を読み込めませんでした">
@@ -153,83 +158,93 @@ async function saveSetting() {
         </BaseAlert>
         <BaseAlert v-if="errors.form" tone="danger">{{ errors.form }}</BaseAlert>
 
-        <div v-if="loading" class="rounded-xl border border-slate-200 bg-white py-16 text-center text-sm text-slate-500 shadow-sm" role="status">設定を読み込んでいます...</div>
+        <div v-if="loading" class="rounded-card border border-line bg-surface py-16 text-center text-[12.5px] text-muted shadow-card" role="status">設定を読み込んでいます...</div>
 
-        <template v-else>
-            <div class="grid gap-5 lg:grid-cols-2">
-                <BaseCard title="API有効状態" description="外部システムからの参照APIの利用可否を切り替えます。" :padded="false">
-                    <div class="p-5">
-                        <BaseToggle v-model="enabled" label="外部APIを有効にする" description="有効にする場合は、APIキーと許可IPアドレスまたはCIDRを1件以上登録してください。" />
-                        <p v-if="errors.enabled" class="mt-3 text-xs text-rose-600">{{ errors.enabled }}</p>
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-xs">
-                        <span class="flex items-center gap-2 text-slate-500">
-                            <BaseBadge :tone="enabled ? 'success' : 'neutral'">{{ enabled ? "有効" : "無効" }}</BaseBadge>
-                            ベースURL: <code class="font-mono text-slate-700">/api/v1</code>
-                        </span>
-                        <button
-                            type="button"
-                            data-testid="open-api-reference"
-                            class="inline-flex items-center gap-1.5 font-medium text-primary-700 hover:text-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
-                            @click="apiReferenceOpen = true"
-                        >
-                            <AppIcon name="api" :size="15" />APIリファレンス
-                        </button>
+        <div v-else class="grid items-start gap-4 xl:grid-cols-2">
+            <div class="flex min-w-0 flex-col gap-4">
+                <BaseCard title="API有効状態" description="外部システムからの参照APIの利用可否を切り替えます。">
+                    <template #actions>
+                        <StatusLamp :state="enabled ? 'ok' : 'warn'" :label="enabled ? '有効' : '無効'" class="text-[11.5px] text-ink-2" data-api-state />
+                    </template>
+                    <BaseToggle v-model="enabled" label="外部APIを有効にする" description="有効にする場合は、APIキーと許可IPアドレスまたはCIDRを1件以上登録してください。" />
+                    <p v-if="errors.enabled" class="mt-3 text-[11px] text-danger">{{ errors.enabled }}</p>
+                </BaseCard>
+
+                <BaseCard title="APIキー" description="キーの値は発行直後に1回だけ表示されます。">
+                    <div class="flex flex-col gap-3">
+                        <code class="block rounded-control border border-line bg-surface-2 px-3 py-2 font-mono text-xs break-all text-ink-2" data-testid="api-key-value">{{ apiKeyStatus }}</code>
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <p class="text-[11.5px] text-muted">
+                                発行日時: <span class="font-mono text-ink-2">{{ issuedAtLabel }}</span>
+                            </p>
+                            <BaseButton data-testid="rotate-api-key" variant="secondary" size="sm" icon="refresh" :loading="rotatingKey" @click="rotateKey">
+                                {{ apiKeyConfigured ? "再発行" : "発行" }}
+                            </BaseButton>
+                        </div>
+                        <BaseAlert v-if="apiKeyRevealed" tone="warning">このキーを今すぐ安全な場所へ控えてください。</BaseAlert>
                     </div>
                 </BaseCard>
 
-                <BaseCard title="APIキー" description="キーの値は発行直後に1回だけ表示されます。" :padded="false">
-                    <div class="flex min-h-36 flex-wrap items-start justify-between gap-4 p-5">
-                        <div class="min-w-0">
-                            <code class="block break-all font-mono text-sm font-medium text-slate-800" data-testid="api-key-value">{{ apiKeyStatus }}</code>
-                            <p class="mt-2 text-xs text-slate-500">発行日時: {{ issuedAtLabel }}</p>
-                            <p v-if="apiKeyRevealed" class="mt-2 text-xs font-medium text-amber-700">このキーを今すぐ安全な場所へ控えてください。</p>
+                <BaseCard title="接続情報" description="CSV出力と同じ項目をJSON形式で返します。">
+                    <div class="flex flex-col gap-3 text-[11.5px]">
+                        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5" data-api-endpoint>
+                            <dt class="text-muted">メソッド</dt>
+                            <dd class="font-mono">{{ API_ENDPOINT.method }}</dd>
+                            <dt class="text-muted">パス</dt>
+                            <dd class="font-mono break-all">{{ API_ENDPOINT.path }}</dd>
+                            <dt class="text-muted">認証</dt>
+                            <dd
+                                ><span class="font-mono">{{ API_ENDPOINT.header }}</span> ヘッダー</dd
+                            >
+                            <dt class="text-muted">回数制限</dt>
+                            <dd class="font-mono">{{ API_ENDPOINT.rateLimit }}</dd>
+                        </dl>
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line-2 pt-3">
+                            <span class="text-muted"
+                                >ベースURL: <code class="font-mono text-ink-2">{{ API_ENDPOINT.baseUrl }}</code></span
+                            >
+                            <BaseButton data-testid="open-api-reference" variant="secondary" size="sm" icon="api" @click="apiReferenceOpen = true">APIリファレンス</BaseButton>
                         </div>
-                        <BaseButton data-testid="rotate-api-key" variant="secondary" icon="refresh" :loading="rotatingKey" @click="rotateKey">
-                            {{ apiKeyConfigured ? "再発行" : "発行" }}
-                        </BaseButton>
                     </div>
                 </BaseCard>
             </div>
 
             <BaseCard title="許可IPアドレス / CIDR" description="接続元IPが許可設定に一致し、APIキーが正しい場合にAPIへの接続を許可します。" :padded="false">
-                <div class="grid gap-3 border-b border-slate-200 p-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-                    <BaseInput v-model="newNetwork" label="IP / CIDR" placeholder="203.0.113.10 または 198.51.100.0/24" :error="errors.network" />
+                <div class="grid gap-2.5 border-b border-line-2 px-[18px] py-3.5 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] md:items-end">
+                    <BaseInput v-model="newNetwork" class="[&_input]:font-mono" label="IP / CIDR" placeholder="203.0.113.10 または 198.51.100.0/24" :error="errors.network" />
                     <BaseInput v-model="newMemo" label="メモ" placeholder="本社固定IP" />
-                    <BaseButton data-testid="add-network" variant="secondary" icon="add" class="md:min-w-36" @click="addNetwork">追加</BaseButton>
+                    <BaseButton data-testid="add-network" variant="secondary" icon="add" @click="addNetwork">追加</BaseButton>
                 </div>
 
-                <BaseAlert v-if="errors.networks" tone="danger" class="m-5">{{ errors.networks }}</BaseAlert>
+                <div v-if="errors.networks" class="px-[18px] pt-3.5"
+                    ><BaseAlert tone="danger">{{ errors.networks }}</BaseAlert></div
+                >
 
-                <div v-if="allowedNetworks.length === 0" class="px-5 py-10 text-center text-sm text-slate-500"> 許可IPアドレス / CIDRは登録されていません。 </div>
-                <div v-else class="divide-y divide-slate-100">
-                    <div v-for="(entry, index) in allowedNetworks" :key="`${entry.network}-${index}`" class="flex items-center justify-between gap-4 px-5 py-4">
-                        <div class="flex min-w-0 items-start gap-3">
-                            <BaseBadge tone="brand" mono>{{ entry.network.includes("/") ? "CIDR" : "IP" }}</BaseBadge>
-                            <div class="min-w-0">
-                                <code class="block break-all font-mono text-sm font-medium text-slate-900">{{ entry.network }}</code>
-                                <p class="mt-0.5 text-xs text-slate-500">{{ entry.memo || "メモなし" }}</p>
-                            </div>
+                <div v-if="allowedNetworks.length === 0" class="px-[18px] py-10 text-center text-[12.5px] text-muted">許可IPアドレス / CIDRは登録されていません。</div>
+                <div v-else class="divide-y divide-line-2">
+                    <div v-for="(entry, index) in allowedNetworks" :key="`${entry.network}-${index}`" class="grid grid-cols-[46px_minmax(0,1fr)_auto] items-center gap-2.5 px-[18px] py-2">
+                        <span class="rounded-chip bg-ink py-px text-center font-mono text-[9.5px] tracking-widest text-white">{{ entry.network.includes("/") ? "CIDR" : "IP" }}</span>
+                        <div class="min-w-0">
+                            <code class="block font-mono text-xs font-medium break-all text-ink">{{ entry.network }}</code>
+                            <p class="text-[10.5px] text-muted">{{ entry.memo || "メモなし" }}</p>
                         </div>
                         <BaseButton variant="ghost" size="sm" icon="delete" @click="removeNetwork(index)">削除</BaseButton>
                     </div>
                 </div>
-
-                <div class="flex justify-end border-t border-slate-200 bg-slate-50/70 px-5 py-3.5">
-                    <BaseButton data-testid="save-api-settings" variant="primary" icon="check" :loading="saving" @click="saveSetting">保存</BaseButton>
-                </div>
             </BaseCard>
-        </template>
+        </div>
 
         <BaseModal :open="apiReferenceOpen" title="APIリファレンス" description="CSV出力と同じ項目をJSON形式で返します。" width="lg" @close="apiReferenceOpen = false">
             <div data-testid="api-reference-content">
-                <dl class="grid gap-4 text-sm sm:grid-cols-[140px_minmax(0,1fr)]">
-                    <dt class="font-medium text-slate-600">エンドポイント</dt>
-                    <dd><code class="break-all rounded bg-slate-100 px-2 py-1 text-xs text-slate-800">GET /api/v1/inventory/daily</code></dd>
-                    <dt class="font-medium text-slate-600">認証ヘッダー</dt>
-                    <dd><code class="break-all rounded bg-slate-100 px-2 py-1 text-xs text-slate-800">X-API-Key: 発行したAPIキー</code></dd>
-                    <dt class="font-medium text-slate-600">パラメータ</dt>
-                    <dd class="text-slate-600"> <code>from</code>、<code>to</code>（必須・日本時間・最大365日間）、<code>product_code</code>（任意・省略時は全品番） </dd>
+                <dl class="grid gap-4 text-[12.5px] sm:grid-cols-[140px_minmax(0,1fr)]">
+                    <dt class="font-medium text-ink-2">エンドポイント</dt>
+                    <dd><code class="rounded-chip bg-surface-2 px-2 py-1 font-mono text-xs break-all text-ink">GET /api/v1/inventory/daily</code></dd>
+                    <dt class="font-medium text-ink-2">認証ヘッダー</dt>
+                    <dd><code class="rounded-chip bg-surface-2 px-2 py-1 font-mono text-xs break-all text-ink">X-API-Key: 発行したAPIキー</code></dd>
+                    <dt class="font-medium text-ink-2">パラメータ</dt>
+                    <dd class="text-ink-2"
+                        ><code class="font-mono">from</code>、<code class="font-mono">to</code>（必須・日本時間・最大365日間）、<code class="font-mono">product_code</code>（任意・省略時は全品番）</dd
+                    >
                 </dl>
             </div>
 
