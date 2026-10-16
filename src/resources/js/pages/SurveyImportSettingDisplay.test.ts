@@ -31,6 +31,12 @@ function seedSurvey() {
     return surveys;
 }
 
+async function mountHistoryList() {
+    const wrapper = mount(SurveyHistoryPage);
+    await wrapper.get('[data-history-view] [data-value="list"]').trigger("click");
+    return wrapper;
+}
+
 describe("survey import setting display", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
@@ -38,8 +44,8 @@ describe("survey import setting display", () => {
         seedSurvey();
     });
 
-    it("shows survey history without a product group column or filter", () => {
-        const wrapper = mount(SurveyHistoryPage);
+    it("shows survey history without a product group column or filter", async () => {
+        const wrapper = await mountHistoryList();
 
         expect(wrapper.text()).not.toContain("品番グループ");
         expect(wrapper.text()).not.toContain("売上TOP20");
@@ -56,7 +62,7 @@ describe("survey import setting display", () => {
             { id: "3", executedAt: "2026-09-10T12:00:00Z", importSettingName: "サングラス", products: [], files: [] },
             { id: "4", executedAt: "2026-09-17T08:00:00Z", importSettingName: null, products: [], files: [] },
         ];
-        const wrapper = mount(SurveyHistoryPage);
+        const wrapper = await mountHistoryList();
         const displayedIds = () => wrapper.findAll("[data-survey-id]").map((row) => row.attributes("data-survey-id"));
 
         expect(displayedIds()).toEqual(["1", "2", "4", "3"]);
@@ -80,13 +86,13 @@ describe("survey import setting display", () => {
         expect(displayedIds()).toEqual(["1", "2", "4", "3"]);
     });
 
-    it("keeps a rechecked past result out of the latest position", () => {
+    it("keeps a rechecked past result out of the latest position", async () => {
         const surveys = useSurveysStore();
         surveys.surveys = [
             { id: "current", executedAt: "2026-09-18T12:00:00Z", createdAt: "2026-09-18T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
             { id: "rechecked", executedAt: "2026-09-16T12:00:00Z", createdAt: "2026-09-30T12:00:00Z", importSettingName: "別設定", products: [], files: [] },
         ];
-        const wrapper = mount(SurveyHistoryPage);
+        const wrapper = await mountHistoryList();
 
         expect(wrapper.get("[data-survey-id=current]").text()).toContain("最新");
         expect(wrapper.get("[data-survey-id=rechecked]").text()).not.toContain("最新");
@@ -135,7 +141,7 @@ describe("survey import setting display", () => {
             },
         ];
 
-        const history = mount(SurveyHistoryPage);
+        const history = await mountHistoryList();
         expect(history.get('[data-survey-id="1"]').text()).not.toContain("Aグループ");
         expect(history.get('[data-survey-id="1"]').findAll("td")[1]!.text()).toBe("2");
         expect(history.get('[data-survey-id="1"]').findAll("td")[2]!.text()).toBe("2");
@@ -426,7 +432,7 @@ describe("survey import setting display", () => {
             { id: "complete", executedAt: "2026-09-16T12:00:00Z", importSettingName: "C", amazonInventoryStatus: "complete", products: [], files: [] },
             { id: "legacy", executedAt: "2026-09-15T12:00:00Z", importSettingName: "D", amazonInventoryStatus: "legacy_file", products: [], files: [] },
         ];
-        const wrapper = mount(SurveyHistoryPage);
+        const wrapper = await mountHistoryList();
 
         expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon取込待ち");
         expect(wrapper.get("[data-survey-id=partial]").text()).toContain("Amazon一部未取得");
