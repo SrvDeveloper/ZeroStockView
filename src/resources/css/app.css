@@ -64,10 +64,10 @@
     --color-sidebar-icon: #6c7783;
 
     /* 倉庫色。隣り合う2色が色覚の違いでも見分けられる並び順（Amazon → BOSS → フリー在庫 → ECストック）で使う */
-    --color-wh-amazon: #3a6fb8;
-    --color-wh-boss: #e08a2e;
-    --color-wh-free: #8e5bb8;
-    --color-wh-ec: #5f9e3a;
+    --color-wh-amazon: #e08a2e;
+    --color-wh-boss: #3a6fb8;
+    --color-wh-free: #5f9e3a;
+    --color-wh-ec: #8e5bb8;
 
     /* カレンダーの曜日 */
     --color-sunday: #b4483f;
