@@ -144,7 +144,7 @@ const API_ENDPOINT = { method: "GET", path: "/api/v1/inventory/daily", baseUrl: 
     <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
-                <h1 class="text-[22px] leading-tight font-bold">API連携設定</h1>
+                <h1 class="text-[22px] leading-tight font-black">API連携設定</h1>
                 <p class="mt-1 text-[12.5px] text-ink-2">外部システムから日次在庫データを取得するための認証情報と接続元を設定します。</p>
             </div>
             <BaseButton v-if="!loading" data-testid="save-api-settings" class="sm:ml-auto" variant="primary" icon="check" :loading="saving" @click="saveSetting">保存</BaseButton>
