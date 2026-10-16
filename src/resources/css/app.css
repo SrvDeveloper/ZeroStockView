@@ -6,17 +6,105 @@
 @theme {
     --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
-    --color-primary-50: #eff6ff;
-    --color-primary-100: #dbeafe;
-    --color-primary-200: #bfdbfe;
-    --color-primary-300: #93c5fd;
-    --color-primary-400: #60a5fa;
-    --color-primary-500: #3b82f6;
-    --color-primary-600: #2563eb;
-    --color-primary-700: #1d4ed8;
-    --color-primary-800: #1e40af;
-    --color-primary-900: #1e3a8a;
-    --color-primary-950: #172554;
+    /* 主色は墨・グラファイト系。主ボタンや選択中の面に使う */
+    --color-primary-50: #eef1f4;
+    --color-primary-100: #e2e6ea;
+    --color-primary-200: #c9d0d6;
+    --color-primary-300: #a8b1b9;
+    --color-primary-400: #7d8893;
+    --color-primary-500: #3a434c;
+    --color-primary-600: #11161a;
+    --color-primary-700: #0b0f12;
+    --color-primary-800: #080b0d;
+    --color-primary-900: #050708;
+    --color-primary-950: #020304;
+
+    /* 文字・面・罫線 */
+    --color-ink: #11161a;
+    --color-ink-2: #3a434c;
+    --color-muted: #66717c;
+    --color-faint: #a8b1b9;
+    --color-canvas: #e8ebee;
+    --color-surface: #ffffff;
+    --color-surface-2: #f5f7f8;
+    --color-line: rgb(17 22 26 / 0.09);
+    --color-line-2: rgb(17 22 26 / 0.06);
+    --color-line-strong: rgb(17 22 26 / 0.15);
+    --color-line-stronger: rgb(17 22 26 / 0.24);
+    --color-tint: rgb(17 22 26 / 0.06);
+
+    /* 信号の黄は在庫ゼロ・ナビの選択位置・ロゴだけに使う */
+    --color-signal: #f5c400;
+    --color-signal-border: #d9ad00;
+    --color-signal-row: #fff6d6;
+    --color-signal-row-strong: #fff0c0;
+    --color-signal-chip: #ffe27a;
+
+    /* 状態 */
+    --color-caution: #9a6a00;
+    --color-danger: #c0362c;
+    --color-danger-soft: #fdeeec;
+    --color-match: #eef3f7;
+    --color-lamp-ok: #1f9d55;
+    --color-lamp-warn: #d99e00;
+    --color-lamp-error: #d23a2f;
+
+    /* サイドバー */
+    --color-sidebar: #12171b;
+    --color-sidebar-text: #a3acb5;
+    --color-sidebar-strong: #f1f4f6;
+    --color-sidebar-dim: #66717c;
+    --color-sidebar-icon: #6c7783;
+
+    /* 倉庫色。隣り合う2色が色覚の違いでも見分けられる並び順（Amazon → BOSS → フリー在庫 → ECストック）で使う */
+    --color-wh-amazon: #3a6fb8;
+    --color-wh-boss: #e08a2e;
+    --color-wh-free: #8e5bb8;
+    --color-wh-ec: #5f9e3a;
+
+    /* カレンダーの曜日 */
+    --color-sunday: #b4483f;
+    --color-saturday: #44679e;
+
+    --radius-card: 6px;
+    --radius-control: 5px;
+    --radius-chip: 4px;
+    --radius-panel: 8px;
+
+    --shadow-raised: 0 1px 2px rgb(16 24 32 / 0.06);
+    --shadow-card: 0 1px 2px rgb(16 24 32 / 0.04), 0 3px 10px -4px rgb(16 24 32 / 0.1);
+    --shadow-float: 0 16px 36px -14px rgb(16 24 32 / 0.32), 0 2px 6px rgb(16 24 32 / 0.06);
+}
+
+/* 黄黒の斜線（倉庫の警告線） */
+@utility bg-hazard {
+    background-image: repeating-linear-gradient(-45deg, var(--color-signal) 0 7px, var(--color-ink) 7px 14px);
+}
+
+/* 1倉庫だけの在庫ゼロに使う淡い縞 */
+@utility bg-hazard-pale {
+    background-image: repeating-linear-gradient(-45deg, #fff4c4 0 5px, #ffe98f 5px 10px);
+}
+
+/* 方眼の背景 */
+@utility bg-blueprint {
+    background-image: linear-gradient(rgb(17 22 26 / 0.045) 1px, transparent 1px), linear-gradient(90deg, rgb(17 22 26 / 0.045) 1px, transparent 1px);
+    background-size: 28px 28px;
+}
+
+/* 主ボタンのグラファイト */
+@utility bg-graphite {
+    background-image: linear-gradient(180deg, #2c333a 0%, #12171b 100%);
+}
+
+/* サイドバーの地 */
+@utility bg-sidebar {
+    background-image: linear-gradient(180deg, #161b20 0%, #0e1215 100%);
+}
+
+body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
 }
 
 .skip-link {
@@ -24,10 +112,10 @@
     left: 0.5rem;
     top: -3rem;
     z-index: 100;
-    background-color: #2563eb;
+    background-color: var(--color-ink);
     color: #fff;
     padding: 0.5rem 1rem;
-    border-radius: 0.5rem;
+    border-radius: var(--radius-control);
     font-size: 0.875rem;
     transition: top 0.15s ease;
 }
