@@ -172,7 +172,7 @@ describe("survey import setting display", () => {
         }
     });
 
-    it("shows combined Amazon and BOSS stock with Ctrl-hover breakdowns", async () => {
+    it("shows combined Amazon and BOSS stock with their breakdowns always visible", async () => {
         const surveys = useSurveysStore();
         surveys.surveys[0].products = [
             {
@@ -206,41 +206,21 @@ describe("survey import setting display", () => {
         const amazonCell = wrapper.get("[data-stock-field=amazon]");
         const bossCell = wrapper.get("[data-stock-field=boss]");
         const totalStockCell = wrapper.get("[data-stock-field=total]");
-        const amazonBreakdown = amazonCell.get(".stock-breakdown-tooltip");
-        const bossBreakdown = bossCell.get(".stock-breakdown-tooltip");
-        expect(wrapper.find("[role=switch][aria-label=内訳表示]").exists()).toBe(false);
-        expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
-        expect(wrapper.text()).toContain("Ctrlキーを押しながらAmazon・BOSSの数値にマウスを置くと内訳を表示します");
-
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control" }));
-        await nextTick();
-        expect(wrapper.classes()).toContain("stock-breakdown-enabled");
-
-        window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }));
-        await nextTick();
-        expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
-        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control" }));
-        await nextTick();
-        window.dispatchEvent(new Event("blur"));
-        await nextTick();
-        expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
+        expect(wrapper.text()).not.toContain("Ctrlキー");
 
         expect(wrapper.text()).not.toContain("合算表示");
         expect(wrapper.find("[data-stock-field=amazonOwn]").exists()).toBe(false);
         expect(wrapper.find("[data-stock-field=amazonFba]").exists()).toBe(false);
-        expect(amazonCell.get(".stock-total-value").text()).toBe("3");
+        expect(amazonCell.get("[data-stock-value]").text()).toBe("3");
         expect(amazonCell.attributes("data-stock-state")).toBe("low");
-        expect(amazonCell.attributes("tabindex")).toBe("0");
-        expect(amazonBreakdown.text()).toContain("Amazon内訳");
-        expect(amazonBreakdown.findAll("strong").map((value) => value.text())).toEqual(["0", "3"]);
-        expect(bossCell.get(".stock-total-value").text()).toBe("0");
+        expect(amazonCell.get("[data-breakdown]").text()).toBe("（内訳 0 / 3）");
+        expect(bossCell.get("[data-stock-value]").text()).toBe("0");
         expect(bossCell.attributes("data-stock-state")).toBe("zero");
-        expect(bossBreakdown.text()).toContain("BOSS内訳");
-        expect(bossBreakdown.findAll("strong").map((value) => value.text())).toEqual(["0", "0"]);
-        expect(wrapper.get("thead").text()).toContain("在庫総数");
+        expect(bossCell.find("[data-breakdown]").exists()).toBe(false);
+        expect(wrapper.get("thead").text()).toContain("総数");
+        expect(wrapper.get("thead").text()).toContain("自社／FBA");
         expect(totalStockCell.text()).toBe("14");
         expect(totalStockCell.attributes("data-stock-state")).toBe("has");
-        expect(wrapper.findAll("[role=tooltip]")).toHaveLength(2);
         expect(wrapper.get("[data-stock-field=freeStock]").attributes("data-stock-state")).toBe("has");
         expect(wrapper.get("[data-stock-field=ecStock]").attributes("data-stock-state")).toBe("has");
         expect(wrapper.get("tbody tr").attributes("data-row-state")).toBeUndefined();
@@ -248,18 +228,18 @@ describe("survey import setting display", () => {
         expect(wrapper.get("tbody tr").attributes("data-row-state")).toBe("matched");
         expect(wrapper.get("[data-stock-field=amazon]").attributes("data-stock-state")).toBe("low");
         await wrapper.get('button[aria-label="SKUの絞込をクリア"]').trigger("click");
-        const andOperator = wrapper.get('[data-condition-operator="and"]');
-        const orOperator = wrapper.get('[data-condition-operator="or"]');
-        expect(andOperator.attributes("aria-pressed")).toBe("true");
+        const andOperator = wrapper.get('[data-condition-operator] [data-value="and"]');
+        const orOperator = wrapper.get('[data-condition-operator] [data-value="or"]');
+        expect(andOperator.attributes("aria-checked")).toBe("true");
         await wrapper.get('[data-stock-condition="bossZero"]').trigger("click");
         await wrapper.get('[data-stock-condition="ecZero"]').trigger("click");
         expect(wrapper.find("tbody tr").exists()).toBe(false);
         await orOperator.trigger("click");
-        expect(orOperator.attributes("aria-pressed")).toBe("true");
-        expect(andOperator.attributes("aria-pressed")).toBe("false");
+        expect(orOperator.attributes("aria-checked")).toBe("true");
+        expect(andOperator.attributes("aria-checked")).toBe("false");
         expect(wrapper.find("tbody tr").exists()).toBe(true);
         await wrapper.get("[data-clear-filters]").trigger("click");
-        expect(andOperator.attributes("aria-pressed")).toBe("true");
+        expect(andOperator.attributes("aria-checked")).toBe("true");
         await wrapper.get('[data-stock-condition="amazonHas"]').trigger("click");
         await wrapper.get('[data-stock-condition="bossHas"]').trigger("click");
         expect(wrapper.find("tbody tr").exists()).toBe(false);
@@ -300,11 +280,11 @@ describe("survey import setting display", () => {
 
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
-        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("5");
-        expect(wrapper.get("[data-stock-field=boss] .stock-total-value").text()).toBe("9");
+        expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("5");
+        expect(wrapper.get("[data-stock-field=boss] [data-stock-value]").text()).toBe("9");
         expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 00:00");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("27");
-        expect(wrapper.get("thead").text()).toContain("在庫総数");
+        expect(wrapper.get("thead").text()).toContain("総数");
     });
 
     it("keeps the total unknown until each SKU has Amazon stock", async () => {
@@ -339,7 +319,7 @@ describe("survey import setting display", () => {
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.text()).toContain("Amazon 在庫は取込待ちです");
-        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("—");
+        expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("取込待ち");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
 
         surveys.surveys[0].amazonInventoryStatus = "partial";
@@ -397,13 +377,13 @@ describe("survey import setting display", () => {
         await wrapper.get('[data-testid="refresh-survey"]').trigger("click");
         await flushPromises();
         expect(get).toHaveBeenCalledWith("/api/surveys/1");
-        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("5");
+        expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("5");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("9");
         expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 02:00");
 
         await wrapper.get('[data-testid="refresh-survey"]').trigger("click");
         await flushPromises();
-        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("0");
+        expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("0");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("4");
         expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 04:00");
         wrapper.unmount();
@@ -497,7 +477,7 @@ describe("survey import setting display", () => {
         const freeStockCell = wrapper.get("[data-stock-field=freeStock]");
         const ecStockCell = wrapper.get("[data-stock-field=ecStock]");
 
-        expect(amazonCell.get(".stock-total-value").text()).toBe("5");
+        expect(amazonCell.get("[data-stock-value]").text()).toBe("5");
         expect(amazonCell.attributes("data-stock-state")).toBe("low");
         expect(freeStockCell.attributes("data-stock-state")).toBe("zero");
         expect(ecStockCell.attributes("data-stock-state")).toBe("zero");
@@ -532,7 +512,7 @@ describe("survey import setting display", () => {
         ];
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
-        expect(wrapper.get("[data-stock-field=amazon] .stock-total-value").text()).toBe("対象外");
+        expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("対象外");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("22");
     });
 
@@ -568,7 +548,7 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-stock-field=freeStock]").text()).toBe("—");
         expect(wrapper.get("[data-stock-field=ecStock]").text()).toBe("—");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
-        expect(wrapper.get("[data-stock-field=boss] .stock-total-value").text()).toBe("4");
+        expect(wrapper.get("[data-stock-field=boss] [data-stock-value]").text()).toBe("4");
         expect(wrapper.text()).toContain("取込待ち・未取得");
 
         await wrapper.get("[data-stock-condition=freeZero]").trigger("click");
@@ -637,5 +617,52 @@ describe("survey import setting display", () => {
         expect(wrapper.emitted("save")).toEqual([["composed"]]);
         wrapper.unmount();
         vi.useRealTimers();
+    });
+
+    it("summarizes all-zero and partial-zero SKUs and compares them with the previous survey", () => {
+        const surveys = useSurveysStore();
+        const skuOf = (id: string, stock: Record<string, number | null>) => ({
+            id,
+            skuCode: `A-1001-${id}`,
+            colorName: "",
+            size: "",
+            asin: `ASIN-${id}`,
+            tqCode: "",
+            tqColorNo: "",
+            tqSize: "",
+            memo: "",
+            stock: { amazonOwn: 1, amazonFba: 1, bossOwn: 1, bossRfc: 1, freeStock: 1, ecStock: 1, ...stock },
+        });
+        const zero = { amazonOwn: 0, amazonFba: 0, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 };
+        surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].amazonInventoryStatus = "complete";
+        surveys.surveys[0].products = [
+            { id: "p1", productCode: "A-1001", brand: "A", category: "A", parentAsin: "", memo: "", skus: [skuOf("1", zero), skuOf("2", zero), skuOf("3", { ecStock: 0 }), skuOf("4", {})] },
+        ];
+        surveys.surveys.push({
+            id: "0",
+            executedAt: "2026-09-15T01:00:00Z",
+            importSettingName: null,
+            amazonSource: "sp_api",
+            files: [],
+            products: [{ id: "p0", productCode: "A-1001", brand: "A", category: "A", parentAsin: "", memo: "", skus: [skuOf("1", zero), skuOf("3", { ecStock: 0 }), skuOf("4", { freeStock: 0 })] }],
+        });
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.get('[data-summary="all-zero"]').text()).toContain("2");
+        expect(wrapper.get('[data-summary="all-zero"]').text()).toContain("前回比 +1 ▲");
+        expect(wrapper.get('[data-summary="partial-zero"]').text()).toContain("前回比 −1 ▼");
+        expect(wrapper.get('[data-summary="amazon"]').text()).toContain("取込済み");
+
+        const rows = wrapper.findAll("tbody tr");
+        expect(rows[0]!.attributes("data-row-state")).toBe("all-zero");
+        expect(rows[0]!.text()).toContain("全倉庫ゼロ");
+        expect(rows[2]!.attributes("data-row-state")).toBeUndefined();
+    });
+
+    it("omits the comparison when there is no earlier survey", () => {
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.get("[data-survey-summary]").text()).not.toContain("前回比");
     });
 });
