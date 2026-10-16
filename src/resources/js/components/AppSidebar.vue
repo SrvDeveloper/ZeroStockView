@@ -28,7 +28,7 @@ const route = useRoute();
                     <span class="text-[10px] text-sidebar-dim">在庫状況調査アプリ</span>
                 </span>
             </RouterLink>
-            <button type="button" class="rounded-chip p-1 text-sidebar-dim hover:text-white lg:hidden" aria-label="メニューを閉じる" @click="emit('close')">
+            <button type="button" class="flex h-7 w-7 items-center justify-center rounded-chip text-sidebar-dim hover:text-white lg:hidden" aria-label="メニューを閉じる" @click="emit('close')">
                 <AppIcon name="close" :size="20" />
             </button>
         </div>

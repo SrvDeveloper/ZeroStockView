@@ -32,7 +32,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
                             <h2 class="text-[15px] font-semibold text-ink">{{ title }}</h2>
                             <p v-if="description" class="mt-1 text-[11.5px] text-muted">{{ description }}</p>
                         </div>
-                        <button type="button" class="rounded-chip p-1 text-muted transition-colors hover:bg-tint hover:text-ink" aria-label="閉じる" @click="emit('close')">
+                        <button
+                            type="button"
+                            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-chip text-muted transition-colors hover:bg-tint hover:text-ink"
+                            aria-label="閉じる"
+                            @click="emit('close')"
+                        >
                             <AppIcon name="close" :size="18" />
                         </button>
                     </header>
