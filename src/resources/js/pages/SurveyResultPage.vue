@@ -588,7 +588,7 @@ async function exportExcel(scope: "all" | "filtered") {
                                 <span class="font-mono text-sm font-medium uppercase">{{ sku.skuCode }}</span>
                                 <span
                                     v-if="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
-                                    class="ml-1.5 rounded-chip bg-ink px-1.5 align-[1px] text-[9.5px] font-bold tracking-wide text-signal"
+                                    class="ml-1.5 inline-block rounded-chip bg-ink px-1.5 align-[1px] text-[9.5px] font-bold tracking-wide whitespace-nowrap text-signal"
                                     >全倉庫ゼロ</span
                                 >
                                 <span class="block font-mono text-[10.5px] text-muted">{{ sku.asin || "ASIN未登録" }}</span>
