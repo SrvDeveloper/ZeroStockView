@@ -98,13 +98,13 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-survey-id=rechecked]").text()).not.toContain("最新");
     });
 
-    it("shows the import setting in the survey result", () => {
+    it("shows the survey dates without listing the product groups", () => {
         const wrapper = mount(SurveyResultPage, {
             props: { id: "1" },
             global: { stubs: { RouterLink: true } },
         });
 
-        expect(wrapper.text()).toContain("品番グループ: 売上TOP20");
+        expect(wrapper.text()).not.toContain("品番グループ:");
         expect(wrapper.text()).toContain("在庫基準日時: 2026/09/16 01:00");
         expect(wrapper.text()).toContain("結果作成日時: 2026/09/18 03:00");
     });
