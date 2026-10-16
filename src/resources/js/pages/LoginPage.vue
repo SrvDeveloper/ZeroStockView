@@ -49,7 +49,7 @@ async function submit() {
                 >
                 <div class="leading-tight">
                     <h1 class="text-[15px] font-semibold text-ink">ZeroStockView</h1>
-                    <p class="text-[10.5px] text-muted">在庫状況調査</p>
+                    <p class="text-[10.5px] text-muted">在庫状況調査アプリ</p>
                 </div>
             </div>
 

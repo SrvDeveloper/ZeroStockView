@@ -24,7 +24,7 @@ const route = useRoute();
                 <span class="flex h-7 w-7 items-center justify-center rounded-panel bg-signal font-num text-[17px] font-bold text-ink shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]">0</span>
                 <span class="flex flex-col leading-tight">
                     <span class="text-[13.5px] font-semibold text-sidebar-strong">ZeroStockView</span>
-                    <span class="text-[10px] text-sidebar-dim">在庫状況調査</span>
+                    <span class="text-[10px] text-sidebar-dim">在庫状況調査アプリ</span>
                 </span>
             </RouterLink>
             <button type="button" class="rounded-chip p-1 text-sidebar-dim hover:text-white lg:hidden" aria-label="メニューを閉じる" @click="emit('close')">
