@@ -38,7 +38,7 @@ export const useSurveysStore = defineStore("surveys", {
         async runImport(formData: FormData): Promise<Survey> {
             const { data } = await axios.post<{ data: Survey }>("/api/surveys", formData);
             const survey = data.data;
-            this.surveys.unshift(survey);
+            this.surveys = [survey, ...this.surveys.filter((item) => item.id !== survey.id)];
             return survey;
         },
         async rerunImport(surveyId: string, importSettingId: string): Promise<Survey> {
@@ -46,7 +46,7 @@ export const useSurveysStore = defineStore("surveys", {
                 import_setting_id: importSettingId,
             });
             const survey = data.data;
-            this.surveys.unshift(survey);
+            this.surveys = [survey, ...this.surveys.filter((item) => item.id !== survey.id)];
             return survey;
         },
         async removeSurvey(id: string) {

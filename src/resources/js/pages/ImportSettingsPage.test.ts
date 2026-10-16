@@ -64,7 +64,7 @@ describe("ImportSettingsPage", () => {
         await rows[0].trigger("dragstart");
         await rows[2].trigger("drop");
 
-        const saveButton = wrapper.findAll("button").find((button) => button.text() === "この設定を保存");
+        const saveButton = wrapper.findAll("button").find((button) => button.text() === "このグループを保存");
         await saveButton?.trigger("click");
         await flushPromises();
 

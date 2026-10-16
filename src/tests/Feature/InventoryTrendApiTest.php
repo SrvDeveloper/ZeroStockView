@@ -87,7 +87,7 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonPath('data.series.0.points.0.quantity', 10);
     }
 
-    public function test_api_only_product_is_available_in_amazon_trends_but_not_in_survey_csv(): void
+    public function test_api_only_product_is_available_in_amazon_trends_and_daily_csv(): void
     {
         $this->actingAs(User::factory()->create());
         $product = Product::factory()->create(['product_code' => 'API-ONLY', 'brand' => 'API BRAND']);
@@ -116,7 +116,14 @@ class InventoryTrendApiTest extends TestCase
             ->assertOk()
             ->assertJsonCount(0, 'data.series');
         $this->getJson('/api/inventory-trends/export?product_code=API-ONLY&from=2026-09-27&to=2026-09-27')
-            ->assertUnprocessable()->assertJsonValidationErrors('product_code');
+            ->assertOk();
+        $rows = app(InventoryTrendCsvExporter::class)->rows(
+            'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'),
+        );
+        $this->assertCount(1, $rows);
+        $this->assertSame(4, $rows[0]['amazonOwn']);
+        $this->assertSame(6, $rows[0]['amazonFba']);
+        $this->assertNull($rows[0]['bossOwn']);
     }
 
     public function test_amazon_only_day_does_not_reuse_an_older_import_when_latest_success_omits_the_product(): void

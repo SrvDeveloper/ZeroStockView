@@ -23,12 +23,14 @@ class RunSurveyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'import_setting_id' => ['required', 'integer', 'exists:import_settings,id'],
+            'import_setting_id' => ['sometimes', 'integer', 'exists:import_settings,id'],
             'amazon_own' => ['prohibited'],
             'amazon_fba' => ['prohibited'],
-            'boss' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
-            'ec_stock' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
-            'free_stock' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
+            'boss' => ['prohibited'],
+            'ec_stock' => ['prohibited'],
+            'free_stock' => ['prohibited'],
+            'files' => ['required', 'array', 'min:1', 'max:3'],
+            'files.*' => ['required', 'file', 'mimes:csv,txt', 'max:20480'],
         ];
     }
 }

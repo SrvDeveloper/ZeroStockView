@@ -38,16 +38,17 @@ describe("survey import setting display", () => {
         seedSurvey();
     });
 
-    it("shows the import setting in the survey history", () => {
+    it("shows survey history without a product group column or filter", () => {
         const wrapper = mount(SurveyHistoryPage);
 
-        expect(wrapper.text()).toContain("取込設定");
-        expect(wrapper.text()).toContain("売上TOP20");
+        expect(wrapper.text()).not.toContain("品番グループ");
+        expect(wrapper.text()).not.toContain("売上TOP20");
+        expect(wrapper.find("[data-testid=import-setting-filter]").exists()).toBe(false);
         expect(wrapper.text()).toContain("在庫基準日時");
         expect(wrapper.text()).toContain("結果作成: 2026/09/18 03:00");
     });
 
-    it("filters survey history by period and import setting", async () => {
+    it("filters survey history by period", async () => {
         const surveys = useSurveysStore();
         surveys.surveys = [
             { id: "1", executedAt: "2026-09-18T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
@@ -68,11 +69,7 @@ describe("survey import setting display", () => {
         expect(displayedIds()).toEqual(["2", "4"]);
         expect(wrapper.text()).toContain("全4件中2件を表示");
 
-        await wrapper.get("[data-testid=import-setting-filter] select").setValue("売上TOP20");
-        expect(displayedIds()).toEqual(["2"]);
-
         await wrapper.get("[data-testid=survey-date-from]").setValue("2026-09-10");
-        await wrapper.get("[data-testid=import-setting-filter] select").setValue("");
         expect(displayedIds()).toEqual(["2", "4", "3"]);
 
         await wrapper.get("[data-testid=survey-date-from]").setValue("2026-09-18");
@@ -81,18 +78,6 @@ describe("survey import setting display", () => {
 
         await wrapper.get("[data-testid=reset-filters]").trigger("click");
         expect(displayedIds()).toEqual(["1", "2", "4", "3"]);
-    });
-
-    it("can filter survey history with no recorded import setting", async () => {
-        const surveys = useSurveysStore();
-        surveys.surveys.push({ id: "2", executedAt: "2026-09-17T12:00:00Z", importSettingName: null, products: [], files: [] });
-        const wrapper = mount(SurveyHistoryPage);
-        const noSettingOption = wrapper.findAll("[data-testid=import-setting-filter] option").find((option) => option.text() === "記録なし");
-
-        expect(noSettingOption).toBeDefined();
-        await wrapper.get("[data-testid=import-setting-filter] select").setValue(noSettingOption?.attributes("value"));
-
-        expect(wrapper.findAll("[data-survey-id]").map((row) => row.attributes("data-survey-id"))).toEqual(["2"]);
     });
 
     it("keeps a rechecked past result out of the latest position", () => {
@@ -113,9 +98,56 @@ describe("survey import setting display", () => {
             global: { stubs: { RouterLink: true } },
         });
 
-        expect(wrapper.text()).toContain("取込設定: 売上TOP20");
+        expect(wrapper.text()).toContain("品番グループ: 売上TOP20");
         expect(wrapper.text()).toContain("在庫基準日時: 2026/09/16 01:00");
         expect(wrapper.text()).toContain("結果作成日時: 2026/09/18 03:00");
+    });
+
+    it("shows all products in one daily history and lets the result filter by group", async () => {
+        const surveys = useSurveysStore();
+        const baseSku = {
+            id: "sku-a",
+            skuCode: "A-1001-M",
+            colorName: "",
+            size: "M",
+            asin: "",
+            tqCode: "A1001",
+            tqColorNo: "01",
+            tqSize: "M",
+            memo: "",
+            stock: { amazonOwn: null, amazonFba: null, bossOwn: 4, bossRfc: 0, freeStock: null, ecStock: null },
+        };
+        surveys.surveys[0].groups = [
+            { key: "setting:1", name: "Aグループ" },
+            { key: "setting:2", name: "Bグループ" },
+        ];
+        surveys.surveys[0].products = [
+            { id: "product-a", productCode: "A-1001", brand: "A", category: "A", parentAsin: "", memo: "", groups: [{ key: "setting:1", name: "Aグループ", sortOrder: 1 }], skus: [baseSku] },
+            {
+                id: "product-b",
+                productCode: "B-2001",
+                brand: "B",
+                category: "B",
+                parentAsin: "",
+                memo: "",
+                groups: [{ key: "setting:2", name: "Bグループ", sortOrder: 1 }],
+                skus: [{ ...baseSku, id: "sku-b", skuCode: "B-2001-M" }],
+            },
+        ];
+
+        const history = mount(SurveyHistoryPage);
+        expect(history.get('[data-survey-id="1"]').text()).not.toContain("Aグループ");
+        expect(history.get('[data-survey-id="1"]').findAll("td")[1]!.text()).toBe("2");
+        expect(history.get('[data-survey-id="1"]').findAll("td")[2]!.text()).toBe("2");
+        await history.get('[data-survey-id="1"] button').trigger("click");
+        expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "1" } });
+
+        const result = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        expect(result.text()).toContain("A-1001");
+        expect(result.text()).toContain("B-2001");
+        await result.get("select").setValue("setting:2");
+        expect(result.text()).toContain("B-2001");
+        expect(result.text()).not.toContain("A-1001");
     });
 
     it("clears each text filter from its clear button", async () => {
@@ -510,7 +542,46 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("22");
     });
 
-    it("reruns a survey with another setting only while all source files remain", async () => {
+    it("shows unimported sources as pending and excludes them from zero-stock filters", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].amazonSource = "sp_api";
+        surveys.surveys[0].products = [
+            {
+                id: "product-1",
+                productCode: "A-1001",
+                brand: "A",
+                category: "A",
+                parentAsin: "",
+                memo: "",
+                skus: [
+                    {
+                        id: "sku-1",
+                        skuCode: "A-1001-M",
+                        colorName: "",
+                        size: "M",
+                        asin: "",
+                        tqCode: "",
+                        tqColorNo: "",
+                        tqSize: "M",
+                        memo: "",
+                        stock: { amazonOwn: null, amazonFba: null, bossOwn: 4, bossRfc: 0, freeStock: null, ecStock: null },
+                    },
+                ],
+            },
+        ];
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.get("[data-stock-field=freeStock]").text()).toBe("—");
+        expect(wrapper.get("[data-stock-field=ecStock]").text()).toBe("—");
+        expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
+        expect(wrapper.get("[data-stock-field=boss] .stock-total-value").text()).toBe("4");
+        expect(wrapper.text()).toContain("取込待ち・未取得");
+
+        await wrapper.get("[data-stock-condition=freeZero]").trigger("click");
+        expect(wrapper.find("[data-stock-field=freeStock]").exists()).toBe(false);
+    });
+
+    it("reruns a survey with another setting while at least one source file remains", async () => {
         const surveys = useSurveysStore();
         surveys.surveys[0].files = [
             { id: "1", type: "在庫商品レポート", fileName: "在庫商品レポート.txt", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
@@ -526,7 +597,7 @@ describe("survey import setting display", () => {
         ];
         const rerunImport = vi
             .spyOn(surveys, "rerunImport")
-            .mockResolvedValue({ id: "2", executedAt: "2026-09-16T01:00:00Z", createdAt: "2026-09-18T00:00:00Z", products: [], importSettingName: "別設定", files: [] });
+            .mockResolvedValue({ id: "1", executedAt: "2026-09-16T01:00:00Z", createdAt: "2026-09-18T00:00:00Z", products: [], importSettingName: "別設定", files: [] });
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
         const menuButton = wrapper.get('[data-testid="rerun-menu-button"]');
         expect(menuButton.attributes("aria-expanded")).toBe("false");
@@ -543,8 +614,11 @@ describe("survey import setting display", () => {
         await button.trigger("click");
         await flushPromises();
         expect(rerunImport).toHaveBeenCalledWith("1", "2");
-        expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "2" } });
+        expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "1" }, query: { group: "setting:2" } });
         expect(wrapper.find('[data-testid="rerun-setting-select"]').exists()).toBe(false);
+        surveys.surveys[0].files = [surveys.surveys[0].files[2]!];
+        await nextTick();
+        expect(menuButton.attributes("disabled")).toBeUndefined();
         surveys.surveys[0].files = [];
         await nextTick();
         expect(wrapper.text()).toContain("取込ファイルが削除されているため、再照合機能は利用できません。");

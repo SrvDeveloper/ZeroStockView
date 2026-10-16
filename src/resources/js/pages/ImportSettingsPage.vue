@@ -165,7 +165,7 @@ async function save() {
     if (saving.value) return;
     const name = settingName.value.trim();
     if (name === "") {
-        toast.push("設定名を入力してください。", "error");
+        toast.push("グループ名を入力してください。", "error");
         return;
     }
     if (workingCodes.value.length === 0) {
@@ -176,10 +176,10 @@ async function save() {
     try {
         if (isNew.value) await store.create(name, [...workingCodes.value]);
         else await store.update(workingSettingId.value as string, name, [...workingCodes.value]);
-        toast.push("取込設定を保存しました");
+        toast.push("品番グループを保存しました");
         await router.push({ name: "import-settings" });
     } catch (error) {
-        const message = (axios.isAxiosError<{ message?: string }>(error) && error.response?.data.message) || "取込設定の保存に失敗しました。時間をおいて再度お試しください。";
+        const message = (axios.isAxiosError<{ message?: string }>(error) && error.response?.data.message) || "品番グループの保存に失敗しました。時間をおいて再度お試しください。";
         toast.push(message, "error");
     } finally {
         saving.value = false;
@@ -193,12 +193,12 @@ async function save() {
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-                <h1 class="text-xl font-semibold text-slate-900">{{ isNew ? "取込設定を新規作成" : "取込設定を編集" }}</h1>
-                <p class="mt-1 text-sm text-slate-500">用途ごとに名前を付けて、取込対象の品番と並び順を設定します。</p>
+                <h1 class="text-xl font-semibold text-slate-900">{{ isNew ? "品番グループを新規作成" : "品番グループを編集" }}</h1>
+                <p class="mt-1 text-sm text-slate-500">用途ごとに名前を付けて、表示する品番と並び順を設定します。登録した品番はすべて取込対象になります。</p>
             </div>
             <div class="flex shrink-0 flex-col gap-2 sm:items-end">
                 <div class="flex flex-wrap gap-2">
-                    <BaseButton variant="primary" :disabled="!dirty" :loading="saving" @click="save">この設定を保存</BaseButton>
+                    <BaseButton variant="primary" :disabled="!dirty" :loading="saving" @click="save">このグループを保存</BaseButton>
                     <BaseButton variant="secondary" :disabled="!dirty || saving" @click="resetChanges">変更を取り消す</BaseButton>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -208,7 +208,7 @@ async function save() {
         </div>
 
         <BaseCard title="基本情報">
-            <BaseInput v-model="settingName" class="max-w-xl" label="設定名" placeholder="例: 売上TOP20" required :disabled="saving" />
+            <BaseInput v-model="settingName" class="max-w-xl" label="グループ名" placeholder="例: 売上TOP20" required :disabled="saving" />
         </BaseCard>
 
         <div class="grid items-start gap-6 lg:grid-cols-2">

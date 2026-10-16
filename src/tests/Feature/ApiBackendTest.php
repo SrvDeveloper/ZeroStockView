@@ -8,7 +8,10 @@ use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\InventoryTrendCsvExporter;
 use App\Services\SurveyAmazonInventorySyncService;
+use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
@@ -22,6 +25,9 @@ class ApiBackendTest extends TestCase
 
     private int $crossWalkerResponseStatus = 200;
 
+    /** @var array<int, array<string, mixed>> */
+    private array $crossWalkerItems = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -32,13 +38,15 @@ class ApiBackendTest extends TestCase
         ]);
 
         $item = $this->crossWalkerItem();
+        $this->crossWalkerItems = [$item];
         Http::fake(function (ClientRequest $request) use ($item) {
             if ($this->crossWalkerResponseStatus !== 200) {
                 return Http::response(['message' => 'CrossWalker error'], $this->crossWalkerResponseStatus);
             }
 
             if (str_ends_with(parse_url($request->url(), PHP_URL_PATH) ?: '', '/items/lookup')) {
-                return Http::response(['data' => [$item]]);
+                return Http::response(['data' => array_values(array_filter($this->crossWalkerItems,
+                    fn (array $candidate): bool => in_array($candidate['item_no'], $request['item_nos'] ?? [], true)))]);
             }
 
             return Http::response([
@@ -129,6 +137,95 @@ class ApiBackendTest extends TestCase
             ->assertJsonCount(2, 'settings');
     }
 
+    public function test_import_uses_the_union_of_all_product_groups_and_keeps_both_products_on_same_day(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $firstItem = $this->crossWalkerItem();
+        $secondItem = $this->crossWalkerItem();
+        $secondItem['item_no'] = 'B-2001';
+        $secondItem['skus'] = [[
+            'sku_code' => 'B-2001-01-M',
+            'child_asin' => 'B000000003',
+            'status' => 'active',
+            'tq_item_no' => 'B2001',
+            'tq_color_no' => '01',
+            'tq_size' => 'M',
+        ]];
+        $this->crossWalkerItems = [$firstItem, $secondItem];
+        $groupA = $this->postJson('/api/import-settings', ['name' => 'Aグループ', 'product_codes' => ['A-1001']])->assertCreated()->json('id');
+        $groupB = $this->postJson('/api/import-settings', ['name' => 'Bグループ', 'product_codes' => ['B-2001']])->assertCreated()->json('id');
+        $overlap = $this->postJson('/api/import-settings', ['name' => '共通', 'product_codes' => ['A-1001']])->assertCreated()->json('id');
+
+        $first = $this->post('/api/surveys', [
+            'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,5,1\n自社倉庫,B-2001-01-M,8,2\n自社倉庫,OUTSIDE,9,0\n")],
+        ])->assertCreated()->assertJsonCount(2, 'data.products');
+        $this->assertNull($first->json('data.importSettingName'));
+        $this->assertSame(['A-1001', 'B-2001'], collect($first->json('data.products'))->pluck('productCode')->all());
+        $this->assertSame(4, $first->json('data.products.0.skus.0.stock.bossOwn'));
+        $this->assertSame(6, $first->json('data.products.1.skus.0.stock.bossOwn'));
+        $this->assertSame(['setting:'.$groupA, 'setting:'.$overlap], collect($first->json('data.products.0.groups'))->pluck('key')->all());
+        $this->assertSame(['setting:'.$groupB], collect($first->json('data.products.1.groups'))->pluck('key')->all());
+
+        $second = $this->post('/api/surveys', [
+            'import_setting_id' => $groupB,
+            'files' => [UploadedFile::fake()->createWithContent('ec.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,3\nB2001,01,M,7\n")],
+        ])->assertOk()->assertJsonCount(2, 'data.products');
+        $this->assertSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertSame(4, $second->json('data.products.0.skus.0.stock.bossOwn'));
+        $this->assertSame(6, $second->json('data.products.1.skus.0.stock.bossOwn'));
+        $this->assertSame(3, $second->json('data.products.0.skus.0.stock.ecStock'));
+        $this->assertSame(7, $second->json('data.products.1.skus.0.stock.ecStock'));
+        $this->assertDatabaseCount('surveys', 1);
+        $this->assertDatabaseCount('survey_products', 2);
+        $this->assertDatabaseCount('survey_skus', 2);
+        $this->deleteJson('/api/import-settings/'.$groupB)->assertNoContent();
+        $this->getJson('/api/surveys/'.$second->json('data.id'))
+            ->assertOk()->assertJsonPath('data.products.1.productCode', 'B-2001')
+            ->assertJsonPath('data.products.1.groups.0.name', 'Bグループ');
+    }
+
+    public function test_import_can_refresh_more_than_fifty_distinct_products_across_groups(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $this->crossWalkerItems = collect(range(1, 51))->map(function (int $number): array {
+            $code = sprintf('P-%04d', $number);
+
+            return [
+                'item_no' => $code,
+                'brand' => 'ALPHA',
+                'category' => 'アウター',
+                'parent_asin' => '',
+                'status' => 'active',
+                'skus' => [[
+                    'sku_code' => $code.'-M',
+                    'child_asin' => '',
+                    'status' => 'active',
+                    'tq_item_no' => $code,
+                    'tq_color_no' => '01',
+                    'tq_size' => 'M',
+                ]],
+                'updated_at' => '2026-09-02T00:00:00.000000Z',
+            ];
+        })->all();
+        $codes = collect($this->crossWalkerItems)->pluck('item_no')->all();
+        $groupA = $this->postJson('/api/import-settings', ['name' => 'Aグループ', 'product_codes' => array_slice($codes, 0, 50)])->assertCreated()->json('id');
+        $this->postJson('/api/import-settings', ['name' => 'Bグループ', 'product_codes' => array_slice($codes, 50)])->assertCreated();
+
+        $this->post('/api/surveys', [
+            'import_setting_id' => $groupA,
+            'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n")],
+        ])->assertCreated()->assertJsonCount(51, 'data.products')
+            ->assertJsonPath('data.products.50.productCode', 'P-0051');
+        $this->assertDatabaseHas('survey_products', ['product_code' => 'P-0051', 'sort_order' => 51]);
+        $lookupRequests = Http::recorded(fn ($request): bool => str_ends_with(parse_url($request->url(), PHP_URL_PATH) ?: '', '/items/lookup'));
+        $this->assertCount(4, $lookupRequests);
+        foreach ($lookupRequests as [$request]) {
+            $this->assertLessThanOrEqual(50, count($request['item_nos']));
+        }
+    }
+
     public function test_crosswalker_items_are_searched_with_bearer_authentication_and_pagination(): void
     {
         $this->actingAs(User::factory()->create());
@@ -189,18 +286,18 @@ class ApiBackendTest extends TestCase
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
-            'boss' => UploadedFile::fake()->createWithContent(
+            'files' => [UploadedFile::fake()->createWithContent(
                 '倉庫毎の在庫数レポート.csv',
                 "倉庫,SKUコード,販売可能数,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,99,10,6\nRFC倉庫,A-1001-01-M,99,7,2\n",
             ),
-            'ec_stock' => UploadedFile::fake()->createWithContent(
-                'KEEP一覧表.csv',
-                "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,6\nA1001,01,M,1\n",
-            ),
-            'free_stock' => UploadedFile::fake()->createWithContent(
-                '在庫一覧照会表.csv',
-                "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,8\n",
-            ),
+                UploadedFile::fake()->createWithContent(
+                    'KEEP一覧表.csv',
+                    "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,6\nA1001,01,M,1\n",
+                ),
+                UploadedFile::fake()->createWithContent(
+                    '在庫一覧照会表.csv',
+                    "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,8\n",
+                )],
         ]);
 
         $response->assertCreated()
@@ -265,14 +362,15 @@ class ApiBackendTest extends TestCase
         $rerunSettingId = $this->postJson('/api/import-settings', $this->targetPayload('再照合設定'))->assertCreated()->json('id');
         $rerunResponse = $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId]);
         $rerunResponse
-            ->assertCreated()
+            ->assertOk()
             ->assertJsonPath('data.importSettingName', '再照合設定')
             ->assertJsonPath('data.executedAt', $sourceExecutedAt)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 99)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 99)
             ->assertJsonPath('data.amazonSource', 'sp_api')
             ->assertJsonCount(3, 'data.files');
-        $this->assertNotSame($sourceCreatedAt, $rerunResponse->json('data.createdAt'));
+        $this->assertSame($sourceCreatedAt, $rerunResponse->json('data.createdAt'));
+        $this->assertSame($response->json('data.id'), $rerunResponse->json('data.id'));
         $this->assertDatabaseHas('surveys', [
             'id' => $rerunResponse->json('data.id'),
             'amazon_inventory_import_id' => $newerAmazonImport->id,
@@ -280,13 +378,13 @@ class ApiBackendTest extends TestCase
         $this->getJson('/api/surveys')
             ->assertOk()
             ->assertJsonPath('data.0.id', $rerunResponse->json('data.id'));
-        $this->assertSame(2, SurveySku::query()->count());
+        $this->assertSame(1, SurveySku::query()->count());
         $this->deleteJson('/api/surveys/'.$response->json('data.id').'/files')->assertNoContent();
         $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId])->assertUnprocessable()->assertJsonPath('errors.files.0', '取込ファイルが削除されているため、再照合できません。');
         $this->deleteJson('/api/import-settings/'.$settingId)->assertNoContent();
         $this->getJson('/api/surveys/'.$response->json('data.id'))
             ->assertOk()
-            ->assertJsonPath('data.importSettingName', '売上TOP20');
+            ->assertJsonPath('data.importSettingName', '再照合設定');
     }
 
     public function test_three_file_survey_without_an_amazon_snapshot_keeps_amazon_stock_unknown(): void
@@ -315,18 +413,18 @@ class ApiBackendTest extends TestCase
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
-            'boss' => UploadedFile::fake()->createWithContent(
+            'files' => [UploadedFile::fake()->createWithContent(
                 '倉庫毎の在庫数レポート.csv',
                 "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n",
             ),
-            'ec_stock' => UploadedFile::fake()->createWithContent(
-                'KEEP一覧表.csv',
-                "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n",
-            ),
-            'free_stock' => UploadedFile::fake()->createWithContent(
-                '在庫一覧照会表.csv',
-                "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n",
-            ),
+                UploadedFile::fake()->createWithContent(
+                    'KEEP一覧表.csv',
+                    "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n",
+                ),
+                UploadedFile::fake()->createWithContent(
+                    '在庫一覧照会表.csv',
+                    "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n",
+                )],
         ]);
 
         $response->assertCreated()
@@ -365,13 +463,157 @@ class ApiBackendTest extends TestCase
             'basis_at' => $nextBasisAt,
         ]);
         $rerun = $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $settingId]);
-        $rerun->assertCreated()
+        $rerun->assertOk()
             ->assertJsonPath('data.executedAt', $response->json('data.executedAt'))
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null);
         $this->assertDatabaseHas('surveys', [
             'id' => $rerun->json('data.id'),
             'amazon_inventory_import_id' => null,
         ]);
+    }
+
+    public function test_each_file_type_can_be_imported_alone_from_its_contents_and_rerun(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $cases = [
+            ['report-1.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,6,2\n", '倉庫毎の在庫数レポート', 'bossOwn', 4],
+            ['report-2.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,7\n", 'KEEP一覧表', 'ecStock', 7],
+            ['report-3.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,8\n", '在庫一覧照会表', 'freeStock', 8],
+        ];
+
+        foreach ($cases as [$name, $contents, $type, $field, $quantity]) {
+            $response = $this->post('/api/surveys', [
+                'import_setting_id' => $settingId,
+                'files' => [UploadedFile::fake()->createWithContent($name, $contents)],
+            ])->assertStatus($name === 'report-1.csv' ? 201 : 200)->assertJsonCount($name === 'report-1.csv' ? 1 : ($name === 'report-2.csv' ? 2 : 3), 'data.files')
+                ->assertJsonFragment(['type' => $type])
+                ->assertJsonPath('data.products.0.skus.0.stock.'.$field, $quantity)
+                ->assertJsonPath('data.products.0.skus.0.stock.bossRfc', 0);
+            if ($type === '倉庫毎の在庫数レポート') {
+                $response->assertJsonPath('data.products.0.skus.0.stock.ecStock', null)
+                    ->assertJsonPath('data.products.0.skus.0.stock.freeStock', null);
+            }
+            $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $settingId])
+                ->assertOk()->assertJsonCount($name === 'report-1.csv' ? 1 : ($name === 'report-2.csv' ? 2 : 3), 'data.files')
+                ->assertJsonPath('data.products.0.skus.0.stock.'.$field, $quantity);
+        }
+        $this->assertDatabaseCount('surveys', 1);
+        $this->assertDatabaseCount('survey_files', 3);
+    }
+
+    public function test_same_day_import_replaces_its_file_and_leaves_other_sources_pending(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $this->travelTo(Carbon::parse('2026-10-16 10:00:00', 'Asia/Tokyo'));
+        $first = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('initial.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,6,2\n")],
+        ])->assertCreated()
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 4)
+            ->assertJsonPath('data.products.0.skus.0.stock.bossRfc', 0)
+            ->assertJsonPath('data.products.0.skus.0.stock.freeStock', null)
+            ->assertJsonPath('data.products.0.skus.0.stock.ecStock', null)
+            ->assertJsonPath('data.products.0.skus.0.stock.mallTotal', null);
+        $surveyId = $first->json('data.id');
+        $oldPath = Survey::query()->findOrFail($surveyId)->files()->firstOrFail()->stored_path;
+        $date = '2026-10-16';
+        $this->getJson("/api/inventory-trends?product_code=A-1001&from={$date}&to={$date}&scope=free")
+            ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', null);
+        $csvRows = app(InventoryTrendCsvExporter::class)->rows(
+            'A-1001', CarbonImmutable::parse($date), CarbonImmutable::parse($date),
+        );
+        $this->assertNull($csvRows[0]['freeStock']);
+        $this->assertNull($csvRows[0]['ecStock']);
+
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('invalid.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,1,2\n")],
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('surveys', 1);
+        $this->assertDatabaseHas('survey_files', ['survey_id' => $surveyId, 'original_name' => 'initial.csv']);
+        Storage::disk('local')->assertExists($oldPath);
+        $this->putJson('/api/surveys/'.$surveyId.'/products/'.$first->json('data.products.0.id').'/memo', ['memo' => '商品メモ'])->assertOk();
+        $this->putJson('/api/surveys/'.$surveyId.'/skus/'.$first->json('data.products.0.skus.0.id').'/memo', ['memo' => 'SKUメモ'])->assertOk();
+
+        $this->travel(1)->hour();
+        $second = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('replacement.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,9,2\n")],
+        ])->assertOk()
+            ->assertJsonCount(1, 'data.files')
+            ->assertJsonPath('data.files.0.fileName', 'replacement.csv')
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 7)
+            ->assertJsonPath('data.products.0.skus.0.stock.freeStock', null)
+            ->assertJsonPath('data.products.0.memo', '商品メモ')
+            ->assertJsonPath('data.products.0.skus.0.memo', 'SKUメモ');
+        $this->assertSame($surveyId, $second->json('data.id'));
+        $this->assertSame($first->json('data.executedAt'), $second->json('data.executedAt'));
+        $this->assertSame($first->json('data.createdAt'), $second->json('data.createdAt'));
+        $this->assertNotSame($first->json('data.updatedAt'), $second->json('data.updatedAt'));
+        $this->assertDatabaseCount('surveys', 1);
+        $this->assertDatabaseCount('survey_files', 1);
+        $this->assertDatabaseHas('surveys', ['id' => $surveyId, 'survey_date' => $date]);
+        Storage::disk('local')->assertMissing($oldPath);
+
+        $this->travel(1)->day();
+        $third = $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('next-day.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,3\n")],
+        ])->assertCreated()
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', null)
+            ->assertJsonPath('data.products.0.skus.0.stock.ecStock', 3);
+        $this->assertNotSame($surveyId, $third->json('data.id'));
+        $this->assertDatabaseCount('surveys', 2);
+    }
+
+    public function test_file_contents_determine_type_and_reject_unknown_or_duplicate_types(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $boss = "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,6,2\n";
+
+        $this->post('/api/surveys', ['import_setting_id' => $settingId])
+            ->assertUnprocessable()->assertJsonValidationErrors('files');
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'boss' => UploadedFile::fake()->createWithContent('old.csv', $boss),
+        ])->assertUnprocessable()->assertJsonValidationErrors(['boss', 'files']);
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('unknown.csv', "ASIN,数量\nB000000001,5\n")],
+        ])->assertUnprocessable()->assertJsonPath('errors.files.0', 'unknown.csvの種類を内容から判定できません。ヘッダーを確認してください。');
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [
+                UploadedFile::fake()->createWithContent('first.csv', $boss),
+                UploadedFile::fake()->createWithContent('second.csv', $boss),
+            ],
+        ])->assertUnprocessable()->assertJsonPath('errors.files.0', '倉庫毎の在庫数レポートのファイルが複数あります。');
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('ambiguous.csv', "品番,カラーNo,サイズ,キープ残数,可能在庫数\nA1001,01,M,2,3\n")],
+        ])->assertUnprocessable()->assertJsonValidationErrors('files');
+        $this->assertDatabaseCount('surveys', 0);
+    }
+
+    public function test_shift_jis_headers_are_classified_by_contents(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $contents = mb_convert_encoding("品番,カラーNo,サイズ,キープ残数\nA1001,01,M,9\n", 'SJIS-win', 'UTF-8');
+
+        $this->post('/api/surveys', [
+            'import_setting_id' => $settingId,
+            'files' => [UploadedFile::fake()->createWithContent('arbitrary.csv', $contents)],
+        ])->assertCreated()
+            ->assertJsonPath('data.files.0.type', 'KEEP一覧表')
+            ->assertJsonPath('data.products.0.skus.0.stock.ecStock', 9);
     }
 
     public function test_survey_checks_again_after_saving_when_amazon_import_finishes_during_creation(): void
@@ -412,9 +654,11 @@ class ApiBackendTest extends TestCase
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
-            'boss' => UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n"),
-            'ec_stock' => UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n"),
-            'free_stock' => UploadedFile::fake()->createWithContent('在庫一覧照会表.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n"),
+            'files' => [
+                UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n"),
+                UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n"),
+                UploadedFile::fake()->createWithContent('在庫一覧照会表.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n"),
+            ],
         ]);
 
         $response->assertCreated()
@@ -452,9 +696,11 @@ class ApiBackendTest extends TestCase
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
-            'boss' => UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n"),
-            'ec_stock' => UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n"),
-            'free_stock' => UploadedFile::fake()->createWithContent('在庫一覧照会表.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n"),
+            'files' => [
+                UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,4,1\n"),
+                UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,2\n"),
+                UploadedFile::fake()->createWithContent('在庫一覧照会表.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,3\n"),
+            ],
         ]);
 
         $response->assertCreated()->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null);

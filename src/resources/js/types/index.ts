@@ -28,10 +28,10 @@ export interface StockQuantities {
     amazonOwn: number | null;
     amazonFba: number | null;
     amazonTotal?: number | null;
-    bossOwn: number;
-    bossRfc: number;
-    freeStock: number;
-    ecStock: number;
+    bossOwn: number | null;
+    bossRfc: number | null;
+    freeStock: number | null;
+    ecStock: number | null;
     mallTotal?: number | null;
     grandTotal?: number | null;
 }
@@ -65,7 +65,13 @@ export interface SurveyProductResult {
     category: string;
     parentAsin: string;
     memo: string;
+    groups?: { key: string; name: string; sortOrder: number }[];
     skus: SurveySkuResult[];
+}
+
+export interface SurveyGroup {
+    key: string;
+    name: string;
 }
 
 export type ImportFileType = "在庫商品レポート" | "FBA在庫管理レポート" | "倉庫毎の在庫数レポート" | "KEEP一覧表" | "在庫一覧照会表";
@@ -89,8 +95,10 @@ export interface Survey {
     id: string;
     executedAt: string;
     createdAt?: string;
+    updatedAt?: string;
     products: SurveyProductResult[];
     importSettingName: string | null;
+    groups?: SurveyGroup[];
     includesAmazonInventory?: boolean;
     amazonSource?: "survey" | "sp_api" | null;
     amazonInventoryStatus?: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";

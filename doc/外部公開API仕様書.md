@@ -2,7 +2,7 @@
 
 ## 1. 概要
 
-本APIは、在庫調査で取り込んだ日次のSKU別在庫数をJSON形式で取得する外部連携用APIです。
+本APIは、在庫調査またはAmazon在庫取込の日次SKU別在庫数をJSON形式で取得する外部連携用APIです。
 
 | 項目 | 内容 |
 | --- | --- |
@@ -40,7 +40,7 @@ APIキーは機密情報として管理し、URLのクエリパラメータに�
 GET /api/v1/inventory/daily
 ```
 
-指定期間内の在庫を、1日・1品番・1 SKUごとに取得します。
+指定期間内の在庫を、1日・1品番・1 SKUごとに取得します。調査のない品番・日付に成功したAmazon取込履歴があれば、Amazon数量だけの行も返します。
 
 ### 3.2 クエリパラメータ
 
@@ -48,7 +48,7 @@ GET /api/v1/inventory/daily
 | --- | --- | --- | --- | --- |
 | `from` | string | はい | `YYYY-MM-DD` | 取得開始日（指定日を含む） |
 | `to` | string | はい | `YYYY-MM-DD` | 取得終了日（指定日を含む）。`from` 以降であること |
-| `product_code` | string | いいえ | 最大100文字 | 取得対象の品番。省略時は全品番を対象とする。調査履歴に存在する品番のみ指定可 |
+| `product_code` | string | いいえ | 最大100文字 | 取得対象の品番。省略時は全品番を対象とする。調査履歴または成功したAmazon取込履歴に存在する品番を指定可 |
 
 `from` から `to` までの期間は、両端の日を含め365日以内で指定します。
 
@@ -96,18 +96,18 @@ HTTPステータス: `200 OK`
 
 | 名前 | 型 | 説明 |
 | --- | --- | --- |
-| `date` | string | 在庫調査日。`YYYY-MM-DD` 形式 |
+| `date` | string | 在庫調査日またはAmazon取込日。`YYYY-MM-DD` 形式 |
 | `productCode` | string | 品番 |
-| `brand` | string | ブランド名 |
-| `category` | string | カテゴリ名 |
+| `brand` | string \| null | ブランド名。Amazon取込だけの行で商品マスタがない場合は `null` |
+| `category` | string \| null | カテゴリ名。Amazon取込だけの行で商品マスタがない場合は `null` |
 | `sku` | string | SKUコード |
-| `size` | string | サイズ |
-| `amazonOwn` | integer \| null | 調査に保存されたAmazon自社出荷在庫数。取込待ち・未取得SKUは `null`。確定した0在庫は `0` |
-| `amazonFba` | integer \| null | 調査に保存されたAmazon FBA在庫数。取込待ち・未取得SKUは `null`。確定した0在庫は `0` |
-| `bossOwn` | integer | BOSS自社倉庫在庫数（実在庫数 - 引当済数） |
-| `bossRfc` | integer | BOSS RFC倉庫在庫数（実在庫数 - 引当済数） |
-| `freeStock` | integer | フリー在庫数 |
-| `ecStock` | integer | ECストック数 |
+| `size` | string \| null | サイズ。Amazon取込だけの行でSKUマスタがない場合は `null` |
+| `amazonOwn` | integer \| null | 調査の保存値またはAmazon取込履歴の自社出荷在庫数。取込待ち・未取得SKUは `null`。確定した0在庫は `0` |
+| `amazonFba` | integer \| null | 調査の保存値またはAmazon取込履歴のFBA在庫数。取込待ち・未取得SKUは `null`。確定した0在庫は `0` |
+| `bossOwn` | integer \| null | BOSS自社倉庫在庫数（実在庫数 - 引当済数）。Amazon取込だけの行は `null` |
+| `bossRfc` | integer \| null | BOSS RFC倉庫在庫数（実在庫数 - 引当済数）。Amazon取込だけの行は `null` |
+| `freeStock` | integer \| null | フリー在庫数。Amazon取込だけの行は `null` |
+| `ecStock` | integer \| null | ECストック数。Amazon取込だけの行は `null` |
 
 #### `meta` の項目
 
@@ -135,8 +135,10 @@ HTTPステータス: `200 OK`
 ### 3.5 データの選択・並び順
 
 - 同じ日に同じ品番の調査が複数ある場合、最も新しい調査結果のみを返します。
-- 調査がない日の補間は行われず、その日のデータは返されません。
-- `data` は日付の昇順、品番の昇順、SKUの登録順で並びます。
+- 同じ日に同じ品番の調査があれば、Amazon取込履歴があっても調査SKUの保存値を返します。調査がなく、成功したAmazon取込履歴がある品番は、その日の最新成功分のSKU別Amazon数量を返します。失敗した取込は使いません。最新成功分に含まれない品番に、その日の古い取込値を流用しません。
+- Amazon取込だけの行では、`bossOwn`・`bossRfc`・`freeStock`・`ecStock` は `null` です。ブランド・カテゴリ・サイズは現在の商品・SKUマスタから取得し、マスタがなければ `null` です。日別CSVではこれらの `null` を空欄にします。
+- 調査も成功したAmazon取込もない日の補間は行わず、行を返しません。
+- `data` は日付の昇順、品番の昇順、SKUの登録順で並びます。Amazon取込だけの行でSKUマスタがない場合はSKUコード順です。
 - BOSS・ECストック・フリー在庫は調査時点のファイル取込値です。Amazon数量は旧5ファイル調査、新しい3ファイル調査とも調査SKUに保存された値を返します。新しい3ファイル調査では、日本時間の調査日と同日に成功した最新のSP-API結果をSKUコードで照合します。調査が取得より先ならAmazonは `null`（取込待ち）となり、取得成功後に同日の調査SKUが更新されます。同日に複数回成功した場合は最新の成功分に更新します。ASINがない対象外SKUのAmazon数量も `null` のままです。取得済みの0在庫は数値の `0` で返します。
 - 返却後に行われた取込みや再照合により、同一条件の取得結果が変わる場合があります。
 

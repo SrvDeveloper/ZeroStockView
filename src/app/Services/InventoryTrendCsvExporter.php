@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\AmazonInventoryImport;
+use App\Models\Product;
 use App\Models\Survey;
 use Carbon\CarbonImmutable;
 use RuntimeException;
@@ -69,29 +71,81 @@ class InventoryTrendCsvExporter
                 $dailyProducts[$date][$product->product_code] = $product;
             }
         }
-        ksort($dailyProducts);
-        foreach ($dailyProducts as &$products) {
-            ksort($products);
+
+        $imports = AmazonInventoryImport::query()
+            ->where('status', 'succeeded')
+            ->whereBetween('snapshot_date', [$from->toDateString(), $to->toDateString()])
+            ->whereHas('snapshots')
+            ->with(['snapshots' => function ($query) use ($productCode): void {
+                if ($productCode !== null) {
+                    $query->where('product_code', $productCode);
+                }
+            }])
+            ->orderBy('basis_at')->orderBy('completed_at')->orderBy('id')->get()
+            ->keyBy(fn (AmazonInventoryImport $import): string => $import->snapshot_date->toDateString());
+        $importProducts = [];
+        foreach ($imports as $date => $import) {
+            foreach ($import->snapshots as $snapshot) {
+                if (! isset($dailyProducts[$date][$snapshot->product_code])) {
+                    $importProducts[$date][$snapshot->product_code][] = $snapshot;
+                }
+            }
         }
-        unset($products);
+        $productMetadata = Product::query()->whereIn('product_code', collect($importProducts)
+            ->flatMap(fn (array $products): array => array_keys($products))->unique())
+            ->with('skus')->get()->keyBy('product_code');
 
         $rows = [];
-        foreach ($dailyProducts as $date => $products) {
-            foreach ($products as $product) {
-                foreach ($product->skus as $sku) {
+        $dates = array_unique(array_merge(array_keys($dailyProducts), array_keys($importProducts)));
+        sort($dates);
+        foreach ($dates as $date) {
+            $products = array_unique(array_merge(array_keys($dailyProducts[$date] ?? []), array_keys($importProducts[$date] ?? [])));
+            sort($products);
+            foreach ($products as $code) {
+                if (isset($dailyProducts[$date][$code])) {
+                    $product = $dailyProducts[$date][$code];
+                    foreach ($product->skus as $sku) {
+                        $rows[] = [
+                            'date' => $date,
+                            'productCode' => $product->product_code,
+                            'brand' => $product->brand,
+                            'category' => $product->category,
+                            'sku' => $sku->sku_code,
+                            'size' => $sku->tq_size,
+                            'amazonOwn' => $sku->amazon_own_stock,
+                            'amazonFba' => $sku->amazon_fba_stock,
+                            'bossOwn' => $sku->boss_own_stock,
+                            'bossRfc' => $sku->boss_rfc_stock,
+                            'freeStock' => $sku->free_stock,
+                            'ecStock' => $sku->ec_stock,
+                        ];
+                    }
+
+                    continue;
+                }
+
+                $product = $productMetadata->get($code);
+                $skus = $product?->skus->keyBy('sku_code');
+                $snapshots = collect($importProducts[$date][$code])->sort(function ($left, $right) use ($skus): int {
+                    $leftOrder = $skus?->get($left->sku_code)?->sort_order ?? PHP_INT_MAX;
+                    $rightOrder = $skus?->get($right->sku_code)?->sort_order ?? PHP_INT_MAX;
+
+                    return ($leftOrder <=> $rightOrder) ?: strcmp($left->sku_code, $right->sku_code);
+                });
+                foreach ($snapshots as $snapshot) {
                     $rows[] = [
                         'date' => $date,
-                        'productCode' => $product->product_code,
-                        'brand' => $product->brand,
-                        'category' => $product->category,
-                        'sku' => $sku->sku_code,
-                        'size' => $sku->tq_size,
-                        'amazonOwn' => $sku->amazon_own_stock,
-                        'amazonFba' => $sku->amazon_fba_stock,
-                        'bossOwn' => $sku->boss_own_stock,
-                        'bossRfc' => $sku->boss_rfc_stock,
-                        'freeStock' => $sku->free_stock,
-                        'ecStock' => $sku->ec_stock,
+                        'productCode' => $code,
+                        'brand' => $product?->brand,
+                        'category' => $product?->category,
+                        'sku' => $snapshot->sku_code,
+                        'size' => $skus?->get($snapshot->sku_code)?->tq_size,
+                        'amazonOwn' => $snapshot->amazon_own_stock,
+                        'amazonFba' => $snapshot->amazon_fba_stock,
+                        'bossOwn' => null,
+                        'bossRfc' => null,
+                        'freeStock' => null,
+                        'ecStock' => null,
                     ];
                 }
             }

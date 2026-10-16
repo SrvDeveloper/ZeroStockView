@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['executed_at', 'import_setting_name', 'includes_amazon_inventory', 'amazon_source', 'amazon_inventory_import_id'])]
+#[Fillable(['executed_at', 'survey_date', 'import_setting_name', 'includes_amazon_inventory', 'amazon_source', 'amazon_inventory_import_id'])]
 class Survey extends Model
 {
     /** @use HasFactory<SurveyFactory> */

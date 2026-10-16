@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Survey;
+use App\Models\SurveyProduct;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,7 +23,10 @@ class SurveyResource extends JsonResource
             'id' => (string) $this->getKey(),
             'executedAt' => $this->executed_at->toISOString(),
             'createdAt' => $this->created_at->toISOString(),
+            'updatedAt' => $this->updated_at->toISOString(),
             'importSettingName' => $this->import_setting_name,
+            'groups' => $this->products->flatMap(fn (SurveyProduct $product): array => $this->memberships($product))
+                ->unique('key')->map(fn (array $group): array => ['key' => $group['key'], 'name' => $group['name']])->values(),
             'includesAmazonInventory' => $hasSavedAmazonInventory,
             'amazonSource' => $hasSavedAmazonInventory ? 'survey' : ($this->amazon_source === Survey::AMAZON_SOURCE_SP_API ? 'sp_api' : null),
             'amazonInventoryStatus' => $amazonStatus,
@@ -36,11 +40,15 @@ class SurveyResource extends JsonResource
                 'category' => $product->category,
                 'parentAsin' => $product->parent_asin ?? '',
                 'memo' => $product->memo ?? '',
+                'groups' => $this->memberships($product),
                 'skus' => $product->skus->map(function ($sku): array {
                     $amazonTotal = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
                         ? null
                         : $sku->amazon_own_stock + $sku->amazon_fba_stock;
                     $amazonContribution = $amazonTotal ?? ($this->amazon_source === Survey::AMAZON_SOURCE_SP_API && ! $sku->hasAmazonAsin() ? 0 : null);
+                    $bossTotal = $sku->boss_own_stock === null || $sku->boss_rfc_stock === null
+                        ? null : $sku->boss_own_stock + $sku->boss_rfc_stock;
+                    $mallTotal = $amazonContribution === null || $bossTotal === null ? null : $amazonContribution + $bossTotal;
 
                     return [
                         'id' => (string) $sku->getKey(),
@@ -59,8 +67,9 @@ class SurveyResource extends JsonResource
                             'bossRfc' => $sku->boss_rfc_stock,
                             'freeStock' => $sku->free_stock,
                             'ecStock' => $sku->ec_stock,
-                            'mallTotal' => $amazonContribution === null ? null : $amazonContribution + $sku->boss_own_stock + $sku->boss_rfc_stock,
-                            'grandTotal' => $amazonContribution === null ? null : $amazonContribution + $sku->boss_own_stock + $sku->boss_rfc_stock + $sku->free_stock + $sku->ec_stock,
+                            'mallTotal' => $mallTotal,
+                            'grandTotal' => $mallTotal === null || $sku->free_stock === null || $sku->ec_stock === null
+                                ? null : $mallTotal + $sku->free_stock + $sku->ec_stock,
                         ],
                         'memo' => $sku->memo ?? '',
                     ];
@@ -74,5 +83,19 @@ class SurveyResource extends JsonResource
                 'sizeKb' => (int) ceil($file->size_bytes / 1024),
             ])->values(),
         ];
+    }
+
+    /** @return array<int, array{key: string, name: string, sortOrder: int}> */
+    private function memberships(SurveyProduct $product): array
+    {
+        if ($product->group_memberships !== null) {
+            return $product->group_memberships;
+        }
+
+        return $this->import_setting_name === null ? [] : [[
+            'key' => 'legacy:'.$this->import_setting_name,
+            'name' => $this->import_setting_name,
+            'sortOrder' => $product->sort_order,
+        ]];
     }
 }

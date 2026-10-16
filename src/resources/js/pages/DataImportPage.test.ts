@@ -2,7 +2,6 @@ import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AmazonInventoryImport } from "@/api/amazonInventoryImports";
-import FileDropzone from "@/components/ui/FileDropzone.vue";
 import DataImportPage from "@/pages/DataImportPage.vue";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
@@ -55,7 +54,7 @@ async function selectFolder(wrapper: VueWrapper, selectedFiles: File[]) {
 }
 
 function validImportFiles(): File[] {
-    return [new File([""], "KEEP一覧表.csv"), new File([""], "在庫一覧照会表.csv"), new File([""], "倉庫毎の在庫数レポート.csv")];
+    return [new File([""], "stock-a.csv"), new File([""], "stock-b.csv"), new File([""], "stock-c.csv")];
 }
 
 function amazonImport(status: AmazonInventoryImport["status"]): AmazonInventoryImport {
@@ -162,29 +161,29 @@ describe("DataImportPage", () => {
         wrapper.unmount();
     });
 
-    it("places the settings button next to the selector without the old target summary", async () => {
+    it("shows the group edit action without an import result group selector", async () => {
         const wrapper = mountPage();
 
-        expect(wrapper.text()).toContain("利用する取込設定");
-        expect(wrapper.text()).toContain("設定を変更");
-        expect(wrapper.text()).not.toContain("の取込対象");
+        expect(wrapper.text()).not.toContain("取込後に表示する品番グループ");
+        expect(wrapper.find("select").exists()).toBe(false);
+        expect(wrapper.text()).toContain("グループを編集");
 
         await wrapper.get('[data-testid="settings-change-button"]').trigger("click");
 
         expect(push).toHaveBeenCalledWith({ name: "import-settings" });
     });
 
-    it("assigns the three import files and ignores old Amazon files", async () => {
+    it("accepts arbitrary file names from a folder without type-specific upload slots", async () => {
         const wrapper = mountPage();
-        const selectedFiles = [...validImportFiles(), new File([""], "在庫商品レポート.txt"), new File([""], "FBA在庫管理レポート.csv")];
+        const selectedFiles = validImportFiles();
 
         await selectFolder(wrapper, selectedFiles);
 
-        const selectedNames = wrapper.findAllComponents(FileDropzone).map((dropzone) => (dropzone.props("modelValue") as File | null)?.name);
-        expect(selectedNames).toEqual(["倉庫毎の在庫数レポート.csv", "KEEP一覧表.csv", "在庫一覧照会表.csv"]);
-        expect(wrapper.text()).toContain("3 / 3");
-        expect(wrapper.findAllComponents(FileDropzone)).toHaveLength(3);
-        expect(wrapper.text()).not.toContain("フォルダを確認してください");
+        expect(wrapper.get('[data-testid="selected-files"]').text()).toContain("stock-a.csv");
+        expect(wrapper.get('[data-testid="selected-files"]').text()).toContain("stock-c.csv");
+        expect(wrapper.text()).toContain("添付ファイル: 3件");
+        expect(wrapper.text()).not.toContain("ファイルを確認してください");
+        expect(wrapper.text()).not.toContain("種類別");
     });
 
     it("assigns all import files dropped together", async () => {
@@ -196,50 +195,58 @@ describe("DataImportPage", () => {
 
         await dropzone.trigger("drop", { dataTransfer: { files: validImportFiles() } });
 
-        expect(wrapper.text()).toContain("3 / 3");
+        expect(wrapper.text()).toContain("添付ファイル: 3件");
         expect(dropzone.classes()).not.toContain("border-primary-500");
     });
 
-    it("runs the import with the setting selected by the user", async () => {
+    it("runs the import without a selected group and opens all results", async () => {
         const wrapper = mountPage();
         const settings = useImportSettingsStore();
+        settings.selectedSettingId = null;
         const runImport = vi.spyOn(useSurveysStore(), "runImport").mockResolvedValue({
             id: "10",
             executedAt: "2026-09-16T00:00:00Z",
             products: [],
-            importSettingName: "サングラス",
+            importSettingName: null,
             files: [],
         });
 
-        await wrapper.get("select").setValue("2");
         await selectFolder(wrapper, validImportFiles());
         const runButton = wrapper.findAll("button").at(-1)!;
+        expect(runButton.attributes("disabled")).toBeUndefined();
         await runButton.trigger("click");
         await flushPromises();
 
-        expect(settings.selectedSettingId).toBe("2");
-        expect(wrapper.text()).toContain("サングラス");
         expect(runImport).toHaveBeenCalledTimes(1);
         const formData = runImport.mock.calls[0]![0];
-        expect(formData.get("import_setting_id")).toBe("2");
-        expect(formData.get("boss")).toBeInstanceOf(File);
-        expect(formData.get("ec_stock")).toBeInstanceOf(File);
-        expect(formData.get("free_stock")).toBeInstanceOf(File);
+        expect(formData.has("import_setting_id")).toBe(false);
+        expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "10" } });
+        expect(formData.get("files[0]")).toBeInstanceOf(File);
+        expect(formData.get("files[1]")).toBeInstanceOf(File);
+        expect(formData.get("files[2]")).toBeInstanceOf(File);
+        expect(formData.has("boss")).toBe(false);
         expect(formData.has("amazon_own")).toBe(false);
         expect(formData.has("amazon_fba")).toBe(false);
     });
 
-    it("reports missing and duplicate files without retaining invalid selections", async () => {
+    it("can run with one file and lets the user remove it", async () => {
         const wrapper = mountPage();
-        const selectedFiles = [new File([""], "在庫商品レポート.txt"), new File([""], "KEEP一覧表.csv"), new File([""], "KEEP一覧表.csv"), new File([""], "在庫一覧照会表.csv")];
+        await selectFolder(wrapper, [new File([""], "renamed.csv")]);
 
-        await selectFolder(wrapper, selectedFiles);
+        expect(wrapper.text()).toContain("添付ファイル: 1件");
+        expect(wrapper.findAll("button").at(-1)!.attributes("disabled")).toBeUndefined();
+        await wrapper.get('[aria-label="renamed.csvを外す"]').trigger("click");
+        expect(wrapper.text()).toContain("添付ファイル: 0件");
+        expect(wrapper.findAll("button").at(-1)!.attributes("disabled")).toBeDefined();
+    });
 
-        expect(wrapper.text()).toContain("見つからないファイル: 倉庫毎の在庫数レポート.csv");
-        expect(wrapper.text()).toContain("同名ファイルが複数あります: KEEP一覧表.csv");
-        const dropzones = wrapper.findAllComponents(FileDropzone);
-        expect(dropzones[0]!.props("modelValue")).toBeNull();
-        expect(dropzones[1]!.props("modelValue")).toBeNull();
-        expect(wrapper.text()).toContain("1 / 3");
+    it("rejects more than three selected files without replacing the current selection", async () => {
+        const wrapper = mountPage();
+        await selectFolder(wrapper, [new File([""], "first.csv")]);
+        await selectFolder(wrapper, validImportFiles());
+
+        expect(wrapper.text()).toContain("ファイルは3件まで添付できます");
+        expect(wrapper.text()).toContain("添付ファイル: 1件");
+        expect(wrapper.get('[data-testid="selected-files"]').text()).toContain("first.csv");
     });
 });

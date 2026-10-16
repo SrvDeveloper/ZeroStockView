@@ -16,6 +16,25 @@ class SurveyPresentationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_empty_sku_selection_does_not_export_other_groups(): void
+    {
+        $survey = Survey::factory()->create();
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'OTHER-GROUP']);
+        $this->sku($product, 'SKU-MATCHED', 1, 2);
+        $path = app(SurveyExcelExporter::class)->export($survey, []);
+        $zip = new ZipArchive;
+
+        try {
+            $this->assertTrue($zip->open($path));
+            $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+            $this->assertStringNotContainsString('OTHER-GROUP', $sheet);
+            $this->assertStringNotContainsString('<row r="2">', $sheet);
+        } finally {
+            $zip->close();
+            unlink($path);
+        }
+    }
+
     public function test_result_history_and_excel_use_saved_values_for_partially_imported_survey(): void
     {
         $this->actingAs(User::factory()->create());
