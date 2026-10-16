@@ -75,3 +75,5 @@ npx vitest run resources/js/components/survey resources/js/pages/SurveyHistoryPa
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** カレンダーの計算を `utils/surveyCalendar.ts`（`buildCalendar`、`dailySurveys`、`previousDailySurvey` など）、表示を `components/survey/SurveyCalendar.vue` に分けた。日付は既存の履歴の絞込と同じくブラウザの現地時刻で判定する（運用は日本時間の端末を前提）。「前の調査日より増えた日」は月をまたいでも直前の調査日と比べる。表示の切り替え（カレンダー／リスト）はタイトル行の右に置いた（リスト表示でも切り替えられるようにするため）。**チケットとの違い:** 詳細パネルの「Excel出力」は、出力処理が調査結果画面にしかなく、重複を避けるため今回は置いていない（「結果を開く」から出力できる）。既存の履歴テストはリスト表示に切り替えてから確かめる形にした。
