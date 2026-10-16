@@ -215,7 +215,7 @@ async function runImport() {
                                 <button
                                     type="button"
                                     :aria-label="`${file.name}を外す`"
-                                    class="shrink-0 rounded-chip p-0.5 text-muted hover:bg-tint hover:text-ink"
+                                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded-chip text-muted hover:bg-tint hover:text-ink"
                                     :disabled="running"
                                     @click="removeFile(index)"
                                 >

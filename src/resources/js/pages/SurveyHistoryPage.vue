@@ -211,9 +211,13 @@ function openResult(id: string) {
         <div v-else-if="view === 'calendar'" class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
             <BaseCard :padded="false">
                 <div class="flex flex-wrap items-center gap-1.5 border-b border-line-2 px-3.5 py-2.5">
-                    <button type="button" class="rounded-chip p-1 text-ink-2 hover:bg-tint" aria-label="前の月" @click="moveMonth(-1)"><AppIcon name="chevron_left" :size="18" /></button>
+                    <button type="button" class="flex h-7 w-7 items-center justify-center rounded-chip text-ink-2 hover:bg-tint" aria-label="前の月" @click="moveMonth(-1)"
+                        ><AppIcon name="chevron_left" :size="18"
+                    /></button>
                     <b class="min-w-24 text-center text-[15px] font-semibold" data-calendar-month>{{ monthLabel }}</b>
-                    <button type="button" class="rounded-chip p-1 text-ink-2 hover:bg-tint" aria-label="次の月" @click="moveMonth(1)"><AppIcon name="chevron_right" :size="18" /></button>
+                    <button type="button" class="flex h-7 w-7 items-center justify-center rounded-chip text-ink-2 hover:bg-tint" aria-label="次の月" @click="moveMonth(1)"
+                        ><AppIcon name="chevron_right" :size="18"
+                    /></button>
                     <span class="ml-2.5 text-[11.5px] text-muted"
                         >調査 <b class="font-num text-[17px] font-semibold text-ink">{{ surveyDayCount }}</b> 日 ／ 経過 {{ elapsedDayCount }} 日</span
                     >

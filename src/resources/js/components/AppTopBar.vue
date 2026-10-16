@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
     <header class="sticky top-0 z-30 flex h-11 items-center gap-3 border-b border-line bg-white/70 px-4 font-mono text-[11px] text-muted backdrop-blur-md sm:px-7">
         <button
             type="button"
-            class="-ml-1 rounded-chip p-1 text-ink-2 hover:bg-tint lg:hidden"
+            class="-ml-1 flex h-7 w-7 items-center justify-center rounded-chip text-ink-2 hover:bg-tint lg:hidden"
             aria-label="メニューを開く"
             aria-controls="app-sidebar"
             :aria-expanded="menuOpen"
