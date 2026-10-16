@@ -50,31 +50,40 @@ async function submit() {
 </script>
 
 <template>
-    <div class="mx-auto flex max-w-md flex-col gap-6">
+    <div class="flex flex-col gap-4">
         <div>
-            <h1 class="text-xl font-extrabold tracking-[0.04em] text-slate-900">パスワード変更</h1>
-            <p class="mt-1 text-sm text-slate-500">共通アカウントのパスワードを変更します。次回以降のログインに反映されます。</p>
+            <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">パスワード変更</h1>
+            <p class="mt-1 text-[12.5px] text-ink-2">共通アカウントのパスワードを変更します。次回以降のログインに反映されます。</p>
         </div>
 
-        <BaseCard>
-            <form class="flex flex-col gap-4" @submit.prevent="submit">
-                <BaseAlert v-if="errorMessage" tone="danger">{{ errorMessage }}</BaseAlert>
+        <BaseCard title="新しいパスワードを設定" description="半角英数字記号で12文字以上にしてください。" :padded="false" class="w-full max-w-[460px]">
+            <form @submit.prevent="submit">
+                <div class="flex flex-col gap-3.5 px-[18px] py-4">
+                    <BaseAlert v-if="errorMessage" tone="danger">{{ errorMessage }}</BaseAlert>
 
-                <BaseInput v-model="currentPassword" type="password" label="現在のパスワード" autocomplete="current-password" required />
+                    <BaseInput v-model="currentPassword" type="password" label="現在のパスワード" autocomplete="current-password" required />
 
-                <div>
-                    <BaseInput v-model="newPassword" type="password" label="新しいパスワード" autocomplete="new-password" required />
-                    <ul class="mt-1.5 flex flex-col gap-0.5">
-                        <li v-for="rule in rules" :key="rule.label" class="flex items-center gap-1.5 text-xs" :class="rule.valid ? 'text-emerald-600' : 'text-slate-400'">
-                            <AppIcon :name="rule.valid ? 'check_circle' : 'radio_button_unchecked'" :size="14" />
-                            {{ rule.label }}
-                        </li>
-                    </ul>
+                    <div>
+                        <BaseInput v-model="newPassword" type="password" label="新しいパスワード" autocomplete="new-password" required />
+                        <ul class="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5" data-password-rules>
+                            <li
+                                v-for="rule in rules"
+                                :key="rule.label"
+                                class="flex items-center gap-1 text-[11px]"
+                                :class="rule.valid ? 'text-ok-ink' : 'text-muted'"
+                                :data-valid="rule.valid ? 'true' : 'false'"
+                            >
+                                <AppIcon :name="rule.valid ? 'check_circle' : 'radio_button_unchecked'" :size="14" />
+                                {{ rule.label }}
+                            </li>
+                        </ul>
+                    </div>
+
+                    <BaseInput v-model="confirmPassword" type="password" label="新しいパスワード（確認）" autocomplete="new-password" required />
                 </div>
-
-                <BaseInput v-model="confirmPassword" type="password" label="新しいパスワード（確認）" autocomplete="new-password" required />
-
-                <BaseButton type="submit" variant="primary" block>変更を保存</BaseButton>
+                <div class="flex justify-end border-t border-line-2 bg-surface-2 px-[18px] py-3">
+                    <BaseButton type="submit" variant="primary">変更を保存</BaseButton>
+                </div>
             </form>
         </BaseCard>
     </div>
