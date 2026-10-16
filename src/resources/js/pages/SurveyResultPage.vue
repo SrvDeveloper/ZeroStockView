@@ -531,7 +531,7 @@ async function exportExcel(scope: "all" | "filtered") {
             <div class="overflow-x-auto">
                 <table class="w-full min-w-[880px] table-fixed text-right tabular-nums">
                     <colgroup>
-                        <col class="w-[190px]" />
+                        <col class="w-[210px]" />
                         <col v-if="hasAmazonStock" class="w-[92px]" />
                         <col class="w-[92px]" />
                         <col class="w-[92px]" />
@@ -577,7 +577,7 @@ async function exportExcel(scope: "all" | "filtered") {
                                     aria-hidden="true"
                                 ></span>
                                 <span v-else-if="sku.skuMatched" class="absolute top-[9px] bottom-[9px] left-[7px] w-[3px] rounded-xs bg-ink" aria-hidden="true"></span>
-                                <span class="font-mono text-xs font-medium">{{ sku.skuCode }}</span>
+                                <span class="font-mono text-sm font-medium">{{ sku.skuCode }}</span>
                                 <span
                                     v-if="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
                                     class="ml-1.5 rounded-chip bg-ink px-1.5 align-[1px] text-[9.5px] font-bold tracking-wide text-signal"
