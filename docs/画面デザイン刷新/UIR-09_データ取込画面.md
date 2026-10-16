@@ -1,0 +1,47 @@
+# UIR-09 データ取込画面
+
+**目的:** データ取込画面（`DataImportPage.vue`）を新デザインにする。3 種類のファイルのうち、どれが添付済みかを一目でわかるようにする。
+
+**依存:** UIR-03, UIR-04, UIR-05
+
+## 作業
+
+- レイアウトを 2 列にする（左が広い）。左に「ファイルを添付」、右に「Amazon 在庫」。
+- **ファイルを添付**
+  - ドロップゾーン（1.5px の点線枠、補助面の地）と「ファイルを選択」「フォルダを選択」ボタン。
+  - その下に、BOSS（自社倉庫・RFC）、ECストック（TQ KEEPリスト）、フリー在庫（TQ在庫照会）の 3 つの枠を並べる。
+    - 添付済みの枠: 正常のランプ、ファイル名（等幅）、サイズ、「ヘッダーで判定済み」
+    - 未添付の枠: 点線枠、注意のランプ、「未添付。取込待ちとして登録します」
+    - 種類の判定ロジックは変えず、既存の判定結果を枠に割り当てるだけにする。外すボタンは各枠に置く。
+  - カードの下端に実行バーを置く（補助面の地）。「n / 3 件を添付済み」と同日更新の説明、主ボタン「取込・調査を実行」。
+  - 品番グループがないときの警告、選択内容の警告、取込失敗のエラーは `BaseAlert` で残す。
+- **Amazon 在庫**
+  - 見出しの右に `StatusLamp`（最新の実行の状態）。
+  - 在庫基準、対象 SKU、自社発送の照合、FBA の照合を、ラベルと値の 2 列で並べる（値は等幅）。
+  - 「Amazon 在庫を取得」ボタンは副ボタンにする（主ボタンは「取込・調査を実行」）。
+  - 直近の実行履歴を、既存の `fetchAmazonInventoryImports()` の結果から最大 5 件出す。列は開始日時（等幅）、起動（定期／手動）、結果（ランプ＋文字、失敗時はエラー内容）。
+  - 「ASIN が登録されていない SKU は取得の対象外です。」の注記は残す。
+- 既存の `data-testid`（`bulk-file-dropzone`、`selected-files`、`amazon-import-start`、`amazon-import-status`、`settings-change-button` など）は残す。`selected-files` は 3 つの枠を包む要素に付け替える。
+
+## 対象ファイル
+
+- `src/resources/js/pages/DataImportPage.vue`
+- `src/resources/js/pages/DataImportPage.test.ts`
+
+## 完了条件
+
+- Vitest で、次の表示を確認する。
+  - 0〜3 件を添付したときの枠の状態
+  - 判定できないファイルの警告
+  - Amazon の実行履歴（成功・失敗・実行中）
+- 既存の取込実行と Amazon 取得のテストが通る。
+- `npm run check` と `npm run build` が通る。
+
+## 確認コマンド
+
+```sh
+cd src
+npx vitest run resources/js/pages/DataImportPage.test.ts
+npm run check
+npm run build
+```
