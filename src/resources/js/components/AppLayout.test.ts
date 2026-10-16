@@ -41,7 +41,7 @@ describe("AppSidebar", () => {
     beforeEach(() => setRoute("survey-result", ["在庫調査履歴"], { id: "1" }));
 
     it("groups menu items and marks the current one", () => {
-        const wrapper = mount(AppSidebar, { props: { open: false }, global: { stubs: { RouterLink: RouterLinkStub } } });
+        const wrapper = mount(AppSidebar, { props: { open: false }, global: { stubs: { RouterLink: RouterLinkStub, IntegrationStatus: true } } });
 
         expect(wrapper.text()).toContain("調査");
         expect(wrapper.text()).toContain("設定");
@@ -51,7 +51,7 @@ describe("AppSidebar", () => {
     });
 
     it("closes the menu when an item is chosen", async () => {
-        const wrapper = mount(AppSidebar, { props: { open: true }, global: { stubs: { RouterLink: RouterLinkStub } } });
+        const wrapper = mount(AppSidebar, { props: { open: true }, global: { stubs: { RouterLink: RouterLinkStub, IntegrationStatus: true } } });
 
         await wrapper.get('[data-nav-item="manual"]').trigger("click");
 

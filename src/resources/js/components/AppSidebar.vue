@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
+import IntegrationStatus from "@/components/IntegrationStatus.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import { isNavItemActive, NAV_GROUPS } from "@/constants/navigation";
 
@@ -51,6 +52,6 @@ const route = useRoute();
             </template>
         </nav>
 
-        <div class="mt-auto pt-4"><slot name="footer" /></div>
+        <div class="mt-auto pt-4"><IntegrationStatus /></div>
     </aside>
 </template>
