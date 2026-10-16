@@ -50,7 +50,7 @@ async function confirmDelete() {
     <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
-                <h1 class="text-[22px] leading-tight font-semibold">品番グループ</h1>
+                <h1 class="text-[22px] leading-tight font-bold">品番グループ</h1>
                 <p class="mt-1 text-[12.5px] text-ink-2">用途ごとに品番をまとめます。登録された全品番が取込対象です。全{{ store.settings.length }}件。</p>
             </div>
             <BaseButton class="sm:ml-auto" variant="primary" icon="add" @click="router.push({ name: 'import-setting-new' })">新しいグループを作成</BaseButton>

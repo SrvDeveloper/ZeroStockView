@@ -52,7 +52,7 @@ async function submit() {
 <template>
     <div class="mx-auto flex max-w-md flex-col gap-6">
         <div>
-            <h1 class="text-xl font-semibold text-slate-900">パスワード変更</h1>
+            <h1 class="text-xl font-bold text-slate-900">パスワード変更</h1>
             <p class="mt-1 text-sm text-slate-500">共通アカウントのパスワードを変更します。次回以降のログインに反映されます。</p>
         </div>
 

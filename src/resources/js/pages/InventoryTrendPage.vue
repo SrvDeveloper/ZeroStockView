@@ -373,7 +373,7 @@ async function exportCsv(scope: "selected" | "all") {
 <template>
     <div class="flex flex-col gap-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-[22px] leading-tight font-semibold">在庫推移</h1>
+            <h1 class="text-[22px] leading-tight font-bold">在庫推移</h1>
             <div class="flex flex-wrap gap-2">
                 <BaseButton
                     data-testid="inventory-trend-export"
