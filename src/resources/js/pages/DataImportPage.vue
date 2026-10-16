@@ -200,29 +200,28 @@ async function runImport() {
                             <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />
                         </div>
 
-                        <div data-testid="selected-files" class="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                            <template v-for="slot in 3" :key="slot">
-                                <div v-if="files[slot - 1]" data-file-slot="filled" class="flex min-w-0 flex-col gap-1 rounded-card border border-line bg-surface px-3 py-2.5 shadow-raised">
-                                    <div class="flex items-center justify-between gap-2">
-                                        <span class="text-[11.5px] font-semibold">添付 {{ slot }}</span>
-                                        <button
-                                            type="button"
-                                            :aria-label="`${files[slot - 1]!.name}を外す`"
-                                            class="rounded-chip p-0.5 text-muted hover:bg-tint hover:text-ink"
-                                            :disabled="running"
-                                            @click="removeFile(slot - 1)"
-                                        >
-                                            <AppIcon name="close" :size="16" />
-                                        </button>
-                                    </div>
-                                    <StatusLamp state="ok" :label="files[slot - 1]!.name" class="min-w-0 truncate font-mono text-[11px]" />
-                                    <span class="text-[10.5px] text-muted">{{ formatSizeKb(Math.round(files[slot - 1]!.size / 1024)) }}</span>
+                        <div v-if="files.length > 0" data-testid="selected-files" class="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                            <div
+                                v-for="(file, index) in files"
+                                :key="`${file.name}-${index}`"
+                                data-file-card
+                                class="flex min-w-0 items-start gap-2 rounded-card border border-line bg-surface px-3 py-2.5 shadow-raised"
+                            >
+                                <AppIcon name="description" :size="18" class="mt-px shrink-0 text-ink-2" />
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate font-mono text-[11.5px] text-ink" :title="file.name">{{ file.name }}</p>
+                                    <p class="text-[10.5px] text-muted">{{ formatSizeKb(Math.round(file.size / 1024)) }}</p>
                                 </div>
-                                <div v-else data-file-slot="empty" class="flex flex-col gap-1 rounded-card border-[1.5px] border-dashed border-line-stronger px-3 py-2.5">
-                                    <span class="text-[11.5px] font-semibold text-ink-2">添付 {{ slot }}</span>
-                                    <span class="text-[11px] text-muted">未添付</span>
-                                </div>
-                            </template>
+                                <button
+                                    type="button"
+                                    :aria-label="`${file.name}を外す`"
+                                    class="shrink-0 rounded-chip p-0.5 text-muted hover:bg-tint hover:text-ink"
+                                    :disabled="running"
+                                    @click="removeFile(index)"
+                                >
+                                    <AppIcon name="close" :size="16" />
+                                </button>
+                            </div>
                         </div>
                         <p class="text-[11px] text-muted">種類（BOSS・ECストック・フリー在庫）は取込時に判定します。添付しなかった種類は取込待ちとして登録します。</p>
                     </div>

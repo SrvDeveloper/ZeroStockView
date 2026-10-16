@@ -250,16 +250,18 @@ describe("DataImportPage", () => {
         expect(wrapper.get('[data-testid="selected-files"]').text()).toContain("first.csv");
     });
 
-    it("fills the attachment slots in order and leaves the rest empty", async () => {
+    it("shows a card only for each attached file", async () => {
         const wrapper = mountPage();
-        expect(wrapper.findAll('[data-file-slot="empty"]')).toHaveLength(3);
+        expect(wrapper.find('[data-testid="selected-files"]').exists()).toBe(false);
 
         await selectFolder(wrapper, [new File([""], "first.csv"), new File([""], "second.csv")]);
 
-        const slots = wrapper.findAll("[data-file-slot]");
-        expect(slots.map((slot) => slot.attributes("data-file-slot"))).toEqual(["filled", "filled", "empty"]);
-        expect(slots[0]!.text()).toContain("first.csv");
-        expect(slots[2]!.text()).toContain("未添付");
+        const cards = wrapper.findAll("[data-file-card]");
+        expect(cards).toHaveLength(2);
+        expect(cards[0]!.text()).toContain("first.csv");
+        expect(cards[1]!.text()).toContain("second.csv");
+        expect(wrapper.text()).not.toContain("添付 1");
+        expect(wrapper.text()).not.toContain("未添付");
     });
 
     it("lists recent Amazon imports with their results", async () => {
