@@ -212,7 +212,7 @@ describe("DataImportPage", () => {
         });
 
         await selectFolder(wrapper, validImportFiles());
-        const runButton = wrapper.findAll("button").at(-1)!;
+        const runButton = wrapper.get('[data-testid="run-import"]');
         expect(runButton.attributes("disabled")).toBeUndefined();
         await runButton.trigger("click");
         await flushPromises();
@@ -234,10 +234,10 @@ describe("DataImportPage", () => {
         await selectFolder(wrapper, [new File([""], "renamed.csv")]);
 
         expect(wrapper.text()).toContain("添付ファイル: 1件");
-        expect(wrapper.findAll("button").at(-1)!.attributes("disabled")).toBeUndefined();
+        expect(wrapper.get('[data-testid="run-import"]').attributes("disabled")).toBeUndefined();
         await wrapper.get('[aria-label="renamed.csvを外す"]').trigger("click");
         expect(wrapper.text()).toContain("添付ファイル: 0件");
-        expect(wrapper.findAll("button").at(-1)!.attributes("disabled")).toBeDefined();
+        expect(wrapper.get('[data-testid="run-import"]').attributes("disabled")).toBeDefined();
     });
 
     it("rejects more than three selected files without replacing the current selection", async () => {
@@ -248,5 +248,27 @@ describe("DataImportPage", () => {
         expect(wrapper.text()).toContain("ファイルは3件まで添付できます");
         expect(wrapper.text()).toContain("添付ファイル: 1件");
         expect(wrapper.get('[data-testid="selected-files"]').text()).toContain("first.csv");
+    });
+
+    it("fills the attachment slots in order and leaves the rest empty", async () => {
+        const wrapper = mountPage();
+        expect(wrapper.findAll('[data-file-slot="empty"]')).toHaveLength(3);
+
+        await selectFolder(wrapper, [new File([""], "first.csv"), new File([""], "second.csv")]);
+
+        const slots = wrapper.findAll("[data-file-slot]");
+        expect(slots.map((slot) => slot.attributes("data-file-slot"))).toEqual(["filled", "filled", "empty"]);
+        expect(slots[0]!.text()).toContain("first.csv");
+        expect(slots[2]!.text()).toContain("未添付");
+    });
+
+    it("lists recent Amazon imports with their results", async () => {
+        fetchAmazonInventoryImports.mockResolvedValue([amazonImport("succeeded"), { ...amazonImport("failed"), id: "6" }, { ...amazonImport("running"), id: "5" }]);
+        const wrapper = mountPage();
+        await flushPromises();
+
+        const history = wrapper.get("[data-amazon-history]");
+        expect(history.findAll("[data-lamp-state]").map((lamp) => lamp.attributes("data-lamp-state"))).toEqual(["ok", "error", "warn"]);
+        expect(history.text()).toContain("FBAレポートの生成に失敗しました。");
     });
 });

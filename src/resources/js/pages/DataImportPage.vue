@@ -3,10 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
-import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
 import { fetchAmazonInventoryImports, startAmazonInventoryImport, type AmazonInventoryImport, type AmazonImportStatus } from "@/api/amazonInventoryImports";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
@@ -25,12 +25,13 @@ const amazonError = ref("");
 const activeAmazonImport = computed(() => amazonImports.value.find((item) => item.status === "queued" || item.status === "running"));
 const latestAmazonImport = computed(() => activeAmazonImport.value ?? amazonImports.value[0]);
 const canStartAmazon = computed(() => importSettings.settings.length > 0 && !amazonStarting.value && !activeAmazonImport.value && !amazonLoading.value);
-const amazonStatus: Record<AmazonImportStatus, { label: string; tone: "neutral" | "brand" | "success" | "danger" }> = {
-    queued: { label: "受付", tone: "neutral" },
-    running: { label: "処理中", tone: "brand" },
-    succeeded: { label: "成功", tone: "success" },
-    failed: { label: "失敗", tone: "danger" },
+const amazonStatus: Record<AmazonImportStatus, { label: string; lamp: LampState }> = {
+    queued: { label: "受付", lamp: "warn" },
+    running: { label: "処理中", lamp: "warn" },
+    succeeded: { label: "成功", lamp: "ok" },
+    failed: { label: "失敗", lamp: "error" },
 };
+const recentAmazonImports = computed(() => amazonImports.value.slice(0, 5));
 let amazonPollTimer: number | undefined;
 
 async function loadAmazonImports() {
@@ -147,17 +148,18 @@ async function runImport() {
 </script>
 
 <template>
-    <div class="flex flex-col gap-6">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
-                <h1 class="text-xl font-semibold text-slate-900">データ取込</h1>
-                <p class="mt-1 text-sm text-slate-500">BOSS・ECストック・フリー在庫のCSVを1〜3件添付すると、全品番グループの対象品番を取り込みます。</p>
+                <h1 class="text-[22px] leading-tight font-semibold">データ取込</h1>
+                <p class="mt-1 text-[12.5px] text-ink-2">BOSS・ECストック・フリー在庫のCSVを1〜3件添付すると、全品番グループの対象品番を取り込みます。Amazon 在庫は自動で取得します。</p>
             </div>
             <BaseButton
                 v-if="importSettings.settings.length > 0"
                 data-testid="settings-change-button"
+                class="sm:ml-auto"
                 variant="secondary"
-                icon="settings"
+                icon="category"
                 :disabled="running"
                 @click="router.push({ name: 'import-settings' })"
                 >グループを編集</BaseButton
@@ -171,87 +173,125 @@ async function runImport() {
             </div>
         </BaseAlert>
 
-        <BaseCard
-            title="Amazon 在庫を取得"
-            description="保存済みの全品番グループに含まれる品番について、Amazon の自社発送在庫と FBA 出荷可能在庫を取得します。ファイルによる取込・調査とは別の履歴に保存されます。"
-        >
-            <div class="flex flex-col gap-4">
-                <p class="text-xs text-slate-500">ASIN が登録されていない SKU は Amazon 在庫の取得対象に含まれません。</p>
-                <div class="flex flex-wrap items-center gap-3">
-                    <BaseButton data-testid="amazon-import-start" variant="primary" icon="refresh" :disabled="!canStartAmazon" :loading="amazonStarting" @click="startAmazonImport"
-                        >Amazon 在庫を取得</BaseButton
-                    >
-                    <span v-if="amazonLoading" class="text-sm text-slate-500">状態を確認中…</span>
-                    <span v-else-if="!latestAmazonImport" class="text-sm text-slate-500">実行履歴はありません。</span>
-                    <span v-else-if="activeAmazonImport" class="text-sm text-slate-500">完了まで自動更新します。</span>
-                </div>
-                <BaseAlert v-if="amazonError" tone="danger" title="Amazon 在庫取込">{{ amazonError }}</BaseAlert>
-                <div v-if="latestAmazonImport" data-testid="amazon-import-status" class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="font-semibold">最新の実行</span>
-                        <BaseBadge :tone="amazonStatus[latestAmazonImport.status].tone">{{ amazonStatus[latestAmazonImport.status].label }}</BaseBadge>
-                        <span>{{ latestAmazonImport.triggerSource === "scheduled" ? "定期実行" : "手動実行" }}</span>
-                        <span>受付日時: {{ formatDateTime(latestAmazonImport.createdAt) }}</span>
-                    </div>
-                    <p v-if="latestAmazonImport.basisAt" class="mt-2">在庫基準日時: {{ formatDateTime(latestAmazonImport.basisAt) }}</p>
-                    <p v-if="latestAmazonImport.status === 'succeeded'" class="mt-2"
-                        >対象 SKU: {{ latestAmazonImport.targetSkuCount ?? 0 }} 件 ／ 自社発送の照合: {{ latestAmazonImport.matchedOwnCount ?? 0 }} 件 ／ FBA の照合:
-                        {{ latestAmazonImport.matchedFbaCount ?? 0 }} 件</p
-                    >
-                    <p v-if="latestAmazonImport.errorMessage" class="mt-2 text-rose-700">{{ latestAmazonImport.errorMessage }}</p>
-                </div>
-            </div>
-        </BaseCard>
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start">
+            <div class="flex min-w-0 flex-col gap-4">
+                <BaseCard title="ファイルを添付" description="CSVのヘッダーを確認して、BOSS・ECストック・フリー在庫を自動判定します。ファイル名は判定に使いません。" :padded="false">
+                    <div class="flex flex-col gap-3 px-[18px] py-3.5">
+                        <div
+                            data-testid="bulk-file-dropzone"
+                            :data-dragging="bulkDragging ? 'true' : undefined"
+                            class="flex flex-col gap-3 rounded-card border-[1.5px] border-dashed p-4 transition sm:flex-row sm:items-center"
+                            :class="bulkDragging ? 'border-ink bg-surface ring-3 ring-ink/10' : 'border-line-stronger bg-surface-2'"
+                            @dragenter.prevent="bulkDragging = true"
+                            @dragover.prevent="bulkDragging = true"
+                            @dragleave.self.prevent="bulkDragging = false"
+                            @drop.prevent.stop="onBulkDrop"
+                        >
+                            <AppIcon name="upload_file" :size="26" class="text-muted" />
+                            <div>
+                                <p class="text-[12.5px] font-semibold">ここにCSVをドロップ</p>
+                                <p class="text-[11px] text-muted">1件から実行できます。複数のファイルやフォルダも選べます（最大3件）。</p>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5 sm:ml-auto">
+                                <BaseButton variant="secondary" size="sm" icon="upload_file" :disabled="running" @click="openFilePicker">ファイルを選択</BaseButton>
+                                <BaseButton variant="secondary" size="sm" icon="folder_open" :disabled="running" @click="openFolderPicker">フォルダを選択</BaseButton>
+                            </div>
+                            <input ref="fileInputRef" type="file" class="sr-only" accept=".csv,.txt" multiple aria-label="取込ファイルを選択" @change="onFileInputChange" />
+                            <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />
+                        </div>
 
-        <BaseCard title="ファイルを添付" description="CSVのヘッダーを確認して、BOSS・ECストック・フリー在庫を自動判定します。ファイル名は判定に使いません。">
-            <div
-                data-testid="bulk-file-dropzone"
-                :data-dragging="bulkDragging ? 'true' : undefined"
-                class="rounded-xl border-2 border-dashed p-6 transition"
-                :class="bulkDragging ? 'border-primary-500 bg-primary-50 ring-4 ring-primary-100' : 'border-slate-300 bg-slate-50/60'"
-                @dragenter.prevent="bulkDragging = true"
-                @dragover.prevent="bulkDragging = true"
-                @dragleave.self.prevent="bulkDragging = false"
-                @drop.prevent.stop="onBulkDrop"
-            >
-                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <p class="text-sm font-semibold text-slate-900">ここにCSVをドロップ</p>
-                        <p class="mt-1 text-xs text-slate-500">1件から実行できます。複数のファイルやフォルダも選べます（最大3件）。</p>
+                        <div data-testid="selected-files" class="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                            <template v-for="slot in 3" :key="slot">
+                                <div v-if="files[slot - 1]" data-file-slot="filled" class="flex min-w-0 flex-col gap-1 rounded-card border border-line bg-surface px-3 py-2.5 shadow-raised">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <span class="text-[11.5px] font-semibold">添付 {{ slot }}</span>
+                                        <button
+                                            type="button"
+                                            :aria-label="`${files[slot - 1]!.name}を外す`"
+                                            class="rounded-chip p-0.5 text-muted hover:bg-tint hover:text-ink"
+                                            :disabled="running"
+                                            @click="removeFile(slot - 1)"
+                                        >
+                                            <AppIcon name="close" :size="16" />
+                                        </button>
+                                    </div>
+                                    <StatusLamp state="ok" :label="files[slot - 1]!.name" class="min-w-0 truncate font-mono text-[11px]" />
+                                    <span class="text-[10.5px] text-muted">{{ formatSizeKb(Math.round(files[slot - 1]!.size / 1024)) }}</span>
+                                </div>
+                                <div v-else data-file-slot="empty" class="flex flex-col gap-1 rounded-card border-[1.5px] border-dashed border-line-stronger px-3 py-2.5">
+                                    <span class="text-[11.5px] font-semibold text-ink-2">添付 {{ slot }}</span>
+                                    <span class="text-[11px] text-muted">未添付</span>
+                                </div>
+                            </template>
+                        </div>
+                        <p class="text-[11px] text-muted">種類（BOSS・ECストック・フリー在庫）は取込時に判定します。添付しなかった種類は取込待ちとして登録します。</p>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <BaseButton variant="secondary" icon="upload_file" :disabled="running" @click="openFilePicker">ファイルを選択</BaseButton>
-                        <BaseButton variant="secondary" icon="folder_open" :disabled="running" @click="openFolderPicker">フォルダを選択</BaseButton>
+                    <div class="flex flex-col gap-3 border-t border-line-2 bg-surface-2 px-[18px] py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p class="text-[11.5px] text-ink-2">
+                            添付ファイル: <span class="font-num text-[17px] font-semibold text-ink">{{ files.length }}件</span>（3件まで）
+                            <span v-if="files.length > 0" class="ml-1 text-muted">同じ日の追加取込は履歴を更新します。</span>
+                        </p>
+                        <BaseButton data-testid="run-import" variant="primary" icon="play_arrow" :disabled="!canRun" :loading="running" @click="runImport">
+                            {{ running ? "実行中…" : "取込・調査を実行" }}
+                        </BaseButton>
                     </div>
-                    <input ref="fileInputRef" type="file" class="sr-only" accept=".csv,.txt" multiple aria-label="取込ファイルを選択" @change="onFileInputChange" />
-                    <input ref="folderInputRef" type="file" class="sr-only" multiple webkitdirectory aria-label="取込フォルダを選択" @change="onFolderInputChange" />
-                </div>
+                </BaseCard>
+                <BaseAlert v-if="selectionMessage" tone="warning" title="ファイルを確認してください">{{ selectionMessage }}</BaseAlert>
+                <BaseAlert v-if="errorMessage" tone="danger" title="取込に失敗しました">{{ errorMessage }}</BaseAlert>
             </div>
-            <div v-if="files.length > 0" class="mt-4 space-y-2" data-testid="selected-files">
-                <div v-for="(file, index) in files" :key="index" class="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                    <AppIcon name="description" :size="20" class="shrink-0 text-primary-600" />
-                    <span class="min-w-0 flex-1 truncate text-slate-800">{{ file.name }}</span>
-                    <span class="shrink-0 text-xs text-slate-500">{{ formatSizeKb(Math.round(file.size / 1024)) }}</span>
-                    <button type="button" :aria-label="`${file.name}を外す`" class="rounded p-1 text-slate-500 hover:bg-slate-100" :disabled="running" @click="removeFile(index)">
-                        <AppIcon name="close" :size="18" />
-                    </button>
-                </div>
-            </div>
-        </BaseCard>
-        <BaseAlert v-if="selectionMessage" tone="warning" title="ファイルを確認してください">{{ selectionMessage }}</BaseAlert>
 
-        <BaseAlert v-if="errorMessage" tone="danger" title="取込に失敗しました">{{ errorMessage }}</BaseAlert>
-
-        <BaseCard>
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div class="text-sm text-slate-600">
-                    添付ファイル: <span class="font-semibold text-slate-900">{{ files.length }}件</span>
-                    <span v-if="files.length > 0" class="ml-2 text-xs text-slate-500">未添付の種類は取込待ちとして表示します。同じ日の追加取込は履歴を更新します。</span>
+            <BaseCard title="Amazon 在庫" description="毎日 9:00 に自動で取得し、同じ日の調査結果に反映します。手動でも取得できます。" :padded="false">
+                <template #actions>
+                    <StatusLamp
+                        v-if="latestAmazonImport"
+                        :state="amazonStatus[latestAmazonImport.status].lamp"
+                        :label="amazonStatus[latestAmazonImport.status].label"
+                        class="text-[11.5px] text-ink-2"
+                    />
+                </template>
+                <div class="flex flex-col gap-3 px-[18px] py-3.5 text-[11.5px]">
+                    <div v-if="latestAmazonImport" data-testid="amazon-import-status" class="flex flex-col gap-1.5">
+                        <p class="text-ink-2">
+                            最新の実行: <span class="font-semibold text-ink">{{ amazonStatus[latestAmazonImport.status].label }}</span> ・
+                            {{ latestAmazonImport.triggerSource === "scheduled" ? "定期実行" : "手動実行" }}
+                        </p>
+                        <dl class="grid grid-cols-[auto_1fr] gap-x-3.5 gap-y-1">
+                            <dt class="text-muted">受付日時</dt>
+                            <dd class="font-mono">{{ formatDateTime(latestAmazonImport.createdAt) }}</dd>
+                            <template v-if="latestAmazonImport.basisAt">
+                                <dt class="text-muted">在庫基準日時</dt>
+                                <dd class="font-mono">{{ formatDateTime(latestAmazonImport.basisAt) }}</dd>
+                            </template>
+                        </dl>
+                        <p v-if="latestAmazonImport.status === 'succeeded'" class="text-ink-2"
+                            >対象 SKU: {{ latestAmazonImport.targetSkuCount ?? 0 }} 件 ／ 自社発送の照合: {{ latestAmazonImport.matchedOwnCount ?? 0 }} 件 ／ FBA の照合:
+                            {{ latestAmazonImport.matchedFbaCount ?? 0 }} 件</p
+                        >
+                        <p v-if="latestAmazonImport.errorMessage" class="text-danger">{{ latestAmazonImport.errorMessage }}</p>
+                    </div>
+                    <p v-else-if="amazonLoading" class="text-muted">状態を確認中…</p>
+                    <p v-else class="text-muted">実行履歴はありません。</p>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <BaseButton data-testid="amazon-import-start" variant="secondary" size="sm" icon="refresh" :disabled="!canStartAmazon" :loading="amazonStarting" @click="startAmazonImport"
+                            >Amazon 在庫を取得</BaseButton
+                        >
+                        <span v-if="activeAmazonImport" class="text-muted">完了まで自動更新します。</span>
+                    </div>
+                    <p class="text-[10.5px] text-muted">ASIN が登録されていない SKU は Amazon 在庫の取得対象に含まれません。</p>
+                    <BaseAlert v-if="amazonError" tone="danger" title="Amazon 在庫取込">{{ amazonError }}</BaseAlert>
                 </div>
-                <BaseButton variant="primary" icon="play_arrow" :disabled="!canRun" :loading="running" @click="runImport">
-                    {{ running ? "実行中…" : "取込・調査を実行" }}
-                </BaseButton>
-            </div>
-        </BaseCard>
+                <div v-if="recentAmazonImports.length > 0" class="border-t border-line-2 text-[11px]" data-amazon-history>
+                    <div class="grid grid-cols-[112px_60px_minmax(0,1fr)] gap-2 bg-surface-2 px-[18px] py-1.5 text-[10.5px] text-muted"> <span>開始</span><span>起動</span><span>結果</span> </div>
+                    <div v-for="item in recentAmazonImports" :key="item.id" class="grid grid-cols-[112px_60px_minmax(0,1fr)] items-center gap-2 border-t border-line-2 px-[18px] py-1.5 text-ink-2">
+                        <span class="font-mono text-[10.5px] text-ink">{{ formatDateTime(item.createdAt).slice(5) }}</span>
+                        <span>{{ item.triggerSource === "scheduled" ? "定期" : "手動" }}</span>
+                        <span class="flex min-w-0 items-center gap-2">
+                            <StatusLamp :state="amazonStatus[item.status].lamp" :label="amazonStatus[item.status].label" />
+                            <span v-if="item.status === 'failed' && item.errorMessage" class="truncate text-muted" :title="item.errorMessage">{{ item.errorMessage }}</span>
+                        </span>
+                    </div>
+                </div>
+            </BaseCard>
+        </div>
     </div>
 </template>
