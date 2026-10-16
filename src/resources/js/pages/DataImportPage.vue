@@ -151,7 +151,7 @@ async function runImport() {
     <div class="flex flex-col gap-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
-                <h1 class="text-[22px] leading-tight font-semibold">データ取込</h1>
+                <h1 class="text-[22px] leading-tight font-bold">データ取込</h1>
                 <p class="mt-1 text-[12.5px] text-ink-2">BOSS・ECストック・フリー在庫のCSVを1〜3件添付すると、全品番グループの対象品番を取り込みます。Amazon 在庫は自動で取得します。</p>
             </div>
             <BaseButton
