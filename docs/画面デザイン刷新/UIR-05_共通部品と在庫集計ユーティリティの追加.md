@@ -54,3 +54,5 @@ npx vitest run resources/js/utils/stock.test.ts resources/js/components/ui
 npx vitest run resources/js/pages/SurveyImportSettingDisplay.test.ts
 npm run check
 ```
+
+**実装状況（2026-10-16）:** `utils/stock.ts`（`skuTotal`、`stockState`、`amazonStockState`、`isAllZero`、`isPartialZero`、`summarizeSurvey`、`previousSurvey`、`hasAmazonStock`）と、`StatusLamp`、`StatCard`、`StockCell`、`SegmentedControl` を追加した。`HazardStripe` は `bg-hazard` で足りるため作っていない。`SurveyResultPage.vue` の判定関数は新しい関数を呼ぶ形にした。変更点は 1 つで、Amazon を取り込んでいない旧調査（`includesAmazonInventory: false`）の総数は Amazon を除いて計算する。従来は Amazon が `null` のため総数も `null` で、その調査では全倉庫ゼロの行を判定できなかった（総数の列はこの調査では表示しないので、見た目の変化は全倉庫ゼロ行の判定だけ）。`SegmentedControl` は `role="radio"` と `aria-checked` を使う。AND／OR の既存テストは `aria-pressed` で書かれているため、UIR-08 で置き換える。
