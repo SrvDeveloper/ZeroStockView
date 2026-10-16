@@ -77,7 +77,7 @@ export function summarizeSurvey(survey: Survey): SurveySummary {
     };
 }
 
-/** 在庫基準日時がこの調査の直前にある調査 */
+/** 初回取込日時（executedAt）がこの調査の直前にある調査 */
 export function previousSurvey(surveys: Survey[], survey: Survey): Survey | null {
     const current = new Date(survey.executedAt).getTime();
     return surveys.reduce<Survey | null>((found, candidate) => {

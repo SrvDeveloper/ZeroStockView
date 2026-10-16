@@ -24,7 +24,7 @@ export function localDateKey(value: string | Date): string {
     return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, "0")}-${`${date.getDate()}`.padStart(2, "0")}`;
 }
 
-/** 日付ごとの調査。同じ日に複数ある古いデータは、在庫基準日時が最も新しいものを採る */
+/** 日付ごとの調査。同じ日に複数ある古いデータは、初回取込日時（executedAt）が最も新しいものを採る */
 export function dailySurveys(surveys: Survey[]): Map<string, Survey> {
     const byDate = new Map<string, Survey>();
     for (const survey of surveys) {

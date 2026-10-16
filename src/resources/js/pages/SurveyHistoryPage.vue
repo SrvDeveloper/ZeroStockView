@@ -268,7 +268,7 @@ function openResult(id: string) {
                         </div>
                     </div>
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3.5 gap-y-1">
-                        <dt class="text-muted">在庫基準日時</dt>
+                        <dt class="text-muted">初回取込日時</dt>
                         <dd class="font-mono">{{ formatDateTime(selectedSurvey.executedAt) }}</dd>
                         <template v-if="selectedSurvey.createdAt">
                             <dt class="text-muted">結果作成日時</dt>
@@ -344,7 +344,7 @@ function openResult(id: string) {
                     <table class="w-full min-w-[860px] text-left text-xs tabular-nums">
                         <thead class="border-b border-line text-[11px] text-muted">
                             <tr>
-                                <th class="px-4 py-2.5 font-semibold">在庫基準日時</th>
+                                <th class="px-4 py-2.5 font-semibold">初回取込日時</th>
                                 <th class="px-4 py-2.5 text-right font-semibold">品番数</th>
                                 <th class="px-4 py-2.5 text-right font-semibold">SKU数</th>
                                 <th class="px-4 py-2.5 font-semibold">取込ファイル</th>
