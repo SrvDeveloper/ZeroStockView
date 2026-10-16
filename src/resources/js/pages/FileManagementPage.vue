@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import ConfirmModal from "@/components/ui/ConfirmModal.vue";
+import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import { FILE_RETENTION_DAYS } from "@/constants/files";
-import { daysSince, formatDateTime, formatSizeKb } from "@/utils/format";
+import { FILE_EXPIRY_WARNING_DAYS, FILE_RETENTION_DAYS } from "@/constants/files";
+import { fileRemainingDays, isFileExpiringSoon } from "@/utils/files";
+import { formatDateTime, formatSizeKb } from "@/utils/format";
 import type { SurveyFile } from "@/types";
 
 const surveysStore = useSurveysStore();
@@ -17,9 +18,22 @@ const toast = useUiStore();
 const groups = computed(() =>
     surveysStore.sortedSurveys.map((survey) => ({
         survey,
-        files: survey.files.filter((f) => daysSince(f.uploadedAt) <= FILE_RETENTION_DAYS),
+        files: survey.files.filter((f) => fileRemainingDays(f.uploadedAt) > 0),
     })),
 );
+
+const storedFiles = computed(() => groups.value.flatMap((group) => group.files));
+const totalSizeKb = computed(() => storedFiles.value.reduce((sum, file) => sum + file.sizeKb, 0));
+const expiringCount = computed(() => storedFiles.value.filter((file) => isFileExpiringSoon(file.uploadedAt)).length);
+
+/** 取込ファイルの種類の短い名前（旧ファイル調査の Amazon レポートを含む） */
+const FILE_TYPE_LABELS: Record<string, string> = {
+    倉庫毎の在庫数レポート: "BOSS",
+    KEEP一覧表: "ECストック",
+    在庫一覧照会表: "フリー在庫",
+    在庫商品レポート: "Amazon 自社",
+    FBA在庫管理レポート: "Amazon FBA",
+};
 
 function downloadFile(file: SurveyFile) {
     window.location.assign(`/api/survey-files/${file.id}/download`);
@@ -58,43 +72,69 @@ async function confirmBulkDelete() {
 </script>
 
 <template>
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-4">
         <div>
-            <h1 class="text-xl font-semibold text-slate-900">ファイル管理</h1>
-            <p class="mt-1 text-sm text-slate-500">
+            <h1 class="text-[22px] leading-tight font-semibold">ファイル管理</h1>
+            <p class="mt-1 text-[12.5px] text-ink-2">
                 調査ごとに取込ファイルを一覧表示します。アップロードから{{ FILE_RETENTION_DAYS }}日を経過したファイルは自動的に削除されます（調査結果・メモは残ります）。
             </p>
+        </div>
+
+        <div v-if="groups.length > 0" class="-mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[11.5px] text-muted" data-file-summary>
+            <span
+                >保存中のファイル <b class="font-mono font-medium text-ink-2">{{ storedFiles.length }}</b></span
+            >
+            <span
+                >合計 <b class="font-mono font-medium text-ink-2">{{ formatSizeKb(totalSizeKb) }}</b></span
+            >
+            <span
+                >期限まで{{ FILE_EXPIRY_WARNING_DAYS }}日以内 <b class="font-mono font-medium text-ink-2">{{ expiringCount }}</b></span
+            >
         </div>
 
         <BaseCard v-if="groups.length === 0" :padded="false">
             <BaseEmpty icon="folder_off" title="調査履歴がありません" />
         </BaseCard>
 
-        <BaseCard v-for="group in groups" :key="group.survey.id" :title="formatDateTime(group.survey.executedAt)" :padded="false">
+        <BaseCard v-for="group in groups" :key="group.survey.id" :title="formatDateTime(group.survey.executedAt)" :padded="false" :data-file-group="group.survey.id">
             <template #actions>
-                <RouterLink :to="{ name: 'survey-result', params: { id: group.survey.id } }" class="text-xs text-primary-600 hover:underline">調査結果を見る</RouterLink>
+                <RouterLink :to="{ name: 'survey-result', params: { id: group.survey.id } }" class="text-[11.5px] text-ink-2 underline-offset-2 hover:underline">調査結果を見る</RouterLink>
                 <template v-if="group.files.length > 0">
                     <BaseButton variant="secondary" size="sm" icon="folder_zip" @click="downloadZip(group.survey.id)">一括ダウンロード</BaseButton>
                     <BaseButton variant="danger-ghost" size="sm" icon="delete_sweep" @click="requestBulkDelete(group.survey.id, group.files.length)">一括削除</BaseButton>
                 </template>
             </template>
 
-            <p v-if="group.files.length === 0" class="px-5 py-6 text-sm text-slate-400">
+            <p v-if="group.files.length === 0" class="bg-surface-2 px-[18px] py-3.5 text-[11.5px] text-muted">
                 取込ファイルはありません（保存期間の経過、または削除済み）。調査結果の閲覧・メモ編集・Excel出力は引き続き可能です。
             </p>
 
-            <ul v-else class="divide-y divide-slate-100">
-                <li v-for="file in group.files" :key="file.id" class="flex items-center justify-between gap-3 px-5 py-2.5">
-                    <div class="flex min-w-0 items-center gap-3">
-                        <BaseBadge class="shrink-0 w-36 justify-center">{{ file.type }}</BaseBadge>
-                        <div class="min-w-0">
-                            <p class="truncate text-sm text-slate-800">{{ file.fileName }}</p>
-                            <p class="text-xs text-slate-400">{{ formatDateTime(file.uploadedAt) }} ／ {{ formatSizeKb(file.sizeKb) }}</p>
-                        </div>
+            <ul v-else class="divide-y divide-line-2">
+                <li
+                    v-for="file in group.files"
+                    :key="file.id"
+                    :data-file-id="file.id"
+                    class="grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-3 px-[18px] py-2 sm:grid-cols-[96px_minmax(0,1fr)_160px_auto]"
+                >
+                    <span class="rounded-chip bg-tint px-1.5 py-px text-center text-[10.5px] font-semibold text-ink-2" :title="file.type">{{ FILE_TYPE_LABELS[file.type] ?? file.type }}</span>
+                    <div class="min-w-0">
+                        <p class="truncate font-mono text-[11.5px] text-ink">{{ file.fileName }}</p>
+                        <p class="font-mono text-[10.5px] text-muted">{{ formatDateTime(file.uploadedAt) }} ／ {{ formatSizeKb(file.sizeKb) }}</p>
                     </div>
+                    <span class="hidden items-center gap-2 text-[11px] text-ink-2 sm:flex" data-remaining-days>
+                        <StatusLamp v-if="isFileExpiringSoon(file.uploadedAt)" state="warn" label="" class="-mr-1" />
+                        <span class="inline-block h-[5px] w-14 overflow-hidden rounded-xs bg-ink/8" aria-hidden="true"
+                            ><span
+                                class="block h-full rounded-xs"
+                                :class="isFileExpiringSoon(file.uploadedAt) ? 'bg-lamp-warn' : 'bg-ink'"
+                                :style="{ width: `${(fileRemainingDays(file.uploadedAt) / FILE_RETENTION_DAYS) * 100}%` }"
+                            ></span
+                        ></span>
+                        残り {{ fileRemainingDays(file.uploadedAt) }} 日
+                    </span>
                     <div class="flex shrink-0 gap-1">
                         <BaseButton variant="ghost" size="sm" icon="download" aria-label="ダウンロード" @click="downloadFile(file)" />
-                        <BaseButton variant="ghost" size="sm" icon="delete" aria-label="削除" @click="requestDeleteFile(group.survey.id, file)" />
+                        <BaseButton variant="ghost" size="sm" icon="delete" aria-label="削除" class="text-danger!" @click="requestDeleteFile(group.survey.id, file)" />
                     </div>
                 </li>
             </ul>
