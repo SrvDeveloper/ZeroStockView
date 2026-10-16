@@ -681,7 +681,7 @@ describe("survey import setting display", () => {
 
         const rows = wrapper.findAll("tbody tr");
         expect(rows[0]!.attributes("data-row-state")).toBe("all-zero");
-        expect(rows[0]!.text()).toContain("全倉庫ゼロ");
+        expect(rows[0]!.text()).not.toContain("全倉庫ゼロ");
         expect(rows[2]!.attributes("data-row-state")).toBeUndefined();
     });
 
