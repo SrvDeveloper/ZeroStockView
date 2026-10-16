@@ -137,7 +137,9 @@ describe("DataImportPage", () => {
             poll?.();
             await flushPromises();
             expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("成功");
-            expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("対象 SKU: 2 件");
+            expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("在庫基準日時");
+            expect(wrapper.text()).not.toContain("対象 SKU");
+            expect(wrapper.text()).not.toContain("ASIN が登録されていない");
             expect(wrapper.get('[data-testid="amazon-import-start"]').attributes("disabled")).toBeUndefined();
             wrapper.unmount();
         } finally {

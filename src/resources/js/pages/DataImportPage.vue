@@ -262,10 +262,6 @@ async function runImport() {
                                 <dd class="font-mono">{{ formatDateTime(latestAmazonImport.basisAt) }}</dd>
                             </template>
                         </dl>
-                        <p v-if="latestAmazonImport.status === 'succeeded'" class="text-ink-2"
-                            >対象 SKU: {{ latestAmazonImport.targetSkuCount ?? 0 }} 件 ／ 自社発送の照合: {{ latestAmazonImport.matchedOwnCount ?? 0 }} 件 ／ FBA の照合:
-                            {{ latestAmazonImport.matchedFbaCount ?? 0 }} 件</p
-                        >
                         <p v-if="latestAmazonImport.errorMessage" class="text-danger">{{ latestAmazonImport.errorMessage }}</p>
                     </div>
                     <p v-else-if="amazonLoading" class="text-muted">状態を確認中…</p>
@@ -276,7 +272,6 @@ async function runImport() {
                         >
                         <span v-if="activeAmazonImport" class="text-muted">完了まで自動更新します。</span>
                     </div>
-                    <p class="text-[10.5px] text-muted">ASIN が登録されていない SKU は Amazon 在庫の取得対象に含まれません。</p>
                     <BaseAlert v-if="amazonError" tone="danger" title="Amazon 在庫取込">{{ amazonError }}</BaseAlert>
                 </div>
                 <div v-if="recentAmazonImports.length > 0" class="border-t border-line-2 text-[11px]" data-amazon-history>
