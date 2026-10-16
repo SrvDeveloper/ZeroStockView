@@ -404,9 +404,6 @@ async function exportExcel(scope: "all" | "filtered") {
                 <p v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt"
                     >結果更新日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.updatedAt) }}</span></p
                 >
-                <p>
-                    品番グループ: <span class="font-medium text-ink-2">{{ survey.groups?.map((group) => group.name).join("、") || survey.importSettingName || "記録なし" }}</span>
-                </p>
             </div>
         </div>
 
