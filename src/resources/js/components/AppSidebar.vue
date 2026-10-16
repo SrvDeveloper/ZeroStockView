@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from "vue-router";
+import AppLogo from "@/components/AppLogo.vue";
 import IntegrationStatus from "@/components/IntegrationStatus.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import { isNavItemActive, NAV_GROUPS } from "@/constants/navigation";
@@ -21,7 +22,7 @@ const route = useRoute();
         <span class="absolute inset-x-0 top-0 h-1 bg-hazard" aria-hidden="true"></span>
         <div class="flex items-center justify-between gap-2 px-2 pt-1 pb-4">
             <RouterLink :to="{ name: 'data-import' }" class="flex items-center gap-2.5 rounded-control focus-visible:outline-2 focus-visible:outline-signal" @click="emit('close')">
-                <span class="flex h-7 w-7 items-center justify-center rounded-panel bg-signal font-num text-[17px] font-bold text-ink shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]">0</span>
+                <AppLogo :size="28" dark />
                 <span class="flex flex-col leading-tight">
                     <span class="text-[13.5px] font-semibold text-sidebar-strong">ZeroStockView</span>
                     <span class="text-[10px] text-sidebar-dim">在庫状況調査アプリ</span>
