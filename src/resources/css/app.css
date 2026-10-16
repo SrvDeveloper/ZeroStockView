@@ -4,7 +4,10 @@
 @source '../../storage/framework/views/*.php';
 
 @theme {
-    --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    /* 書体は vite.config.js の fonts で自前配信し、@fonts で読み込む */
+    --font-sans: "IBM Plex Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --font-num: "Barlow Condensed", "Arial Narrow", sans-serif;
 
     /* 主色は墨・グラファイト系。主ボタンや選択中の面に使う */
     --color-primary-50: #eef1f4;
