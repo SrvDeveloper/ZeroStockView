@@ -381,7 +381,7 @@ async function exportExcel(scope: "all" | "filtered") {
             </RouterLink>
             <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
                 <div class="flex flex-wrap items-center gap-3">
-                    <h1 class="text-[22px] leading-tight font-black">在庫調査結果</h1>
+                    <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">在庫調査結果</h1>
                     <span class="font-mono text-xs text-muted">{{ formatDateTime(survey.executedAt).slice(0, 10) }}</span>
                     <BaseBadge v-if="isLatest" tone="brand">最新</BaseBadge>
                 </div>

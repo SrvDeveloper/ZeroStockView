@@ -11,7 +11,7 @@ export default defineConfig({
             refresh: true,
             // ビルド時に Google Fonts から取得して自前配信する。和文は分割ファイルが多いため先読みしない
             fonts: [
-                google("Noto Sans JP", { weights: [400, 500, 600, 700, 900], preload: false, fallbacks: ["Hiragino Sans", "Yu Gothic", "sans-serif"], optimizedFallbacks: false }),
+                google("Noto Sans JP", { weights: [400, 500, 600, 700, 800], preload: false, fallbacks: ["Hiragino Sans", "Yu Gothic", "sans-serif"], optimizedFallbacks: false }),
                 google("IBM Plex Mono", { weights: [400, 500, 600], fallbacks: ["ui-monospace", "monospace"], optimizedFallbacks: false }),
                 google("Barlow Condensed", { weights: [500, 600, 700], fallbacks: ["Arial Narrow", "sans-serif"], optimizedFallbacks: false }),
             ],

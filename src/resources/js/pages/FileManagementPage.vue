@@ -74,7 +74,7 @@ async function confirmBulkDelete() {
 <template>
     <div class="flex flex-col gap-4">
         <div>
-            <h1 class="text-[22px] leading-tight font-black">ファイル管理</h1>
+            <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">ファイル管理</h1>
             <p class="mt-1 text-[12.5px] text-ink-2">
                 調査ごとに取込ファイルを一覧表示します。アップロードから{{ FILE_RETENTION_DAYS }}日を経過したファイルは自動的に削除されます（調査結果・メモは残ります）。
             </p>

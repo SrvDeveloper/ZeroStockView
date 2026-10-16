@@ -194,7 +194,7 @@ async function save() {
 
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div>
-                <h1 class="text-[22px] leading-tight font-black">{{ isNew ? "品番グループを新規作成" : "品番グループを編集" }}</h1>
+                <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">{{ isNew ? "品番グループを新規作成" : "品番グループを編集" }}</h1>
                 <p class="mt-1 text-[12.5px] text-ink-2">用途ごとに名前を付けて、表示する品番と並び順を設定します。登録した品番はすべて取込対象になります。</p>
             </div>
             <div class="flex flex-wrap items-center gap-2 lg:ml-auto">
