@@ -46,6 +46,9 @@ interface SkuCard {
 }
 
 const SERIES_COLORS = ["#2563eb", "#7c3aed", "#059669", "#ea580c", "#db2777", "#0891b2", "#65a30d", "#9333ea"];
+/** 品番全体の棒（グラファイト）と欠品SKU数の線（墨）。欠品の点は黄色で描く */
+const PRODUCT_TOTAL_COLOR = "#7d8893";
+const STOCKOUT_LINE_COLOR = "#11161a";
 const products = ref<InventoryTrendProduct[]>([]);
 const availableBrands = ref<string[]>([]);
 const availableRange = ref<{ from: string; to: string } | null>(null);
@@ -118,7 +121,7 @@ const productChartSeries = computed<TrendSeries[]>(() => {
         {
             skuCode: productCode.value,
             label: "総在庫数",
-            color: SERIES_COLORS[0]!,
+            color: PRODUCT_TOTAL_COLOR,
             points: selectedDates.value.map((date) => {
                 const quantities = rawSeries.value.flatMap((series) => {
                     const point = series.points.find((item) => item.date === date);
@@ -151,7 +154,7 @@ const productStockoutSeries = computed<StockoutSeries | null>(() => {
 
     return {
         label: "欠品SKU数",
-        color: "#e11d48",
+        color: STOCKOUT_LINE_COLOR,
         points: selectedDates.value.map((date) => {
             const availableSeries = rawSeries.value.flatMap((series) => {
                 const point = series.points.find((item) => item.date === date);
@@ -368,9 +371,9 @@ async function exportCsv(scope: "selected" | "all") {
 </script>
 
 <template>
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-xl font-semibold text-slate-900">在庫推移</h1>
+            <h1 class="text-[22px] leading-tight font-semibold">在庫推移</h1>
             <div class="flex flex-wrap gap-2">
                 <BaseButton
                     data-testid="inventory-trend-export"
@@ -395,7 +398,7 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
         </div>
 
-        <p class="text-xs text-slate-500">CSVには調査日の在庫と、調査がない日のAmazon取得結果を含みます。Amazon取得だけの日は他の在庫区分が空欄です。</p>
+        <p class="text-[11.5px] text-muted">CSVには調査日の在庫と、調査がない日のAmazon取得結果を含みます。Amazon取得だけの日は他の在庫区分が空欄です。</p>
 
         <BaseAlert v-if="exportError" tone="danger" title="日次在庫を出力できませんでした">{{ exportError }}</BaseAlert>
 
@@ -409,21 +412,21 @@ async function exportCsv(scope: "selected" | "all") {
         <BaseCard :padded="false">
             <div class="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:gap-3">
                 <div class="min-w-0 flex-1">
-                    <span class="mb-1 block text-xs font-medium text-slate-600">対象品番</span>
+                    <span class="mb-1 block text-[11px] font-medium text-ink-2">対象品番</span>
                     <button
                         type="button"
                         data-testid="product-picker-button"
-                        class="flex h-10 w-full items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white px-3 text-left text-sm transition-colors hover:border-primary-400 hover:bg-primary-50/30 focus-visible:outline-2 focus-visible:outline-primary-500/40"
+                        class="flex h-8 w-full items-center justify-between gap-3 rounded-control border border-line-strong bg-surface px-2.5 text-left text-[12.5px] shadow-field transition-colors hover:border-ink-2/50 focus-visible:outline-2 focus-visible:outline-ink-2"
                         aria-haspopup="dialog"
                         :disabled="productsLoading || !selectedProduct"
                         @click="openProductPicker"
                     >
                         <span v-if="selectedProduct" class="min-w-0 truncate">
-                            <span class="font-medium text-slate-900">{{ selectedProduct.productCode }}</span>
-                            <span class="ml-3 text-slate-500">{{ selectedProduct.brand }} ／ {{ selectedProduct.category }}</span>
+                            <span class="font-mono font-semibold text-ink">{{ selectedProduct.productCode }}</span>
+                            <span class="ml-3 text-muted">{{ selectedProduct.brand }} ／ {{ selectedProduct.category }}</span>
                         </span>
-                        <span v-else class="text-slate-400">{{ productsLoading ? "読み込み中..." : "対象品番がありません" }}</span>
-                        <span class="flex shrink-0 items-center gap-1.5 text-xs font-medium text-primary-700"><AppIcon name="manage_search" :size="18" />選択</span>
+                        <span v-else class="text-muted">{{ productsLoading ? "読み込み中..." : "対象品番がありません" }}</span>
+                        <span class="flex shrink-0 items-center gap-1.5 text-xs font-medium text-ink-2"><AppIcon name="manage_search" :size="18" />選択</span>
                     </button>
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
@@ -448,7 +451,7 @@ async function exportCsv(scope: "selected" | "all") {
                         />
                     </div>
                     <div>
-                        <span class="mb-1 block text-xs font-medium text-slate-600">対象期間</span>
+                        <span class="mb-1 block text-[11px] font-medium text-ink-2">対象期間</span>
                         <div class="flex items-center gap-2">
                             <input
                                 type="date"
@@ -457,10 +460,10 @@ async function exportCsv(scope: "selected" | "all") {
                                 :max="availableRange?.to"
                                 :disabled="!availableRange"
                                 aria-label="対象期間の開始日"
-                                class="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-2 focus:outline-primary-500/40"
+                                class="h-8 rounded-control border border-line-strong bg-surface px-2.5 font-mono text-xs text-ink shadow-field focus:border-ink-2 focus:ring-3 focus:ring-ink/10 focus:outline-none"
                                 @change="updateTargetStart"
                             />
-                            <span class="text-sm text-slate-400">〜</span>
+                            <span class="text-[12.5px] text-faint">〜</span>
                             <input
                                 type="date"
                                 :value="targetEnd"
@@ -468,17 +471,17 @@ async function exportCsv(scope: "selected" | "all") {
                                 :max="latestTargetEnd"
                                 :disabled="!availableRange"
                                 aria-label="対象期間の終了日"
-                                class="h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-2 focus:outline-primary-500/40"
+                                class="h-8 rounded-control border border-line-strong bg-surface px-2.5 font-mono text-xs text-ink shadow-field focus:border-ink-2 focus:ring-3 focus:ring-ink/10 focus:outline-none"
                                 @change="updateTargetEnd"
                             />
                         </div>
-                        <p class="mt-1 text-xs text-slate-500">対象期間は最大365日間です。</p>
+                        <p class="mt-1 text-[11px] text-muted">対象期間は最大365日間です。</p>
                     </div>
                 </div>
             </div>
         </BaseCard>
 
-        <p v-if="inventoryScope === 'mallTotal' || inventoryScope === 'grandTotal'" data-testid="survey-scope-note" class="text-sm text-slate-600">
+        <p v-if="inventoryScope === 'mallTotal' || inventoryScope === 'grandTotal'" data-testid="survey-scope-note" class="text-xs text-ink-2">
             この区分は調査日の保存済み在庫を合算します。Amazonが未確定のSKUと、調査がないSP-API取得日の合計は表示しません。
         </p>
 
@@ -489,7 +492,7 @@ async function exportCsv(scope: "selected" | "all") {
                     <BaseInput v-model="productQuery" label="検索" placeholder="品番・ブランド・カテゴリを入力" clearable clear-label="品番検索をクリア" />
                 </div>
 
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2 text-xs text-slate-500">
+                <div class="flex items-center justify-between border-b border-line-2 pb-2 text-[11px] text-muted">
                     <span>候補一覧</span>
                     <span>{{ filteredProductOptions.length }}件</span>
                 </div>
@@ -500,25 +503,21 @@ async function exportCsv(scope: "selected" | "all") {
                         :key="product.productCode"
                         type="button"
                         :data-product-code="product.productCode"
-                        class="flex w-full items-center justify-between gap-4 rounded-lg border px-4 py-3 text-left transition-colors"
-                        :class="
-                            pendingProductCode === product.productCode
-                                ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500/20'
-                                : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                        "
+                        class="flex w-full items-center justify-between gap-4 rounded-card border px-3.5 py-2.5 text-left transition-colors"
+                        :class="pendingProductCode === product.productCode ? 'border-ink bg-surface-2 ring-1 ring-ink/20' : 'border-line bg-surface hover:border-line-stronger hover:bg-surface-2'"
                         :aria-pressed="pendingProductCode === product.productCode"
                         @click="pendingProductCode = product.productCode"
                     >
                         <span class="min-w-0">
-                            <span class="block font-medium text-slate-900">{{ product.productCode }}</span>
-                            <span class="mt-1 block text-xs text-slate-500">{{ product.brand }} ／ {{ product.category }} ／ {{ product.skuCount }} SKU</span>
+                            <span class="block font-mono font-semibold text-ink">{{ product.productCode }}</span>
+                            <span class="mt-1 block text-[11px] text-muted">{{ product.brand }} ／ {{ product.category }} ／ {{ product.skuCount }} SKU</span>
                         </span>
-                        <AppIcon v-if="pendingProductCode === product.productCode" name="check_circle" :size="22" filled class="shrink-0 text-primary-600" />
+                        <AppIcon v-if="pendingProductCode === product.productCode" name="check_circle" :size="22" filled class="shrink-0 text-ink" />
                     </button>
                 </div>
-                <div v-else class="rounded-lg border border-dashed border-slate-300 py-10 text-center">
-                    <AppIcon name="search_off" :size="28" class="mx-auto text-slate-300" />
-                    <p class="mt-2 text-sm text-slate-500">条件に一致する品番がありません</p>
+                <div v-else class="rounded-card border border-dashed border-line-stronger py-10 text-center">
+                    <AppIcon name="search_off" :size="28" class="mx-auto text-faint" />
+                    <p class="mt-2 text-[12.5px] text-muted">条件に一致する品番がありません</p>
                 </div>
             </div>
 
@@ -531,12 +530,12 @@ async function exportCsv(scope: "selected" | "all") {
         <BaseCard :title="chartTitle" :description="chartDescription">
             <template #actions>
                 <BaseButton data-testid="refresh-trend" size="sm" variant="secondary" icon="refresh" :loading="trendLoading" @click="() => loadTrend()">再読込</BaseButton>
-                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="在庫推移の確認単位">
+                <div class="inline-flex gap-0.5 rounded-control bg-tint p-0.5" role="group" aria-label="在庫推移の確認単位">
                     <button
                         type="button"
                         data-testid="trend-view-sku"
-                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-                        :class="trendView === 'sku' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+                        class="rounded-chip px-2.5 py-0.5 text-[11px] transition-colors"
+                        :class="trendView === 'sku' ? 'bg-surface font-semibold text-ink shadow-raised' : 'text-ink-2 hover:text-ink'"
                         :aria-pressed="trendView === 'sku'"
                         @click="trendView = 'sku'"
                     >
@@ -545,15 +544,15 @@ async function exportCsv(scope: "selected" | "all") {
                     <button
                         type="button"
                         data-testid="trend-view-product"
-                        class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-                        :class="trendView === 'product' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'"
+                        class="rounded-chip px-2.5 py-0.5 text-[11px] transition-colors"
+                        :class="trendView === 'product' ? 'bg-surface font-semibold text-ink shadow-raised' : 'text-ink-2 hover:text-ink'"
                         :aria-pressed="trendView === 'product'"
                         @click="trendView = 'product'"
                     >
                         品番
                     </button>
                 </div>
-                <span v-if="targetStart && targetEnd" class="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                <span v-if="targetStart && targetEnd" class="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted">
                     <AppIcon name="calendar_today" :size="14" />{{ formatTargetDate(targetStart) }}〜{{ formatTargetDate(targetEnd) }}（{{ selectedDates.length }}日間）
                 </span>
             </template>
@@ -561,14 +560,14 @@ async function exportCsv(scope: "selected" | "all") {
             <div
                 v-if="rawSeries.length > 0 && trendView === 'product'"
                 data-testid="product-chart-legend"
-                class="mb-5 flex flex-wrap items-center gap-5 border-b border-slate-100 pb-4 text-xs font-medium text-slate-600"
+                class="mb-4 flex flex-wrap items-center gap-5 border-b border-line-2 pb-3 text-[11px] text-ink-2"
             >
-                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-primary-600"></span>総在庫数</span>
-                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-rose-600"></span>欠品SKU数</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-xs bg-primary-400"></span>総在庫数</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-[2px] border border-ink bg-signal"></span>欠品SKU数</span>
             </div>
 
-            <div v-if="trendLoading" class="flex min-h-80 items-center justify-center gap-2 text-sm text-slate-500" role="status">
-                <AppIcon name="progress_activity" :size="22" class="animate-spin text-primary-500" />
+            <div v-if="trendLoading" class="flex min-h-80 items-center justify-center gap-2 text-[12.5px] text-muted" role="status">
+                <AppIcon name="progress_activity" :size="22" class="animate-spin text-ink-2" />
                 在庫推移を読み込んでいます...
             </div>
             <BaseAlert v-else-if="trendError" tone="danger" title="在庫推移を読み込めませんでした">
@@ -583,27 +582,27 @@ async function exportCsv(scope: "selected" | "all") {
                     v-for="sku in skuCards"
                     :key="sku.skuCode"
                     :data-sku-card="sku.skuCode"
-                    class="min-w-0 rounded-xl border bg-white p-3 shadow-xs"
-                    :class="sku.stockoutDays > 0 ? 'border-rose-300' : 'border-slate-200'"
+                    class="min-w-0 rounded-card border bg-surface p-3 shadow-raised"
+                    :class="sku.stockoutDays > 0 ? 'border-signal-border' : 'border-line'"
                 >
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
-                            <h3 class="truncate font-mono text-sm font-medium text-slate-900" :title="sku.skuCode">{{ sku.skuCode }}</h3>
-                            <p v-if="sku.size" class="mt-0.5 text-xs text-slate-500">サイズ {{ sku.size }}</p>
+                            <h3 class="truncate font-mono text-xs font-semibold text-ink" :title="sku.skuCode">{{ sku.skuCode }}</h3>
+                            <p v-if="sku.size" class="mt-0.5 text-[11px] text-muted">サイズ {{ sku.size }}</p>
                         </div>
                         <span
-                            class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
-                            :class="sku.latest === null ? 'bg-slate-100 text-slate-600' : sku.stockoutDays > 0 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'"
+                            class="shrink-0 rounded-chip px-1.5 py-px text-[10.5px] font-semibold"
+                            :class="sku.latest === null ? 'bg-tint text-ink-2' : sku.stockoutDays > 0 ? 'bg-signal text-ink' : 'bg-ok-soft text-ok-ink'"
                         >
                             {{ sku.latest === null ? "データなし" : sku.stockoutDays > 0 ? `欠品 ${sku.stockoutDays}日` : "在庫あり" }}
                         </span>
                     </div>
-                    <div class="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <div class="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[11px] text-muted">
                         <span
-                            >最新 <strong class="ml-1 text-base text-slate-900">{{ formatSummaryQuantity(sku.latest) }}</strong></span
+                            >最新 <strong class="ml-1 font-num text-lg font-semibold text-ink">{{ formatSummaryQuantity(sku.latest) }}</strong></span
                         >
                         <span
-                            >期間平均 <strong class="ml-1 font-medium text-slate-700">{{ formatSummaryAverage(sku.average) }}</strong></span
+                            >期間平均 <strong class="ml-1 font-num text-sm font-semibold text-ink-2">{{ formatSummaryAverage(sku.average) }}</strong></span
                         >
                     </div>
                     <InventoryTrendMiniChart :label="sku.skuCode" :points="sku.points" :color="sku.color" />
@@ -621,31 +620,38 @@ async function exportCsv(scope: "selected" | "all") {
             :padded="false"
         >
             <div class="overflow-x-auto">
-                <table data-testid="sku-summary-table" class="w-full min-w-180 text-left text-sm">
-                    <thead class="border-b border-slate-200 bg-slate-50 text-xs tracking-wide text-slate-500">
+                <table data-testid="sku-summary-table" class="w-full min-w-180 text-left text-xs tabular-nums">
+                    <thead class="border-b border-line text-[11px] text-muted">
                         <tr>
-                            <th class="px-5 py-3 font-medium">SKU</th>
-                            <th class="px-4 py-3 text-right font-medium">最新在庫</th>
-                            <th class="px-4 py-3 text-right font-medium">期間平均</th>
-                            <th class="px-4 py-3 text-right font-medium">期間最小</th>
-                            <th class="px-4 py-3 text-right font-medium">期間最大</th>
-                            <th class="px-5 py-3 text-right font-medium">欠品日数</th>
+                            <th class="px-5 py-2.5 font-semibold">SKU</th>
+                            <th class="px-4 py-2.5 text-right font-semibold">最新在庫</th>
+                            <th class="px-4 py-2.5 text-right font-semibold">期間平均</th>
+                            <th class="px-4 py-2.5 text-right font-semibold">期間最小</th>
+                            <th class="px-4 py-2.5 text-right font-semibold">期間最大</th>
+                            <th class="px-5 py-2.5 text-right font-semibold">欠品日数</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-slate-50/70">
-                            <td class="px-5 py-3 font-medium text-slate-800">
+                    <tbody class="divide-y divide-line-2">
+                        <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-surface-2">
+                            <td class="px-5 py-2 font-mono font-medium text-ink">
                                 <span class="inline-flex items-center gap-2">
-                                    <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: summary.color }"></span>
+                                    <span class="h-2.5 w-2.5 shrink-0 rounded-xs" :style="{ backgroundColor: summary.color }"></span>
                                     {{ summary.skuCode }}
                                 </span>
                             </td>
-                            <td data-summary-field="latest" class="px-4 py-3 text-right font-medium tabular-nums text-slate-800">{{ formatSummaryQuantity(summary.latest) }}</td>
-                            <td data-summary-field="average" class="px-4 py-3 text-right tabular-nums text-slate-600">{{ formatSummaryAverage(summary.average) }}</td>
-                            <td data-summary-field="minimum" class="px-4 py-3 text-right tabular-nums text-slate-600">{{ formatSummaryQuantity(summary.minimum) }}</td>
-                            <td data-summary-field="maximum" class="px-4 py-3 text-right tabular-nums text-slate-600">{{ formatSummaryQuantity(summary.maximum) }}</td>
-                            <td data-summary-field="stockout-days" class="px-5 py-3 text-right tabular-nums">
-                                <span :class="summary.stockoutDays > 0 ? 'font-semibold text-rose-600' : 'text-slate-500'">{{ summary.stockoutDays }}日</span>
+                            <td data-summary-field="latest" class="px-4 py-2 text-right font-num text-lg font-semibold text-ink">{{ formatSummaryQuantity(summary.latest) }}</td>
+                            <td data-summary-field="average" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryAverage(summary.average) }}</td>
+                            <td data-summary-field="minimum" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryQuantity(summary.minimum) }}</td>
+                            <td data-summary-field="maximum" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryQuantity(summary.maximum) }}</td>
+                            <td data-summary-field="stockout-days" class="px-5 py-2 text-right">
+                                <span
+                                    :class="
+                                        summary.stockoutDays > 0
+                                            ? 'inline-block min-w-[28px] rounded-chip bg-signal px-1.5 text-center font-num text-base font-bold text-ink'
+                                            : 'font-num text-base text-muted'
+                                    "
+                                    >{{ summary.stockoutDays }}日</span
+                                >
                             </td>
                         </tr>
                     </tbody>
