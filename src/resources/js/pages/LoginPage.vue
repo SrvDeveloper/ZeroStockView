@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import AppLogo from "@/components/AppLogo.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
@@ -44,9 +45,7 @@ async function submit() {
         <div class="w-full max-w-[360px] overflow-hidden rounded-panel border border-line bg-surface shadow-float">
             <div class="h-1.5 bg-hazard" aria-hidden="true"></div>
             <div class="flex items-center gap-2.5 px-6 pt-[22px] pb-1">
-                <span class="flex h-7 w-7 items-center justify-center rounded-panel bg-signal font-num text-[17px] font-bold text-ink shadow-[inset_0_-2px_0_rgb(0_0_0/0.12)]" aria-hidden="true"
-                    >0</span
-                >
+                <AppLogo :size="28" />
                 <div class="leading-tight">
                     <h1 class="text-[15px] font-semibold text-ink">ZeroStockView</h1>
                     <p class="text-[10.5px] text-muted">在庫状況調査アプリ</p>
