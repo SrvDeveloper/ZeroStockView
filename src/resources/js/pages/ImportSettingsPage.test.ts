@@ -131,8 +131,7 @@ describe("ImportSettingsPage", () => {
         expect(fetchCrossWalkerProducts).toHaveBeenLastCalledWith("", 2, 20);
         expect(wrapper.text()).toContain("追加済み");
         const addedRow = wrapper.get('[data-testid="candidate-product-row"]');
-        expect(addedRow.classes()).toContain("bg-slate-100");
-        expect(addedRow.get("p").classes()).toContain("text-slate-500");
+        expect(addedRow.attributes("data-added")).toBe("true");
         expect(wrapper.find('button[aria-label="前のページ"]').exists()).toBe(true);
     });
 });
