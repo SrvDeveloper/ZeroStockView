@@ -53,3 +53,5 @@ ls public/build/assets | grep -iE "woff2|plex|barlow"
 grep -rn "Instrument Sans" resources || echo "参照なし"
 npm run check
 ```
+
+**実装状況（2026-10-16）:** `vite.config.js` に `google()` で 3 書体を設定し、`app.css` の `--font-sans`／`--font-mono`／`--font-num` を差し替えた。和文は 400／500／600 の 3 段階に絞った（`font-bold` の使用は 1 か所で、700 は合成で足りるため）。`fontaine` の追加を避けるため `optimizedFallbacks: false` にした。ビルドで woff2 が約 360 個生成される。`@fonts` は `@font-face` を `<style>` で HTML に埋め込む方式で、埋め込み量は約 320KB（gzip 後 約 94KB）。社内ツールとして許容と判断したが、初回表示が気になる場合は和文の太さをさらに絞る。`resources/views/welcome.blade.php` に残る `Instrument Sans` は、ルートから使われていない Laravel 既定のページなので対象外とした。
