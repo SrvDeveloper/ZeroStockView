@@ -7,13 +7,12 @@ import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import ConfirmModal from "@/components/ui/ConfirmModal.vue";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
+import { FILE_RETENTION_DAYS } from "@/constants/files";
 import { daysSince, formatDateTime, formatSizeKb } from "@/utils/format";
 import type { SurveyFile } from "@/types";
 
 const surveysStore = useSurveysStore();
 const toast = useUiStore();
-
-const FILE_RETENTION_DAYS = 30;
 
 const groups = computed(() =>
     surveysStore.sortedSurveys.map((survey) => ({

@@ -42,3 +42,5 @@ cd src
 npx vitest run resources/js/components
 npm run check
 ```
+
+**実装状況（2026-10-16）:** `components/IntegrationStatus.vue` をサイドバー下部に置いた。Amazon は一覧 API の先頭（新しい順）を使い、5 分ごとに取り直す。時刻は当日なら `HH:mm`、それ以外は `MM-DD HH:mm`（Asia/Tokyo）。保存期限の定数は `constants/files.ts`、残り日数の計算は `utils/files.ts`（`fileRemainingDays`、`countExpiringFiles`）にまとめ、UIR-13 でも使う。テストは `components/IntegrationStatus.test.ts`。
