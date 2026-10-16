@@ -15,28 +15,10 @@ const auth = useAuthStore();
 const surveys = useSurveysStore();
 const importSettings = useImportSettingsStore();
 
-const now = ref(new Date());
 const accountMenuOpen = ref(false);
 const accountMenuRef = ref<HTMLElement | null>(null);
-let clockTimer: ReturnType<typeof setInterval> | undefined;
 
-const clockFormatter = new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-});
 const dateFormatter = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" });
-
-/** 2026-10-16 (金) 09:14 JST の形 */
-const clock = computed(() => {
-    const parts = Object.fromEntries(clockFormatter.formatToParts(now.value).map((part) => [part.type, part.value]));
-    return `${parts.year}-${parts.month}-${parts.day} (${parts.weekday}) ${parts.hour}:${parts.minute} JST`;
-});
 
 function isoDate(iso: string): string {
     const parts = Object.fromEntries(dateFormatter.formatToParts(new Date(iso)).map((part) => [part.type, part.value]));
@@ -73,13 +55,11 @@ async function logout() {
 }
 
 onMounted(() => {
-    clockTimer = setInterval(() => (now.value = new Date()), 30000);
     document.addEventListener("click", onDocumentClick);
     document.addEventListener("keydown", onKeydown);
 });
 
 onBeforeUnmount(() => {
-    clearInterval(clockTimer);
     document.removeEventListener("click", onDocumentClick);
     document.removeEventListener("keydown", onKeydown);
 });
@@ -104,7 +84,6 @@ onBeforeUnmount(() => {
             </template>
         </nav>
         <span class="flex-1"></span>
-        <time class="hidden whitespace-nowrap sm:block" :datetime="now.toISOString()">{{ clock }}</time>
         <div ref="accountMenuRef" class="relative">
             <button
                 type="button"
