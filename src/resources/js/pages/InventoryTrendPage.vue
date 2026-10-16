@@ -422,7 +422,7 @@ async function exportCsv(scope: "selected" | "all") {
                         @click="openProductPicker"
                     >
                         <span v-if="selectedProduct" class="min-w-0 truncate">
-                            <span class="font-mono font-semibold text-ink">{{ selectedProduct.productCode }}</span>
+                            <span class="font-mono font-semibold text-ink uppercase">{{ selectedProduct.productCode }}</span>
                             <span class="ml-3 text-muted">{{ selectedProduct.brand }} ／ {{ selectedProduct.category }}</span>
                         </span>
                         <span v-else class="text-muted">{{ productsLoading ? "読み込み中..." : "対象品番がありません" }}</span>
@@ -509,7 +509,7 @@ async function exportCsv(scope: "selected" | "all") {
                         @click="pendingProductCode = product.productCode"
                     >
                         <span class="min-w-0">
-                            <span class="block font-mono font-semibold text-ink">{{ product.productCode }}</span>
+                            <span class="block font-mono font-semibold text-ink uppercase">{{ product.productCode }}</span>
                             <span class="mt-1 block text-[11px] text-muted">{{ product.brand }} ／ {{ product.category }} ／ {{ product.skuCount }} SKU</span>
                         </span>
                         <AppIcon v-if="pendingProductCode === product.productCode" name="check_circle" :size="22" filled class="shrink-0 text-ink" />
@@ -587,7 +587,7 @@ async function exportCsv(scope: "selected" | "all") {
                 >
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
-                            <h3 class="truncate font-mono text-xs font-semibold text-ink" :title="sku.skuCode">{{ sku.skuCode }}</h3>
+                            <h3 class="truncate font-mono text-xs font-semibold text-ink uppercase" :title="sku.skuCode">{{ sku.skuCode }}</h3>
                             <p v-if="sku.size" class="mt-0.5 text-[11px] text-muted">サイズ {{ sku.size }}</p>
                         </div>
                         <span
@@ -633,7 +633,7 @@ async function exportCsv(scope: "selected" | "all") {
                     </thead>
                     <tbody class="divide-y divide-line-2">
                         <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-surface-2">
-                            <td class="px-5 py-2 font-mono font-medium text-ink">
+                            <td class="px-5 py-2 font-mono font-medium text-ink uppercase">
                                 <span class="inline-flex items-center gap-2">
                                     <span class="h-2.5 w-2.5 shrink-0 rounded-xs" :style="{ backgroundColor: summary.color }"></span>
                                     {{ summary.skuCode }}

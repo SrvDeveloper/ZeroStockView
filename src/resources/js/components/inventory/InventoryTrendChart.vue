@@ -530,7 +530,7 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                         <p class="mb-1.5 font-medium text-muted">この日の欠品SKU</p>
                         <div v-if="hovered.stockoutSkus.length > 0" class="max-h-40 space-y-1 overflow-y-auto pr-1">
                             <p v-for="sku in hovered.stockoutSkus" :key="sku.skuCode" data-tooltip-stockout-sku class="flex items-center justify-between gap-4 text-ink-2">
-                                <span class="truncate font-mono font-medium" :title="sku.skuCode">{{ sku.skuCode }}</span>
+                                <span class="truncate font-mono font-medium uppercase" :title="sku.skuCode">{{ sku.skuCode }}</span>
                                 <span class="shrink-0 text-muted"
                                     >期間累計 <span class="font-semibold text-ink">{{ sku.stockoutDays }}日</span></span
                                 >
