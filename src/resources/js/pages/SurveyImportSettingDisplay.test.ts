@@ -229,29 +229,24 @@ describe("survey import setting display", () => {
         expect(wrapper.find("[data-stock-field=amazonOwn]").exists()).toBe(false);
         expect(wrapper.find("[data-stock-field=amazonFba]").exists()).toBe(false);
         expect(amazonCell.get(".stock-total-value").text()).toBe("3");
-        expect(amazonCell.classes()).toContain("bg-amber-50");
+        expect(amazonCell.attributes("data-stock-state")).toBe("low");
         expect(amazonCell.attributes("tabindex")).toBe("0");
         expect(amazonBreakdown.text()).toContain("Amazon内訳");
         expect(amazonBreakdown.findAll("strong").map((value) => value.text())).toEqual(["0", "3"]);
         expect(bossCell.get(".stock-total-value").text()).toBe("0");
-        expect(bossCell.classes()).toContain("bg-rose-50");
-        expect(bossCell.classes()).not.toContain("group-hover:bg-rose-100");
+        expect(bossCell.attributes("data-stock-state")).toBe("zero");
         expect(bossBreakdown.text()).toContain("BOSS内訳");
         expect(bossBreakdown.findAll("strong").map((value) => value.text())).toEqual(["0", "0"]);
         expect(wrapper.get("thead").text()).toContain("在庫総数");
         expect(totalStockCell.text()).toBe("14");
-        expect(totalStockCell.classes()).toContain("font-semibold");
+        expect(totalStockCell.attributes("data-stock-state")).toBe("has");
         expect(wrapper.findAll("[role=tooltip]")).toHaveLength(2);
-        expect(wrapper.get("[data-stock-field=freeStock]").classes()).not.toContain("bg-amber-50");
-        expect(wrapper.get("[data-stock-field=ecStock]").classes()).not.toContain("bg-amber-50");
+        expect(wrapper.get("[data-stock-field=freeStock]").attributes("data-stock-state")).toBe("has");
+        expect(wrapper.get("[data-stock-field=ecStock]").attributes("data-stock-state")).toBe("has");
+        expect(wrapper.get("tbody tr").attributes("data-row-state")).toBeUndefined();
         await wrapper.get('input[placeholder="SKUで絞込"]').setValue("A-1001");
-        expect(wrapper.get("tbody tr").classes()).toContain("bg-sky-50");
-        expect(wrapper.get("tbody tr").classes()).not.toContain("hover:bg-slate-50");
-        expect(wrapper.get("[data-sku-cell]").classes()).toContain("group-hover:bg-slate-100");
-        expect(wrapper.get("tbody tr").classes()).not.toContain("hover:bg-indigo-100");
-        expect(wrapper.get("[data-stock-field=amazon]").classes()).not.toContain("group-hover:bg-amber-100");
-        expect(wrapper.get("tbody tr").classes()).not.toContain("bg-amber-50");
-        expect(wrapper.get("[data-stock-field=amazon]").classes()).toContain("bg-amber-50");
+        expect(wrapper.get("tbody tr").attributes("data-row-state")).toBe("matched");
+        expect(wrapper.get("[data-stock-field=amazon]").attributes("data-stock-state")).toBe("low");
         await wrapper.get('button[aria-label="SKUの絞込をクリア"]').trigger("click");
         const andOperator = wrapper.get('[data-condition-operator="and"]');
         const orOperator = wrapper.get('[data-condition-operator="or"]');
@@ -503,10 +498,9 @@ describe("survey import setting display", () => {
         const ecStockCell = wrapper.get("[data-stock-field=ecStock]");
 
         expect(amazonCell.get(".stock-total-value").text()).toBe("5");
-        expect(amazonCell.classes()).toContain("bg-amber-50");
-        expect(amazonCell.classes()).toContain("font-semibold");
-        expect(freeStockCell.classes()).toContain("text-slate-300");
-        expect(ecStockCell.classes()).toContain("text-slate-300");
+        expect(amazonCell.attributes("data-stock-state")).toBe("low");
+        expect(freeStockCell.attributes("data-stock-state")).toBe("zero");
+        expect(ecStockCell.attributes("data-stock-state")).toBe("zero");
     });
 
     it("labels an ASIN-less SP-API SKU as outside scope and includes its other stock in the total", () => {

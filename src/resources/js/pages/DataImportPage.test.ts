@@ -191,12 +191,12 @@ describe("DataImportPage", () => {
         const dropzone = wrapper.get('[data-testid="bulk-file-dropzone"]');
 
         await dropzone.trigger("dragenter");
-        expect(dropzone.classes()).toContain("border-primary-500");
+        expect(dropzone.attributes("data-dragging")).toBe("true");
 
         await dropzone.trigger("drop", { dataTransfer: { files: validImportFiles() } });
 
         expect(wrapper.text()).toContain("添付ファイル: 3件");
-        expect(dropzone.classes()).not.toContain("border-primary-500");
+        expect(dropzone.attributes("data-dragging")).toBeUndefined();
     });
 
     it("runs the import without a selected group and opens all results", async () => {

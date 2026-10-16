@@ -206,6 +206,7 @@ async function runImport() {
         <BaseCard title="ファイルを添付" description="CSVのヘッダーを確認して、BOSS・ECストック・フリー在庫を自動判定します。ファイル名は判定に使いません。">
             <div
                 data-testid="bulk-file-dropzone"
+                :data-dragging="bulkDragging ? 'true' : undefined"
                 class="rounded-xl border-2 border-dashed p-6 transition"
                 :class="bulkDragging ? 'border-primary-500 bg-primary-50 ring-4 ring-primary-100' : 'border-slate-300 bg-slate-50/60'"
                 @dragenter.prevent="bulkDragging = true"

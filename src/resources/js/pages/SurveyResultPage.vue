@@ -265,6 +265,30 @@ function stockClass(quantity: number | null): string {
     return "font-semibold text-slate-900";
 }
 
+type StockState = "has" | "low" | "zero" | "pending" | "na";
+
+function groupedStockState(quantity: number | null): StockState {
+    if (quantity === null) return "pending";
+    if (quantity === 0) return "zero";
+    return isLowStock(quantity) ? "low" : "has";
+}
+
+function amazonStockState(stock: StockQuantities, asin: string): StockState {
+    const quantity = amazonStockTotal(stock);
+    if (quantity === null && survey.value?.amazonSource === "sp_api" && !asin.trim()) return "na";
+    return groupedStockState(quantity);
+}
+
+function plainStockState(quantity: number | null): StockState {
+    if (quantity === null) return "pending";
+    return quantity === 0 ? "zero" : "has";
+}
+
+function skuRowState(matched: boolean | undefined, stock: StockQuantities, asin: string): "matched" | "all-zero" | undefined {
+    if (matched) return "matched";
+    return isZero(stock, asin) ? "all-zero" : undefined;
+}
+
 function closeRerunMenu() {
     if (rerunRunning.value) return;
     rerunMenuOpen.value = false;
@@ -517,7 +541,13 @@ async function exportExcel(scope: "all" | "filtered") {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <tr v-for="sku in product.skus" :key="sku.skuCode" class="group" :class="sku.skuMatched ? 'bg-sky-50' : isZero(sku.stock, sku.asin) ? 'bg-slate-50/60' : ''">
+                        <tr
+                            v-for="sku in product.skus"
+                            :key="sku.skuCode"
+                            :data-row-state="skuRowState(sku.skuMatched, sku.stock, sku.asin)"
+                            class="group"
+                            :class="sku.skuMatched ? 'bg-sky-50' : isZero(sku.stock, sku.asin) ? 'bg-slate-50/60' : ''"
+                        >
                             <td data-sku-cell class="px-3 py-2.5 transition-colors group-hover:bg-slate-100">
                                 <div class="flex flex-col">
                                     <span class="font-semibold" :class="sku.skuMatched ? 'text-sky-800' : 'text-slate-900'">{{ sku.skuCode }}</span>
@@ -527,6 +557,7 @@ async function exportExcel(scope: "all" | "filtered") {
                             <td
                                 v-if="hasAmazonStock"
                                 data-stock-field="amazon"
+                                :data-stock-state="amazonStockState(sku.stock, sku.asin)"
                                 tabindex="0"
                                 aria-label="Amazon在庫合計"
                                 class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
@@ -549,6 +580,7 @@ async function exportExcel(scope: "all" | "filtered") {
                             </td>
                             <td
                                 data-stock-field="boss"
+                                :data-stock-state="groupedStockState(bossStockTotal(sku.stock))"
                                 tabindex="0"
                                 aria-label="BOSS在庫合計"
                                 class="stock-total-cell border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
@@ -569,15 +601,26 @@ async function exportExcel(scope: "all" | "filtered") {
                                     </div>
                                 </div>
                             </td>
-                            <td data-stock-field="freeStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.freeStock)">
+                            <td
+                                data-stock-field="freeStock"
+                                :data-stock-state="plainStockState(sku.stock.freeStock)"
+                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
+                                :class="stockClass(sku.stock.freeStock)"
+                            >
                                 {{ sku.stock.freeStock ?? "—" }}
                             </td>
-                            <td data-stock-field="ecStock" class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums" :class="stockClass(sku.stock.ecStock)">
+                            <td
+                                data-stock-field="ecStock"
+                                :data-stock-state="plainStockState(sku.stock.ecStock)"
+                                class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
+                                :class="stockClass(sku.stock.ecStock)"
+                            >
                                 {{ sku.stock.ecStock ?? "—" }}
                             </td>
                             <td
                                 v-if="hasAmazonStock"
                                 data-stock-field="total"
+                                :data-stock-state="plainStockState(stockTotal(sku.stock, sku.asin))"
                                 class="border-l border-slate-200 px-3 py-2.5 text-center tabular-nums"
                                 :class="stockClass(stockTotal(sku.stock, sku.asin))"
                             >

@@ -276,6 +276,7 @@ async function save() {
                             v-for="product in candidateProducts"
                             :key="product.productCode"
                             data-testid="candidate-product-row"
+                            :data-added="workingCodes.includes(product.productCode) ? 'true' : undefined"
                             class="flex items-center justify-between gap-3 px-5 py-2.5 transition-colors"
                             :class="workingCodes.includes(product.productCode) ? 'bg-slate-100' : 'bg-white'"
                         >
