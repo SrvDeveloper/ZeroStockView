@@ -37,3 +37,5 @@ npx vitest run resources/js/pages/FileManagementPage.test.ts
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** 要約（保存中のファイル数、合計サイズ、期限まで 7 日以内の件数）、種類の短い名前の札（旧ファイル調査の Amazon レポートは「Amazon 自社」「Amazon FBA」）、残り日数のメーターを実装した。表示するファイルは、従来の「経過日数 30 日以内」から、サーバーの削除条件（`expires_at` = アップロードから 30 日）に合わせた「残り日数が 1 日以上」に揃えた。残り日数は UIR-07 の `utils/files.ts` で計算する。期限切れの調査の説明文は既存の文言を残した。
