@@ -440,18 +440,13 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
 
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
-        <div class="flex flex-col gap-1 text-[11.5px] text-muted">
+        <div v-if="!hasReusableFiles || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
             <p v-if="!hasReusableFiles">取込ファイルが削除されているため、再照合機能は利用できません。</p>
             <p v-if="amazonStatus === 'pending'">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
             <p v-else-if="amazonStatus === 'partial'">
                 Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}
             </p>
-            <p v-else-if="amazonStatus === 'complete'"
-                >Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}。ほかの在庫とは取得時刻が異なる同日の集計値です。</p
-            >
-            <p v-else-if="!includesAmazonInventory">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
-            <p>「取込待ち」「—」は取込待ち・未取得を示します。確定した在庫ゼロは「0」で表示します。</p>
-            <p>Ctrlキーを押しながら{{ hasAmazonStock ? "Amazon・BOSS" : "BOSS" }}の数値にマウスを置くと、内訳（自社／FBA、自社／RFC）を表示します。</p>
+            <p v-else-if="!hasAmazonStock">この調査時点までに取得された Amazon 在庫履歴はありません。</p>
         </div>
 
         <BaseModal

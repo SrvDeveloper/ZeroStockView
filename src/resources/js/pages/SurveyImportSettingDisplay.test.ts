@@ -213,7 +213,7 @@ describe("survey import setting display", () => {
         const bossCell = wrapper.get("[data-stock-field=boss]");
         const totalStockCell = wrapper.get("[data-stock-field=total]");
         expect(wrapper.classes()).not.toContain("stock-breakdown-enabled");
-        expect(wrapper.text()).toContain("Ctrlキーを押しながらAmazon・BOSSの数値にマウスを置くと、内訳（自社／FBA、自社／RFC）を表示します。");
+        expect(wrapper.text()).not.toContain("Ctrlキー");
 
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control" }));
         await nextTick();
@@ -305,7 +305,9 @@ describe("survey import setting display", () => {
 
         expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("5");
         expect(wrapper.get("[data-stock-field=boss] [data-stock-value]").text()).toBe("9");
-        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 00:00");
+        expect(wrapper.get('[data-summary="amazon"]').text()).toContain("基準 00:00");
+        expect(wrapper.text()).not.toContain("ほかの在庫とは取得時刻が異なる");
+        expect(wrapper.text()).not.toContain("Amazon 在庫履歴はありません");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("27");
         expect(wrapper.get("thead").text()).toContain("総数");
     });
@@ -402,13 +404,13 @@ describe("survey import setting display", () => {
         expect(get).toHaveBeenCalledWith("/api/surveys/1");
         expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("5");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("9");
-        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 02:00");
+        expect(wrapper.get('[data-summary="amazon"]').text()).toContain("基準 02:00");
 
         await wrapper.get('[data-testid="refresh-survey"]').trigger("click");
         await flushPromises();
         expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("0");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("4");
-        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 04:00");
+        expect(wrapper.get('[data-summary="amazon"]').text()).toContain("基準 04:00");
         wrapper.unmount();
         get.mockRestore();
     });
@@ -434,7 +436,7 @@ describe("survey import setting display", () => {
         poll?.();
         await flushPromises();
         expect(refresh).toHaveBeenCalledWith("1");
-        expect(wrapper.text()).toContain("Amazon 基準日時: 2026/09/16 02:00");
+        expect(wrapper.get('[data-summary="amazon"]').text()).toContain("基準 02:00");
         wrapper.unmount();
         expect(clear).toHaveBeenCalledWith(123);
         interval.mockRestore();
@@ -572,7 +574,7 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-stock-field=ecStock]").text()).toBe("—");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
         expect(wrapper.get("[data-stock-field=boss] [data-stock-value]").text()).toBe("4");
-        expect(wrapper.text()).toContain("取込待ち・未取得");
+        expect(wrapper.text()).not.toContain("取込待ち・未取得を示します");
 
         await wrapper.get("[data-stock-condition=freeZero]").trigger("click");
         expect(wrapper.find("[data-stock-field=freeStock]").exists()).toBe(false);
