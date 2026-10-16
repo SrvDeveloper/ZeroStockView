@@ -45,3 +45,5 @@ npx vitest run resources/js/pages/ImportSettingsListPage.test.ts resources/js/pa
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** 一覧に要約（グループ数、重複を除いた品番数と SKU 数）、上限 50 件に対する件数、等幅の品番の札、最終同期（`lastSyncedAt`）の列を追加した。編集画面は、未保存の変更があるときだけ注意ランプを出し、「変更を取り消す」と主ボタン「このグループを保存」を右に並べた。取込対象品番の見出しには上限メーターを置いた。主ボタンを 1 つにするため、CrossWalker の「検索」は副ボタンにした。保存ボタンにはアイコンを付けていない（ボタンの文言でボタンを探す既存テストを壊さないため）。

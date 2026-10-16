@@ -134,4 +134,22 @@ describe("ImportSettingsPage", () => {
         expect(addedRow.attributes("data-added")).toBe("true");
         expect(wrapper.find('button[aria-label="前のページ"]').exists()).toBe(true);
     });
+
+    it("shows the unsaved-change lamp only while the group has changes", async () => {
+        setActivePinia(createPinia());
+        configureStore(["A-1001"]);
+        const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
+
+        expect(wrapper.find("[data-dirty-indicator]").exists()).toBe(false);
+        expect(wrapper.get("[data-target-capacity]").text()).toContain("1 / 50");
+
+        await wrapper.get('input[placeholder="例: 売上TOP20"]').setValue("秋冬アウター");
+        expect(wrapper.get("[data-dirty-indicator]").text()).toContain("未保存の変更があります");
+
+        await wrapper
+            .findAll("button")
+            .find((button) => button.text() === "変更を取り消す")!
+            .trigger("click");
+        expect(wrapper.find("[data-dirty-indicator]").exists()).toBe(false);
+    });
 });
