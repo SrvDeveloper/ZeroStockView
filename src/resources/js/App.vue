@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import Navbar from "@/components/Navbar.vue";
+import AppSidebar from "@/components/AppSidebar.vue";
+import AppTopBar from "@/components/AppTopBar.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseToasts from "@/components/ui/BaseToasts.vue";
 import { isPageLoading } from "@/router/loading";
@@ -9,6 +10,7 @@ import { isPageLoading } from "@/router/loading";
 const route = useRoute();
 const showChrome = computed(() => route.name !== undefined && route.name !== "login");
 const showLoadingOverlay = ref(false);
+const sidebarOpen = ref(false);
 let overlayTimer: ReturnType<typeof setTimeout> | undefined;
 
 watch(
@@ -37,22 +39,30 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-slate-50 text-slate-900">
+    <div class="min-h-screen bg-canvas bg-blueprint text-ink">
         <a href="#main-content" class="skip-link">本文へ移動</a>
         <BaseToasts />
-        <Navbar v-if="showChrome" />
-        <main id="main-content" :aria-busy="isPageLoading" :class="showChrome ? 'mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8' : ''">
+        <div v-if="showChrome" class="min-h-screen lg:grid lg:grid-cols-[212px_minmax(0,1fr)]">
+            <AppSidebar :open="sidebarOpen" @close="sidebarOpen = false" />
+            <div class="flex min-w-0 flex-col">
+                <AppTopBar :menu-open="sidebarOpen" @open-menu="sidebarOpen = true" />
+                <main id="main-content" :aria-busy="isPageLoading" class="w-full px-4 pt-5 pb-8 sm:px-7 sm:pt-[22px]">
+                    <router-view />
+                </main>
+            </div>
+        </div>
+        <main v-else id="main-content" :aria-busy="isPageLoading">
             <router-view />
         </main>
 
-        <div v-if="isPageLoading" class="fixed inset-x-0 top-0 z-70 h-1 overflow-hidden bg-primary-100" role="progressbar" aria-label="画面を読み込んでいます">
-            <div class="route-loading-bar h-full w-2/5 bg-primary-600"></div>
+        <div v-if="isPageLoading" class="fixed inset-x-0 top-0 z-70 h-[3px] overflow-hidden bg-ink/10" role="progressbar" aria-label="画面を読み込んでいます">
+            <div class="route-loading-bar h-full w-2/5 bg-ink"></div>
         </div>
 
         <Transition name="route-loading-fade">
-            <div v-if="showLoadingOverlay" class="fixed inset-0 z-60 flex items-center justify-center bg-slate-50/80 backdrop-blur-[1px]" role="status" aria-live="polite">
-                <div class="flex items-center gap-3 rounded-xl bg-white px-6 py-4 text-sm font-medium text-slate-700 shadow-xs">
-                    <AppIcon name="progress_activity" :size="24" class="animate-spin text-primary-500 motion-reduce:animate-none" aria-hidden="true" />
+            <div v-if="showLoadingOverlay" class="fixed inset-0 z-60 flex items-center justify-center bg-canvas/70 backdrop-blur-[1px]" role="status" aria-live="polite">
+                <div class="flex items-center gap-3 rounded-card border border-line bg-surface px-6 py-4 text-[13px] font-medium text-ink-2 shadow-card">
+                    <AppIcon name="progress_activity" :size="24" class="animate-spin text-ink-2 motion-reduce:animate-none" aria-hidden="true" />
                     <span>読み込み中...</span>
                 </div>
             </div>

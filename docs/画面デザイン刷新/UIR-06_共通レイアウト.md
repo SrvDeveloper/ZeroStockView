@@ -52,3 +52,5 @@ npx vitest run resources/js/components
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-16）:** `Navbar.vue` を削除し、`AppSidebar.vue` と `AppTopBar.vue` に分けた。`NAV_ITEMS` は `NAV_GROUPS` から作る形にし、子画面のルート名を `children` に持たせた（選択中の判定は `isNavItemActive`）。現在地は `meta.breadcrumb` に定義し、調査結果では在庫基準日（Asia/Tokyo）、品番グループの編集ではグループ名を末尾に足す。時刻は 30 秒ごとに更新する。アイコンの `settings`／`files` は、`category`／`folder_open` に変えた。テストは `components/AppLayout.test.ts`。
