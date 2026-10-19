@@ -53,9 +53,13 @@ function requestDeleteFile(surveyId: string, file: SurveyFile) {
 async function confirmDeleteFile() {
     if (!pendingSingleDelete.value) return;
     const { surveyId, file } = pendingSingleDelete.value;
-    await surveysStore.removeFile(surveyId, file.id);
-    toast.push("ファイルを削除しました");
-    pendingSingleDelete.value = null;
+    try {
+        await surveysStore.removeFile(surveyId, file.id);
+        toast.push("ファイルを削除しました");
+        pendingSingleDelete.value = null;
+    } catch {
+        toast.push("ファイルの削除に失敗しました。時間をおいて再度お試しください。", "error");
+    }
 }
 
 function requestBulkDelete(surveyId: string, count: number) {
@@ -65,9 +69,13 @@ function requestBulkDelete(surveyId: string, count: number) {
 async function confirmBulkDelete() {
     if (!pendingBulkDelete.value) return;
     const { surveyId } = pendingBulkDelete.value;
-    await surveysStore.removeFiles(surveyId);
-    toast.push("ファイルを一括削除しました");
-    pendingBulkDelete.value = null;
+    try {
+        await surveysStore.removeFiles(surveyId);
+        toast.push("ファイルを一括削除しました");
+        pendingBulkDelete.value = null;
+    } catch {
+        toast.push("ファイルの一括削除に失敗しました。時間をおいて再度お試しください。", "error");
+    }
 }
 </script>
 

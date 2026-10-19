@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchCrossWalkerProducts } from "@/api/crossWalker";
 import { PRODUCT_MASTER } from "@/constants/masterData";
 import ImportSettingsPage from "@/pages/ImportSettingsPage.vue";
+import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 
 const { push, replace } = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
@@ -35,6 +36,8 @@ function configureStore(productCodes: string[]) {
 
 describe("ImportSettingsPage", () => {
     beforeEach(() => {
+        setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         vi.mocked(fetchCrossWalkerProducts).mockReset();
         push.mockReset();
         replace.mockReset();
@@ -48,7 +51,6 @@ describe("ImportSettingsPage", () => {
     });
 
     it("reorders selected products by dragging and dropping", async () => {
-        setActivePinia(createPinia());
         const store = configureStore(["A-1001", "A-1002", "B-2001"]);
         vi.spyOn(store, "update").mockImplementation(async (settingId, name, productCodes) => {
             const setting = store.settings.find((candidate) => candidate.id === settingId)!;
@@ -72,7 +74,6 @@ describe("ImportSettingsPage", () => {
     });
 
     it("uses a grabbing cursor until dragging ends", async () => {
-        setActivePinia(createPinia());
         configureStore(["A-1001"]);
 
         const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
@@ -85,8 +86,6 @@ describe("ImportSettingsPage", () => {
         expect(row.classes()).toContain("cursor-grab");
     });
     it("requests 20 products and applies the keyword only after search is submitted", async () => {
-        setActivePinia(createPinia());
-
         const wrapper = mount(ImportSettingsPage);
         await flushPromises();
 
@@ -103,7 +102,6 @@ describe("ImportSettingsPage", () => {
         expect(fetchCrossWalkerProducts).toHaveBeenLastCalledWith("B-2001", 1, 20);
     });
     it("requests the next API page from pagination", async () => {
-        setActivePinia(createPinia());
         configureStore(["A-1001"]);
         vi.mocked(fetchCrossWalkerProducts).mockResolvedValueOnce({
             products: PRODUCT_MASTER,
@@ -136,7 +134,6 @@ describe("ImportSettingsPage", () => {
     });
 
     it("shows the unsaved-change lamp only while the group has changes", async () => {
-        setActivePinia(createPinia());
         configureStore(["A-1001"]);
         const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
 
@@ -151,5 +148,31 @@ describe("ImportSettingsPage", () => {
             .find((button) => button.text() === "変更を取り消す")!
             .trigger("click");
         expect(wrapper.find("[data-dirty-indicator]").exists()).toBe(false);
+    });
+
+    it("lets an editor save changes to a group", async () => {
+        useAuthStore().user = { id: "2", loginId: "editor", role: "editor" };
+        const store = configureStore(["A-1001"]);
+        const update = vi.spyOn(store, "update").mockImplementation(async (settingId, name, productCodes) => ({ ...store.settings[0]!, id: settingId, name, productCodes }));
+        const wrapper = mount(ImportSettingsPage, { props: { id: "1" } });
+
+        await wrapper.get('input[placeholder="例: 売上TOP20"]').setValue("編集済みグループ");
+        await wrapper
+            .findAll("button")
+            .find((button) => button.text().includes("このグループを保存"))!
+            .trigger("click");
+        await flushPromises();
+
+        expect(update).toHaveBeenCalledWith("1", "編集済みグループ", ["A-1001"]);
+        expect(push).toHaveBeenCalledWith({ name: "import-settings" });
+    });
+
+    it("does not search for products if a viewer mounts the editor directly", async () => {
+        useAuthStore().user = { id: "2", loginId: "viewer", role: "viewer" };
+        const wrapper = mount(ImportSettingsPage);
+        await flushPromises();
+
+        expect(wrapper.text()).toBe("");
+        expect(fetchCrossWalkerProducts).not.toHaveBeenCalled();
     });
 });

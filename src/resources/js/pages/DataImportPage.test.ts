@@ -3,6 +3,8 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AmazonInventoryImport } from "@/api/amazonInventoryImports";
 import DataImportPage from "@/pages/DataImportPage.vue";
+import type { UserRole } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 
@@ -18,8 +20,9 @@ vi.mock("vue-router", () => {
     return { useRouter: () => ({ push }) };
 });
 
-function mountPage() {
+function mountPage(role: UserRole = "admin") {
     setActivePinia(createPinia());
+    useAuthStore().user = { id: "1", loginId: role, role };
     const settings = useImportSettingsStore();
     settings.settings = [
         {
@@ -78,6 +81,8 @@ function amazonImport(status: AmazonInventoryImport["status"]): AmazonInventoryI
 
 describe("DataImportPage", () => {
     beforeEach(() => {
+        setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         push.mockReset();
         fetchAmazonInventoryImports.mockReset().mockResolvedValue([]);
         startAmazonInventoryImport.mockReset().mockResolvedValue(amazonImport("queued"));
@@ -94,6 +99,34 @@ describe("DataImportPage", () => {
         expect(startAmazonInventoryImport).toHaveBeenCalledTimes(1);
         expect(wrapper.get('[data-testid="amazon-import-status"]').text()).toContain("受付");
         expect(button.attributes("disabled")).toBeDefined();
+        wrapper.unmount();
+    });
+
+    it("allows an editor to import CSV files without offering manual Amazon import", async () => {
+        const wrapper = mountPage("editor");
+        const runImport = vi.spyOn(useSurveysStore(), "runImport").mockResolvedValue({ id: "10", executedAt: "2026-10-16T00:00:00Z", products: [], importSettingName: null, files: [] });
+        await flushPromises();
+
+        expect(wrapper.find('[data-testid="amazon-import-start"]').exists()).toBe(false);
+        expect(wrapper.text()).not.toContain("手動でも取得できます");
+        expect(fetchAmazonInventoryImports).toHaveBeenCalledOnce();
+
+        await selectFolder(wrapper, [new File([""], "stock.csv")]);
+        await wrapper.get('[data-testid="run-import"]').trigger("click");
+        await flushPromises();
+
+        expect(runImport).toHaveBeenCalledOnce();
+        expect(startAmazonInventoryImport).not.toHaveBeenCalled();
+        wrapper.unmount();
+    });
+
+    it("does not fetch import data when a viewer mounts the page directly", async () => {
+        const wrapper = mountPage("viewer");
+        await flushPromises();
+
+        expect(wrapper.text()).toBe("");
+        expect(fetchAmazonInventoryImports).not.toHaveBeenCalled();
+        expect(startAmazonInventoryImport).not.toHaveBeenCalled();
         wrapper.unmount();
     });
 

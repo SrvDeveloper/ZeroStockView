@@ -8,11 +8,14 @@ import BaseCard from "@/components/ui/BaseCard.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
 import { fetchAmazonInventoryImports, startAmazonInventoryImport, type AmazonInventoryImport, type AmazonImportStatus } from "@/api/amazonInventoryImports";
+import { ADMIN_ROLES, EDITOR_ROLES, canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import { formatDateTime, formatSizeKb } from "@/utils/format";
 
+const auth = useAuthStore();
 const importSettings = useImportSettingsStore();
 const surveys = useSurveysStore();
 const toast = useUiStore();
@@ -24,7 +27,9 @@ const amazonStarting = ref(false);
 const amazonError = ref("");
 const activeAmazonImport = computed(() => amazonImports.value.find((item) => item.status === "queued" || item.status === "running"));
 const latestAmazonImport = computed(() => activeAmazonImport.value ?? amazonImports.value[0]);
-const canStartAmazon = computed(() => importSettings.settings.length > 0 && !amazonStarting.value && !activeAmazonImport.value && !amazonLoading.value);
+const canUseImport = computed(() => canAccess(auth.role, EDITOR_ROLES));
+const canManageAmazon = computed(() => canAccess(auth.role, ADMIN_ROLES));
+const canStartAmazon = computed(() => canManageAmazon.value && importSettings.settings.length > 0 && !amazonStarting.value && !activeAmazonImport.value && !amazonLoading.value);
 const amazonStatus: Record<AmazonImportStatus, { label: string; lamp: LampState }> = {
     queued: { label: "受付", lamp: "warn" },
     running: { label: "処理中", lamp: "warn" },
@@ -35,6 +40,7 @@ const recentAmazonImports = computed(() => amazonImports.value.slice(0, 5));
 let amazonPollTimer: number | undefined;
 
 async function loadAmazonImports() {
+    if (!canUseImport.value) return;
     try {
         amazonImports.value = await fetchAmazonInventoryImports();
         amazonError.value = "";
@@ -68,14 +74,16 @@ watch(activeAmazonImport, (active) => {
     if (amazonPollTimer !== undefined) window.clearInterval(amazonPollTimer);
     amazonPollTimer = active ? window.setInterval(() => void loadAmazonImports(), 5000) : undefined;
 });
-onMounted(() => void loadAmazonImports());
+onMounted(() => {
+    if (canUseImport.value) void loadAmazonImports();
+});
 onUnmounted(() => {
     if (amazonPollTimer !== undefined) window.clearInterval(amazonPollTimer);
 });
 
 const files = ref<File[]>([]);
 const running = ref(false);
-const canRun = computed(() => importSettings.settings.some((setting) => setting.productCodes.length > 0) && files.value.length > 0 && !running.value);
+const canRun = computed(() => canUseImport.value && importSettings.settings.some((setting) => setting.productCodes.length > 0) && files.value.length > 0 && !running.value);
 const errorMessage = ref("");
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const folderInputRef = ref<HTMLInputElement | null>(null);
@@ -148,7 +156,7 @@ async function runImport() {
 </script>
 
 <template>
-    <div class="flex flex-col gap-4">
+    <div v-if="canUseImport" class="flex flex-col gap-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
                 <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">データ取込</h1>
@@ -239,7 +247,11 @@ async function runImport() {
                 <BaseAlert v-if="errorMessage" tone="danger" title="取込に失敗しました">{{ errorMessage }}</BaseAlert>
             </div>
 
-            <BaseCard title="Amazon 在庫" description="毎日 9:00 に自動で取得し、同じ日の調査結果に反映します。手動でも取得できます。" :padded="false">
+            <BaseCard
+                title="Amazon 在庫"
+                :description="canManageAmazon ? '毎日 9:00 に自動で取得し、同じ日の調査結果に反映します。手動でも取得できます。' : '毎日 9:00 に自動で取得し、同じ日の調査結果に反映します。'"
+                :padded="false"
+            >
                 <template #actions>
                     <StatusLamp
                         v-if="latestAmazonImport"
@@ -267,7 +279,15 @@ async function runImport() {
                     <p v-else-if="amazonLoading" class="text-muted">状態を確認中…</p>
                     <p v-else class="text-muted">実行履歴はありません。</p>
                     <div class="flex flex-wrap items-center gap-3">
-                        <BaseButton data-testid="amazon-import-start" variant="secondary" size="sm" icon="refresh" :disabled="!canStartAmazon" :loading="amazonStarting" @click="startAmazonImport"
+                        <BaseButton
+                            v-if="canManageAmazon"
+                            data-testid="amazon-import-start"
+                            variant="secondary"
+                            size="sm"
+                            icon="refresh"
+                            :disabled="!canStartAmazon"
+                            :loading="amazonStarting"
+                            @click="startAmazonImport"
                             >Amazon 在庫を取得</BaseButton
                         >
                         <span v-if="activeAmazonImport" class="text-muted">完了まで自動更新します。</span>

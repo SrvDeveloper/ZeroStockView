@@ -3,12 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
 import { type AmazonInventoryImport, fetchAmazonInventoryImports } from "@/api/amazonInventoryImports";
 import { type CrossWalkerConnectionStatus, fetchIntegrationStatus } from "@/api/integrations";
+import { EDITOR_ROLES, canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import { countExpiringFiles } from "@/utils/files";
 
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
+const auth = useAuthStore();
 const surveys = useSurveysStore();
+const canView = computed(() => canAccess(auth.role, EDITOR_ROLES));
 const latestImport = ref<AmazonInventoryImport | null>(null);
 const loaded = ref(false);
 const failed = ref(false);
@@ -68,10 +72,12 @@ async function refreshCrossWalker() {
 
 /** 片方の取得に失敗しても、もう片方は表示する */
 async function refresh() {
+    if (!canView.value) return;
     await Promise.all([refreshAmazon(), refreshCrossWalker()]);
 }
 
 onMounted(() => {
+    if (!canView.value) return;
     void refresh();
     refreshTimer = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
 });
@@ -80,7 +86,7 @@ onBeforeUnmount(() => clearInterval(refreshTimer));
 </script>
 
 <template>
-    <section class="flex flex-col gap-[7px] rounded-card bg-white/4 px-3 py-2.5 text-[11.5px] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]" aria-label="連携ステータス">
+    <section v-if="canView" class="flex flex-col gap-[7px] rounded-card bg-white/4 px-3 py-2.5 text-[11.5px] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]" aria-label="連携ステータス">
         <p class="text-[10.5px] font-medium text-sidebar-dim">連携ステータス</p>
         <div class="flex items-center gap-2 text-sidebar-strong" data-integration="amazon">
             <template v-if="failed">

@@ -11,13 +11,17 @@ import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import StatusLamp from "@/components/ui/StatusLamp.vue";
 import BasePagination from "@/components/ui/BasePagination.vue";
+import { EDITOR_ROLES, canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { MAX_TARGET_PRODUCTS, useImportSettingsStore } from "@/stores/importSettings";
 import { useUiStore } from "@/stores/ui";
 import type { Product } from "@/types";
 
+const auth = useAuthStore();
 const store = useImportSettingsStore();
 const props = defineProps<{ id?: string }>();
 const router = useRouter();
+const canEdit = computed(() => canAccess(auth.role, EDITOR_ROLES));
 
 const toast = useUiStore();
 
@@ -75,6 +79,7 @@ const candidateError = ref("");
 let latestCandidateRequestId = 0;
 
 async function loadCandidatePage(page: number) {
+    if (!canEdit.value) return;
     const requestId = ++latestCandidateRequestId;
     candidateLoading.value = true;
     candidateError.value = "";
@@ -111,7 +116,7 @@ function changeCandidatePage(page: number) {
 }
 
 onMounted(() => {
-    void loadCandidatePage(1);
+    if (canEdit.value) void loadCandidatePage(1);
 });
 
 function add(product: Product) {
@@ -163,7 +168,7 @@ function resetChanges() {
 const saving = ref(false);
 
 async function save() {
-    if (saving.value) return;
+    if (!canEdit.value || saving.value) return;
     const name = settingName.value.trim();
     if (name === "") {
         toast.push("グループ名を入力してください。", "error");
@@ -189,7 +194,7 @@ async function save() {
 </script>
 
 <template>
-    <div class="flex flex-col gap-4">
+    <div v-if="canEdit" class="flex flex-col gap-4">
         <BaseButton variant="ghost" size="sm" icon="chevron_left" class="-ml-2 w-fit" @click="router.push({ name: 'import-settings' })">一覧に戻る</BaseButton>
 
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
