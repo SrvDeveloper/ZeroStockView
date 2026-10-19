@@ -49,6 +49,14 @@ describe("router", () => {
         expect(router.currentRoute.value.path).toBe("/inventory-trends");
     });
 
+    it("requires explicit roles on every non-public screen", () => {
+        for (const route of router.getRoutes()) {
+            if (route.path === "/" || route.meta.public) continue;
+            expect(route.meta.roles, route.path).toBeDefined();
+            expect(route.meta.roles!.length, route.path).toBeGreaterThan(0);
+        }
+    });
+
     it.each(["admin", "editor", "viewer"] as UserRole[])("sends %s to the correct home screen", async (role) => {
         useAuthStore().user = { id: "1", loginId: role, role };
 

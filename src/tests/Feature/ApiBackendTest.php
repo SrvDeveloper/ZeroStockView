@@ -613,10 +613,10 @@ class ApiBackendTest extends TestCase
         ]);
     }
 
-    public function test_each_file_type_can_be_imported_alone_from_its_contents_and_rerun(): void
+    public function test_editor_can_import_each_file_type_and_rerun(): void
     {
         Storage::fake('local');
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_EDITOR]));
         $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
         $cases = [
             ['report-1.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,6,2\n", '倉庫毎の在庫数レポート', 'bossOwn', 4],
