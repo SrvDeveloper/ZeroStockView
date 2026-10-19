@@ -201,6 +201,12 @@ const chartDescription = computed(() =>
         ? `${selectedInventoryScopeLabel.value}の在庫数を、対象品番の全SKUについて1日単位で表示しています。`
         : "各日の最後の調査結果を集計しています。棒にマウスを置くと内訳を表示します。",
 );
+/** 例: 2026-10-03 → 10-16（14 日間）。年をまたぐときは終了日も年から書く */
+const summaryPeriodLabel = computed(() => {
+    if (!targetStart.value || !targetEnd.value) return "";
+    const end = targetStart.value.slice(0, 4) === targetEnd.value.slice(0, 4) ? targetEnd.value.slice(5) : targetEnd.value;
+    return `${targetStart.value} → ${end}（${selectedDates.value.length} 日間）`;
+});
 const skuCards = computed<SkuCard[]>(() =>
     rawSeries.value.map((series) => {
         const quantities = series.points.flatMap((point) => (point.quantity === null ? [] : [point.quantity]));
@@ -319,9 +325,26 @@ function formatSummaryQuantity(quantity: number | null): string {
     return quantity === null ? "—" : `${quantity}点`;
 }
 
+/** SKU別サマリーの数値。デザインどおり単位は付けない */
+function formatSummaryNumber(quantity: number | null): string {
+    return quantity === null ? "—" : String(quantity);
+}
+
 function formatSummaryAverage(quantity: number | null): string {
     if (quantity === null) return "—";
     return `${Number(quantity.toFixed(1))}点`;
+}
+
+function formatTableAverage(quantity: number | null): string {
+    return quantity === null ? "—" : quantity.toFixed(1);
+}
+
+/** 在庫数の数字。zeroBadge の列（最新在庫・期間最小）は 0 を淡い縞の札にする。値がなければ弱い「—」 */
+function summaryNumberClass(quantity: number | null, zeroBadge = false): string {
+    if (quantity === null) return "font-num text-lg text-muted";
+    if (zeroBadge && quantity === 0)
+        return "inline-block min-w-8 rounded-chip bg-hazard-pale px-2 text-center font-num text-[21px] leading-[1.15] font-semibold shadow-[inset_0_0_0_1px_rgb(185_140_0/0.25)]";
+    return "font-num text-[21px] leading-[1.15] font-semibold";
 }
 
 function selectPreset(preset: "14" | "30" | "90") {
@@ -652,42 +675,52 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
         </BaseCard>
 
-        <BaseCard
-            v-if="skuCards.length > 0 && !trendLoading && !trendError"
-            title="SKU別サマリー"
-            :description="`選択期間の${selectedInventoryScopeLabel}在庫を集計しています。データがない日は平均・欠品日数の対象外です。`"
-            :padded="false"
-        >
+        <BaseCard v-if="skuCards.length > 0 && !trendLoading && !trendError" title="SKU別サマリー" :description="summaryPeriodLabel" :padded="false">
             <div class="overflow-x-auto">
-                <table data-testid="sku-summary-table" class="w-full min-w-180 text-left text-xs tabular-nums">
-                    <thead class="border-b border-line text-[11px] text-muted">
-                        <tr>
-                            <th class="px-5 py-2.5 font-semibold">SKU</th>
-                            <th class="px-4 py-2.5 font-semibold">推移</th>
-                            <th class="px-4 py-2.5 text-right font-semibold">最新在庫</th>
-                            <th class="px-4 py-2.5 text-right font-semibold">期間平均</th>
-                            <th class="px-4 py-2.5 text-right font-semibold">期間最小</th>
-                            <th class="px-4 py-2.5 text-right font-semibold">期間最大</th>
-                            <th class="px-5 py-2.5 text-right font-semibold">欠品日数</th>
+                <table data-testid="sku-summary-table" class="w-full min-w-180 table-fixed border-collapse tabular-nums">
+                    <colgroup>
+                        <col class="w-[200px]" />
+                        <col class="w-[150px]" />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                    </colgroup>
+                    <thead class="text-[11px] whitespace-nowrap text-muted">
+                        <tr class="border-b border-line">
+                            <th class="px-3 pt-[9px] pb-[7px] text-left font-semibold">SKU</th>
+                            <th class="px-3 pt-[9px] pb-[7px] text-left font-semibold">推移</th>
+                            <th class="px-3 pt-[9px] pb-[7px] text-right font-semibold">最新在庫</th>
+                            <th class="px-3 pt-[9px] pb-[7px] text-right font-semibold">期間平均</th>
+                            <th class="px-3 pt-[9px] pb-[7px] text-right font-semibold">期間最小</th>
+                            <th class="px-3 pt-[9px] pb-[7px] text-right font-semibold">期間最大</th>
+                            <th class="px-3 pt-[9px] pb-[7px] text-right font-semibold">欠品日数</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-line-2">
-                        <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-surface-2">
-                            <td class="px-5 py-2 font-mono font-medium text-ink uppercase">{{ summary.skuCode }}</td>
-                            <td data-summary-field="trend" class="px-4 py-2"><InventoryTrendMiniChart :label="summary.skuCode" :points="summary.points" variant="spark" /></td>
-                            <td data-summary-field="latest" class="px-4 py-2 text-right font-num text-lg font-semibold text-ink">{{ formatSummaryQuantity(summary.latest) }}</td>
-                            <td data-summary-field="average" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryAverage(summary.average) }}</td>
-                            <td data-summary-field="minimum" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryQuantity(summary.minimum) }}</td>
-                            <td data-summary-field="maximum" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryQuantity(summary.maximum) }}</td>
-                            <td data-summary-field="stockout-days" class="px-5 py-2 text-right">
-                                <span
-                                    :class="
-                                        summary.stockoutDays > 0
-                                            ? 'inline-block min-w-[28px] rounded-chip bg-signal px-1.5 text-center font-num text-base font-bold text-ink'
-                                            : 'font-num text-base text-muted'
-                                    "
-                                    >{{ summary.stockoutDays }}日</span
-                                >
+                    <tbody>
+                        <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="border-t border-line-2 first:border-t-0">
+                            <td class="py-[5px] pr-3 pl-[18px] text-left font-mono text-xs font-medium text-ink uppercase">
+                                <span class="block truncate" :title="summary.skuCode">{{ summary.skuCode }}</span>
+                            </td>
+                            <td data-summary-field="trend" class="px-3 py-[5px]"><InventoryTrendMiniChart :label="summary.skuCode" :points="summary.points" variant="spark" /></td>
+                            <td data-summary-field="latest" class="px-3 py-[5px] text-right">
+                                <span :class="summaryNumberClass(summary.latest, true)">{{ formatSummaryNumber(summary.latest) }}</span>
+                            </td>
+                            <td data-summary-field="average" class="px-3 py-[5px] text-right">
+                                <span :class="summaryNumberClass(summary.average)">{{ formatTableAverage(summary.average) }}</span>
+                            </td>
+                            <td data-summary-field="minimum" class="px-3 py-[5px] text-right">
+                                <span :class="summaryNumberClass(summary.minimum, true)">{{ formatSummaryNumber(summary.minimum) }}</span>
+                            </td>
+                            <td data-summary-field="maximum" class="px-3 py-[5px] text-right">
+                                <span :class="summaryNumberClass(summary.maximum)">{{ formatSummaryNumber(summary.maximum) }}</span>
+                            </td>
+                            <td data-summary-field="stockout-days" class="px-3 py-[5px] text-right">
+                                <span v-if="summary.stockoutDays > 0" class="inline-block min-w-7 rounded-chip bg-signal px-[7px] text-center font-num text-base leading-[1.6] font-bold text-ink">{{
+                                    summary.stockoutDays
+                                }}</span>
+                                <span v-else class="font-num text-[21px] leading-[1.15] font-semibold">0</span>
                             </td>
                         </tr>
                     </tbody>
