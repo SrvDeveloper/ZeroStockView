@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
     {
         User::query()->firstOrCreate(
             ['login_id' => 'admin'],
-            ['password' => 'password1234'],
+            ['password' => 'password1234', 'role' => User::ROLE_ADMIN],
         );
     }
 }

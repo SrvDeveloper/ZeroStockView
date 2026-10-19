@@ -21,7 +21,7 @@ class DatabaseSchemaTest extends TestCase
     public function test_inventory_domain_schema_is_available(): void
     {
         $expectedColumns = [
-            'users' => ['id', 'login_id', 'password'],
+            'users' => ['id', 'login_id', 'password', 'role'],
             'products' => ['id', 'product_code', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'synced_at'],
             'skus' => ['id', 'product_id', 'sku_code', 'child_asin', 'status', 'tq_item_no', 'tq_color_no', 'tq_size', 'sort_order'],
             'import_settings' => ['id', 'name'],
