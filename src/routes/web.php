@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\IntegrationStatusController;
 use App\Http\Controllers\Api\InventoryTrendController;
 use App\Http\Controllers\Api\SurveyController;
 use App\Http\Controllers\Api\SurveyFileController;
+use App\Models\User;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->group(function (): void {
@@ -23,38 +24,42 @@ Route::prefix('api')->group(function (): void {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::put('/password', [AuthController::class, 'changePassword']);
 
-        Route::get('/api-connection-settings', [ApiConnectionSettingController::class, 'show']);
-        Route::put('/api-connection-settings', [ApiConnectionSettingController::class, 'update']);
-        Route::post('/api-connection-settings/rotate-key', [ApiConnectionSettingController::class, 'rotateKey']);
+        Route::middleware('role:'.implode(',', User::ROLES))->group(function (): void {
+            Route::get('/inventory-trends/products', [InventoryTrendController::class, 'products']);
+            Route::get('/inventory-trends/export', [InventoryTrendController::class, 'export']);
+            Route::get('/inventory-trends', [InventoryTrendController::class, 'show']);
 
-        Route::get('/amazon-inventory-imports', [AmazonInventoryImportController::class, 'index']);
-        Route::post('/amazon-inventory-imports', [AmazonInventoryImportController::class, 'store']);
-        Route::get('/amazon-inventory-imports/{amazonInventoryImport}', [AmazonInventoryImportController::class, 'show']);
+            Route::get('/surveys', [SurveyController::class, 'index']);
+            Route::get('/surveys/{survey}', [SurveyController::class, 'show']);
+            Route::get('/surveys/{survey}/export', [SurveyController::class, 'export']);
+            Route::get('/survey-files/{surveyFile}/download', [SurveyFileController::class, 'download']);
+            Route::get('/surveys/{survey}/files/download', [SurveyFileController::class, 'downloadZip']);
+        });
 
-        Route::get('/import-settings', [ImportSettingController::class, 'index']);
-        Route::post('/import-settings', [ImportSettingController::class, 'store']);
-        Route::put('/import-settings/{importSetting}', [ImportSettingController::class, 'update']);
-        Route::delete('/import-settings/{importSetting}', [ImportSettingController::class, 'destroy']);
-        Route::get('/crosswalker/items', [CrossWalkerController::class, 'index']);
-        Route::get('/integrations/status', [IntegrationStatusController::class, 'show']);
+        Route::middleware('role:'.User::ROLE_ADMIN.','.User::ROLE_EDITOR)->group(function (): void {
+            Route::get('/amazon-inventory-imports', [AmazonInventoryImportController::class, 'index']);
+            Route::get('/amazon-inventory-imports/{amazonInventoryImport}', [AmazonInventoryImportController::class, 'show']);
+            Route::get('/import-settings', [ImportSettingController::class, 'index']);
+            Route::post('/import-settings', [ImportSettingController::class, 'store']);
+            Route::put('/import-settings/{importSetting}', [ImportSettingController::class, 'update']);
+            Route::get('/crosswalker/items', [CrossWalkerController::class, 'index']);
+            Route::get('/integrations/status', [IntegrationStatusController::class, 'show']);
+            Route::post('/surveys', [SurveyController::class, 'store']);
+            Route::post('/surveys/{survey}/rerun', [SurveyController::class, 'rerun']);
+        });
 
-        Route::get('/inventory-trends/products', [InventoryTrendController::class, 'products']);
-        Route::get('/inventory-trends/export', [InventoryTrendController::class, 'export']);
-        Route::get('/inventory-trends', [InventoryTrendController::class, 'show']);
-
-        Route::get('/surveys', [SurveyController::class, 'index']);
-        Route::post('/surveys', [SurveyController::class, 'store']);
-        Route::post('/surveys/{survey}/rerun', [SurveyController::class, 'rerun']);
-        Route::get('/surveys/{survey}', [SurveyController::class, 'show']);
-        Route::get('/surveys/{survey}/export', [SurveyController::class, 'export']);
-        Route::delete('/surveys/{survey}', [SurveyController::class, 'destroy']);
-        Route::put('/surveys/{survey}/products/{surveyProduct}/memo', [SurveyController::class, 'updateProductMemo']);
-        Route::put('/surveys/{survey}/skus/{surveySku}/memo', [SurveyController::class, 'updateSkuMemo']);
-
-        Route::get('/survey-files/{surveyFile}/download', [SurveyFileController::class, 'download']);
-        Route::delete('/survey-files/{surveyFile}', [SurveyFileController::class, 'destroy']);
-        Route::get('/surveys/{survey}/files/download', [SurveyFileController::class, 'downloadZip']);
-        Route::delete('/surveys/{survey}/files', [SurveyFileController::class, 'destroyForSurvey']);
+        Route::middleware('role:'.User::ROLE_ADMIN)->group(function (): void {
+            Route::get('/api-connection-settings', [ApiConnectionSettingController::class, 'show']);
+            Route::put('/api-connection-settings', [ApiConnectionSettingController::class, 'update']);
+            Route::post('/api-connection-settings/rotate-key', [ApiConnectionSettingController::class, 'rotateKey']);
+            Route::post('/amazon-inventory-imports', [AmazonInventoryImportController::class, 'store']);
+            Route::delete('/import-settings/{importSetting}', [ImportSettingController::class, 'destroy']);
+            Route::delete('/surveys/{survey}', [SurveyController::class, 'destroy']);
+            Route::put('/surveys/{survey}/products/{surveyProduct}/memo', [SurveyController::class, 'updateProductMemo']);
+            Route::put('/surveys/{survey}/skus/{surveySku}/memo', [SurveyController::class, 'updateSkuMemo']);
+            Route::delete('/survey-files/{surveyFile}', [SurveyFileController::class, 'destroy']);
+            Route::delete('/surveys/{survey}/files', [SurveyFileController::class, 'destroyForSurvey']);
+        });
     });
 });
 
