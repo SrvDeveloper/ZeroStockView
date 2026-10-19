@@ -2,7 +2,7 @@
 import axios from "axios";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import SurveyFileDownloads from "@/components/survey/SurveyFileDownloads.vue";
+import SurveyFilesZipButton from "@/components/survey/SurveyFilesZipButton.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
@@ -74,6 +74,8 @@ const rerunSettingId = ref<string | null>(null);
 const rerunMenuOpen = ref(false);
 const rerunRunning = ref(false);
 const rerunError = ref("");
+/** 保存期限内の取込ファイルがある種類の数（BOSS・KEEP一覧表・在庫一覧照会表のうち） */
+const savedFileTypeCount = computed(() => IMPORT_FILE_TYPES.filter(({ type }) => survey.value?.files.some((file) => file.type === type && fileRemainingDays(file.uploadedAt) > 0)).length);
 const hasReusableFiles = computed(() => {
     const fileTypes = new Set(survey.value?.files.filter((file) => fileRemainingDays(file.uploadedAt) > 0).map((file) => file.type) ?? []);
     return IMPORT_FILE_TYPES.some(({ type }) => fileTypes.has(type));
@@ -442,6 +444,9 @@ async function exportExcel(scope: "all" | "filtered") {
                 <p v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt"
                     >結果更新日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.updatedAt) }}</span></p
                 >
+                <p class="inline-flex items-center gap-1.5" data-survey-saved-files
+                    >取込ファイル: <span class="font-mono text-ink-2">{{ savedFileTypeCount }}/{{ IMPORT_FILE_TYPES.length }}</span> <SurveyFilesZipButton :survey="survey" class="-my-1"
+                /></p>
             </div>
         </div>
 
@@ -457,7 +462,6 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
 
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
-        <BaseCard><SurveyFileDownloads :survey="survey" /></BaseCard>
         <div v-if="(canRerunSurvey && !rerunAvailable) || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
             <p v-if="canRerunSurvey && !isRerunnableSource" data-testid="rerun-unavailable-legacy">Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。</p>
             <p v-else-if="canRerunSurvey && !hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>

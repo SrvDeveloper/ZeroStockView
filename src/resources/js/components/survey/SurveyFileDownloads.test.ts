@@ -1,5 +1,6 @@
 import axios from "axios";
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurveyFileDownloads from "@/components/survey/SurveyFileDownloads.vue";
 import type { Survey } from "@/types";
@@ -19,6 +20,7 @@ function survey(daysAgo = 0): Survey {
 describe("SurveyFileDownloads", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        setActivePinia(createPinia());
     });
 
     it("downloads a saved source file and ZIP", async () => {
@@ -64,16 +66,5 @@ describe("SurveyFileDownloads", () => {
         expect(wrapper.get('[role="alert"]').text()).toBe("ファイルが見つかりません。保存期限が過ぎたか、削除された可能性があります。");
         expect(wrapper.get('[data-file-entry="倉庫毎の在庫数レポート"]').text()).toContain("見つかりません");
         expect(wrapper.get('[aria-label="boss.csvをダウンロード"]').attributes("disabled")).toBeDefined();
-    });
-
-    it("disables ZIP after the API reports no saved files", async () => {
-        vi.spyOn(axios, "get").mockRejectedValue({ isAxiosError: true, response: { status: 404 } });
-        const wrapper = mount(SurveyFileDownloads, { props: { survey: survey() } });
-
-        await wrapper.get('[data-testid="survey-files-zip"]').trigger("click");
-        await flushPromises();
-
-        expect(wrapper.text()).toContain("一括ダウンロードできるファイルが見つかりません。");
-        expect(wrapper.get('[data-testid="survey-files-zip"]').attributes("disabled")).toBeDefined();
     });
 });

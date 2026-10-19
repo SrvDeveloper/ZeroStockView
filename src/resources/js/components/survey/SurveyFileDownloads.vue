@@ -1,24 +1,23 @@
 <script setup lang="ts">
 import axios from "axios";
 import { computed, ref, watch } from "vue";
+import SurveyFilesZipButton from "@/components/survey/SurveyFilesZipButton.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { IMPORT_FILE_TYPES, type Survey, type SurveyFile } from "@/types";
+import { downloadFromApi } from "@/utils/download";
 import { fileRemainingDays } from "@/utils/files";
-import { formatDateTime } from "@/utils/format";
 
 const props = defineProps<{ survey: Survey }>();
 
 const FILE_LABELS: Record<string, string> = { 倉庫毎の在庫数レポート: "BOSS", KEEP一覧表: "ECストック", 在庫一覧照会表: "フリー在庫" };
 const knownTypes = new Set<string>(IMPORT_FILE_TYPES.map(({ type }) => type));
 const missingIds = ref<Set<string>>(new Set());
-const zipUnavailable = ref(false);
 const downloading = ref<string | null>(null);
 const errorMessage = ref("");
 
 watch([() => props.survey.id, () => props.survey.files.map((file) => file.id).join("|")], () => {
     missingIds.value = new Set();
-    zipUnavailable.value = false;
     errorMessage.value = "";
 });
 
@@ -31,9 +30,6 @@ function isAvailable(file: SurveyFile | null): file is SurveyFile {
     return file !== null && fileRemainingDays(file.uploadedAt) > 0 && !missingIds.value.has(file.id);
 }
 
-const availableFiles = computed(() => props.survey.files.filter((file) => isAvailable(file)));
-const canDownloadZip = computed(() => availableFiles.value.length > 0 && !zipUnavailable.value);
-
 /** 狭い詳細欄に収まるよう、ダウンロードできないときは短い理由だけを出す（ファイル名はツールチップ） */
 function fileStatus(file: SurveyFile | null): string {
     if (!file) return "ファイルなし";
@@ -42,25 +38,12 @@ function fileStatus(file: SurveyFile | null): string {
     return file.fileName;
 }
 
-async function download(url: string, filename: string): Promise<void> {
-    const { data } = await axios.get<Blob>(url, { responseType: "blob" });
-    const objectUrl = URL.createObjectURL(data);
-    try {
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = filename;
-        link.click();
-    } finally {
-        URL.revokeObjectURL(objectUrl);
-    }
-}
-
 async function downloadFile(file: SurveyFile): Promise<void> {
     if (!isAvailable(file) || downloading.value !== null) return;
     downloading.value = file.id;
     errorMessage.value = "";
     try {
-        await download(`/api/survey-files/${file.id}/download`, file.fileName);
+        await downloadFromApi(`/api/survey-files/${file.id}/download`, file.fileName);
     } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
             missingIds.value = new Set([...missingIds.value, file.id]);
@@ -72,41 +55,13 @@ async function downloadFile(file: SurveyFile): Promise<void> {
         downloading.value = null;
     }
 }
-
-async function downloadZip(): Promise<void> {
-    if (!canDownloadZip.value || downloading.value !== null) return;
-    downloading.value = "zip";
-    errorMessage.value = "";
-    try {
-        const filename = `${formatDateTime(props.survey.executedAt).replace(/\D/g, "").slice(0, 12)}_取込ファイル一式.zip`;
-        await download(`/api/surveys/${props.survey.id}/files/download`, filename);
-    } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
-            zipUnavailable.value = true;
-            errorMessage.value = "一括ダウンロードできるファイルが見つかりません。";
-        } else {
-            errorMessage.value = "一括ダウンロードに失敗しました。時間をおいて再度お試しください。";
-        }
-    } finally {
-        downloading.value = null;
-    }
-}
 </script>
 
 <template>
     <section class="flex flex-col gap-1" aria-label="取込ファイル" data-survey-file-downloads>
         <div class="flex items-center justify-between gap-2">
             <h3 class="text-[11px] font-medium text-muted">取込ファイル</h3>
-            <BaseButton
-                data-testid="survey-files-zip"
-                variant="ghost"
-                size="sm"
-                icon="folder_zip"
-                :disabled="!canDownloadZip || downloading !== null"
-                :loading="downloading === 'zip'"
-                @click="downloadZip"
-                >一括ダウンロード</BaseButton
-            >
+            <SurveyFilesZipButton :survey="survey" />
         </div>
         <div v-for="entry in entries" :key="entry.key" class="flex h-[26px] min-w-0 items-center gap-2.5" :data-file-entry="entry.key">
             <StatusLamp :state="isAvailable(entry.file) ? 'ok' : 'warn'" :label="entry.label" class="w-[92px] shrink-0" />

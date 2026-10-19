@@ -748,7 +748,8 @@ describe("survey import setting display", () => {
         expect(wrapper.find('[data-testid="rerun-menu-button"]').exists()).toBe(role !== "viewer");
         expect(wrapper.text()).toContain("絞込結果をExcel出力");
         expect(wrapper.text()).toContain("全件をExcel出力");
-        expect(wrapper.get('[aria-label="boss.csvをダウンロード"]').attributes("disabled")).toBeUndefined();
+        expect(wrapper.find('[aria-label="boss.csvをダウンロード"]').exists()).toBe(false);
+        expect(wrapper.get("[data-survey-saved-files]").text()).toContain("取込ファイル: 1/3");
         expect(wrapper.get('[data-testid="survey-files-zip"]').attributes("disabled")).toBeUndefined();
         expect(wrapper.findAllComponents(MemoField)).toHaveLength(role === "admin" ? 2 : 0);
         if (role !== "admin") {
