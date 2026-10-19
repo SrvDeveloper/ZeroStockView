@@ -295,6 +295,72 @@ class InventoryTrendApiTest extends TestCase
         }
     }
 
+    public function test_warehouse_totals_sum_every_sku_per_day_and_match_the_grand_total(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        $survey = Survey::factory()->spApi()->create(['executed_at' => '2026-09-27 10:00:00']);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        foreach ([['A-1001-M', 'B000000001', 1, 2], ['A-1001-L', null, null, null]] as $index => [$code, $asin, $own, $fba]) {
+            SurveySku::factory()->for($product, 'product')->create([
+                'sku_code' => $code,
+                'child_asin' => $asin,
+                'sort_order' => $index + 1,
+                'amazon_own_stock' => $own,
+                'amazon_fba_stock' => $fba,
+                'boss_own_stock' => 3,
+                'boss_rfc_stock' => 4,
+                'free_stock' => 5,
+                'ec_stock' => 6,
+            ]);
+        }
+
+        $response = $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-26&to=2026-09-27&scope=grandTotal')
+            ->assertOk()
+            ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-09-26', 'amazon' => null, 'boss' => null, 'free' => null, 'stock' => null])
+            ->assertJsonPath('data.warehouseTotals.1', ['date' => '2026-09-27', 'amazon' => 3, 'boss' => 14, 'free' => 10, 'stock' => 12]);
+
+        $grandTotal = collect($response->json('data.series'))->sum(fn (array $series): int => $series['points'][1]['quantity']);
+        $this->assertSame(3 + 14 + 10 + 12, $grandTotal);
+    }
+
+    public function test_warehouse_totals_leave_a_pending_warehouse_unconfirmed_instead_of_a_partial_sum(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        $survey = Survey::factory()->spApi()->create(['executed_at' => '2026-09-27 10:00:00']);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        foreach ([['A-1001-M', 1, 2, 3], ['A-1001-L', null, 4, null]] as $index => [$code, $own, $bossOwn, $free]) {
+            SurveySku::factory()->for($product, 'product')->create([
+                'sku_code' => $code,
+                'child_asin' => 'B00000000'.$index,
+                'sort_order' => $index + 1,
+                'amazon_own_stock' => $own,
+                'amazon_fba_stock' => $own === null ? null : 0,
+                'boss_own_stock' => $bossOwn,
+                'boss_rfc_stock' => 0,
+                'free_stock' => $free,
+                'ec_stock' => null,
+            ]);
+        }
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=grandTotal')
+            ->assertOk()
+            ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-09-27', 'amazon' => null, 'boss' => 6, 'free' => null, 'stock' => null]);
+    }
+
+    public function test_warehouse_totals_on_amazon_only_days_confirm_only_amazon(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'API-ONLY']);
+        Sku::factory()->for($product)->create(['sku_code' => 'API-ONLY-M', 'sort_order' => 1]);
+        $this->apiSnapshot('2026-09-27 09:00:00', 'API-ONLY', 'API-ONLY-M', 4, 6);
+
+        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=amazon')
+            ->assertOk()
+            ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-09-27', 'amazon' => 10, 'boss' => null, 'free' => null, 'stock' => null]);
+    }
+
     public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void
     {
         $this->actingAs(User::factory()->create());

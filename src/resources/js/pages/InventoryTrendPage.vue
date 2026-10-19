@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { exportInventoryTrend, fetchInventoryTrend, fetchInventoryTrendProducts, type InventoryScope, type InventoryTrendProduct, type InventoryTrendSeries } from "@/api/inventoryTrends";
+import {
+    exportInventoryTrend,
+    fetchInventoryTrend,
+    fetchInventoryTrendProducts,
+    type InventoryScope,
+    type InventoryTrendDailySource,
+    type InventoryTrendProduct,
+    type InventoryTrendSeries,
+    type InventoryTrendWarehouseTotal,
+} from "@/api/inventoryTrends";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
 import InventoryTrendMiniChart from "@/components/inventory/InventoryTrendMiniChart.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
@@ -11,6 +20,7 @@ import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import BaseModal from "@/components/ui/BaseModal.vue";
 import BaseSelect from "@/components/ui/BaseSelect.vue";
+import { warehousesOfScope } from "@/constants/warehouses";
 import type { SelectOption } from "@/types";
 
 interface TrendSeries {
@@ -46,8 +56,7 @@ interface SkuCard {
 }
 
 const SERIES_COLORS = ["#2563eb", "#7c3aed", "#059669", "#ea580c", "#db2777", "#0891b2", "#65a30d", "#9333ea"];
-/** 品番全体の棒（グラファイト）と欠品SKU数の線（墨）。欠品の点は黄色で描く */
-const PRODUCT_TOTAL_COLOR = "#7d8893";
+/** 欠品SKU数の線（墨）。欠品の点は黄色で描く。品番全体の棒は倉庫色で積み上げる */
 const STOCKOUT_LINE_COLOR = "#11161a";
 const products = ref<InventoryTrendProduct[]>([]);
 const availableBrands = ref<string[]>([]);
@@ -60,6 +69,10 @@ const activePreset = ref<14 | 30 | 90 | 365 | "custom">(30);
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
+const dailySources = ref<InventoryTrendDailySource[]>([]);
+const warehouseTotals = ref<InventoryTrendWarehouseTotal[]>([]);
+/** 表示中のデータを取得したときの在庫区分（選択を変えてから応答が届くまでの食い違いを防ぐ） */
+const loadedScope = ref<InventoryScope>("mallTotal");
 const productPickerOpen = ref(false);
 const pendingProductCode = ref("");
 const productBrandFilter = ref<string | null>(null);
@@ -114,26 +127,28 @@ const selectedDates = computed(() => {
     for (let date = targetStart.value; date <= targetEnd.value; date = addDays(date, 1)) dates.push(date);
     return dates;
 });
+const productWarehouses = computed(() => warehousesOfScope(loadedScope.value));
+/** 品番全体の棒。在庫区分に含まれる倉庫を、倉庫色の固定順で積み上げる */
 const productChartSeries = computed<TrendSeries[]>(() => {
     if (rawSeries.value.length === 0) return [];
 
-    return [
-        {
-            skuCode: productCode.value,
-            label: "総在庫数",
-            color: PRODUCT_TOTAL_COLOR,
-            points: selectedDates.value.map((date) => {
-                const quantities = rawSeries.value.flatMap((series) => {
-                    const point = series.points.find((item) => item.date === date);
-                    return point?.source == null ? [] : [point.quantity];
-                });
-                return {
-                    date,
-                    quantity: quantities.length === 0 || quantities.some((quantity) => quantity === null) ? null : quantities.reduce<number>((total, quantity) => total + (quantity ?? 0), 0),
-                };
-            }),
-        },
-    ];
+    const totalsByDate = new Map(warehouseTotals.value.map((total) => [total.date, total]));
+    return productWarehouses.value.map((warehouse) => ({
+        skuCode: warehouse.key,
+        label: warehouse.label,
+        color: warehouse.color,
+        points: selectedDates.value.map((date) => ({ date, quantity: totalsByDate.get(date)?.[warehouse.key] ?? null })),
+    }));
+});
+/** データはあるが、在庫区分に含まれる倉庫のどれかが取込待ち・未取得の日 */
+const productPendingDates = computed(() => {
+    const totalsByDate = new Map(warehouseTotals.value.map((total) => [total.date, total]));
+    return dailySources.value
+        .map((source) => source.date)
+        .filter((date) => {
+            const total = totalsByDate.get(date);
+            return total !== undefined && productWarehouses.value.some((warehouse) => total[warehouse.key] === null);
+        });
 });
 const productStockoutSeries = computed<StockoutSeries | null>(() => {
     if (trendView.value !== "product" || rawSeries.value.length === 0) return null;
@@ -183,7 +198,7 @@ const chartTitle = computed(() => (trendView.value === "sku" ? "SKU別 在庫数
 const chartDescription = computed(() =>
     trendView.value === "sku"
         ? `${selectedInventoryScopeLabel.value}の在庫数を、対象品番の全SKUについて1日単位で表示しています。`
-        : `${selectedInventoryScopeLabel.value}の総在庫数と欠品SKU数を、品番単位で表示しています。`,
+        : `${selectedInventoryScopeLabel.value}の在庫数を倉庫別に積み上げ、欠品SKU数とあわせて品番単位で表示しています。`,
 );
 const skuCards = computed<SkuCard[]>(() =>
     rawSeries.value.map((series, index) => {
@@ -245,9 +260,14 @@ async function loadTrend() {
         });
         if (requestId !== trendRequestId) return;
         rawSeries.value = response.series;
+        dailySources.value = response.dailySources;
+        warehouseTotals.value = response.warehouseTotals;
+        loadedScope.value = response.scope;
     } catch {
         if (requestId !== trendRequestId) return;
         rawSeries.value = [];
+        dailySources.value = [];
+        warehouseTotals.value = [];
         trendError.value = "在庫推移の読み込みに失敗しました。時間をおいて再度お試しください。";
     } finally {
         if (requestId === trendRequestId) trendLoading.value = false;
@@ -482,7 +502,7 @@ async function exportCsv(scope: "selected" | "all") {
         </BaseCard>
 
         <p v-if="inventoryScope === 'mallTotal' || inventoryScope === 'grandTotal'" data-testid="survey-scope-note" class="text-xs text-ink-2">
-            この区分は調査日の保存済み在庫を合算します。Amazonが未確定のSKUと、調査がないSP-API取得日の合計は表示しません。
+            この区分は調査日の保存済み在庫を合算します。Amazonが未確定のSKUと、調査がないSP-API取得日の合計は表示しません。品番グラフでは、未確定の倉庫がある日は確定した倉庫だけを積み上げ、「未確定」の印を付けます。
         </p>
 
         <BaseModal :open="productPickerOpen" title="対象品番を選択" description="ブランドやキーワードで対象品番を絞り込めます。" width="lg" @close="closeProductPicker">
@@ -562,7 +582,12 @@ async function exportCsv(scope: "selected" | "all") {
                 data-testid="product-chart-legend"
                 class="mb-4 flex flex-wrap items-center gap-5 border-b border-line-2 pb-3 text-[11px] text-ink-2"
             >
-                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-xs bg-primary-400"></span>総在庫数</span>
+                <span v-for="warehouse in productWarehouses" :key="warehouse.key" :data-legend-warehouse="warehouse.key" class="inline-flex items-center gap-2"
+                    ><span class="h-2.5 w-2.5 rounded-xs" :style="{ backgroundColor: warehouse.color }"></span>{{ warehouse.label }}</span
+                >
+                <span v-if="productPendingDates.length > 0" data-legend-pending class="inline-flex items-center gap-2"
+                    ><span class="h-2.5 w-2.5 rounded-xs border border-dashed border-ink-2"></span>未確定</span
+                >
                 <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-[2px] border border-ink bg-signal"></span>欠品SKU数</span>
             </div>
 
@@ -609,7 +634,7 @@ async function exportCsv(scope: "selected" | "all") {
                 </article>
             </div>
             <div v-else class="overflow-x-auto pb-1">
-                <InventoryTrendChart :series="productChartSeries" display-mode="bar" :stockout-series="productStockoutSeries" />
+                <InventoryTrendChart :series="productChartSeries" display-mode="bar" :stockout-series="productStockoutSeries" :pending-dates="productPendingDates" />
             </div>
         </BaseCard>
 

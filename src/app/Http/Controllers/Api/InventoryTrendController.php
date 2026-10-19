@@ -110,6 +110,7 @@ class InventoryTrendController extends Controller
         $quantities = [];
         $productSnapshot = null;
         $dailySources = [];
+        $warehouseTotals = [];
 
         foreach ($dates as $date) {
             $survey = $dailySurveys->get($date);
@@ -117,6 +118,12 @@ class InventoryTrendController extends Controller
             if ($survey === null && $import !== null && $import->snapshots->isNotEmpty()) {
                 $basisAt = $import->basis_at->toIso8601String();
                 $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt, 'amazonBasisAt' => $basisAt, 'amazonInventoryStatus' => 'complete'];
+                $warehouseTotals[$date] = [
+                    'amazon' => $import->snapshots->sum(fn (AmazonInventorySnapshot $snapshot): int => $snapshot->amazon_own_stock + $snapshot->amazon_fba_stock),
+                    'boss' => null,
+                    'free' => null,
+                    'stock' => null,
+                ];
                 foreach ($import->snapshots as $snapshot) {
                     $currentSku = $currentSkus?->get($snapshot->sku_code);
                     $skuMetadata[$snapshot->sku_code] = [
@@ -149,6 +156,10 @@ class InventoryTrendController extends Controller
                     : ($survey->hasSavedAmazonInventory() ? $basisAt : null),
                 'amazonInventoryStatus' => $survey->amazonInventoryStatus(),
             ];
+            $isSpApi = $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API;
+            $warehouseTotals[$date] = $this->sumWarehouses($selectedProductSnapshot->skus->map(
+                fn (SurveySku $sku): array => $this->warehouseQuantities($sku, $isSpApi),
+            )->all());
             foreach ($selectedProductSnapshot->skus as $sku) {
                 if ($scope === 'amazon' && $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API
                     && ! $sku->hasAmazonAsin() && $sku->amazon_own_stock === null && $sku->amazon_fba_stock === null) {
@@ -160,7 +171,7 @@ class InventoryTrendController extends Controller
                     'sortOrder' => $sku->sort_order,
                 ];
                 $quantities[$sku->sku_code][$date] = [
-                    'quantity' => $this->quantity($sku, $scope, $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API),
+                    'quantity' => $this->quantity($sku, $scope, $isSpApi),
                     'source' => 'survey',
                     'basisAt' => $basisAt,
                 ];
@@ -181,6 +192,12 @@ class InventoryTrendController extends Controller
                 'to' => $data['to'],
                 'dates' => $dates,
                 'dailySources' => $dailySources,
+                'warehouseTotals' => $dates->map(fn (string $date): array => ['date' => $date] + ($warehouseTotals[$date] ?? [
+                    'amazon' => null,
+                    'boss' => null,
+                    'free' => null,
+                    'stock' => null,
+                ]))->values(),
                 'series' => collect($skuMetadata)->map(fn (array $metadata, string $skuCode): array => [
                     'skuCode' => $metadata['skuCode'],
                     'size' => $metadata['size'],
@@ -216,23 +233,57 @@ class InventoryTrendController extends Controller
 
     private function quantity(SurveySku $sku, string $scope, bool $isSpApi): ?int
     {
+        ['amazon' => $amazon, 'boss' => $boss, 'free' => $free, 'stock' => $stock] = $this->warehouseQuantities($sku, $isSpApi);
+
+        return match ($scope) {
+            'amazon' => $amazon,
+            'boss' => $boss,
+            'free' => $free,
+            'stock' => $stock,
+            'grandTotal' => $amazon === null || $boss === null || $free === null || $stock === null
+                ? null : $amazon + $boss + $free + $stock,
+            default => $amazon === null || $boss === null ? null : $amazon + $boss,
+        };
+    }
+
+    /**
+     * SKU の倉庫別数量。null は取込待ち・未取得を表す。
+     * ASIN のない SP-API 調査の SKU は Amazon 取得の対象外なので、Amazon を 0 とする。
+     *
+     * @return array{amazon: int|null, boss: int|null, free: int|null, stock: int|null}
+     */
+    private function warehouseQuantities(SurveySku $sku, bool $isSpApi): array
+    {
         $amazon = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
             ? null
             : $sku->amazon_own_stock + $sku->amazon_fba_stock;
         if ($amazon === null && $isSpApi && ! $sku->hasAmazonAsin()) {
             $amazon = 0;
         }
-        $boss = $sku->boss_own_stock === null || $sku->boss_rfc_stock === null
-            ? null : $sku->boss_own_stock + $sku->boss_rfc_stock;
 
-        return match ($scope) {
+        return [
             'amazon' => $amazon,
-            'boss' => $boss,
+            'boss' => $sku->boss_own_stock === null || $sku->boss_rfc_stock === null
+                ? null : $sku->boss_own_stock + $sku->boss_rfc_stock,
             'free' => $sku->free_stock,
             'stock' => $sku->ec_stock,
-            'grandTotal' => $amazon === null || $boss === null || $sku->free_stock === null || $sku->ec_stock === null
-                ? null : $amazon + $boss + $sku->free_stock + $sku->ec_stock,
-            default => $amazon === null || $boss === null ? null : $amazon + $boss,
-        };
+        ];
+    }
+
+    /**
+     * 品番全体の倉庫別合計。1 SKU でも未確定（null）の倉庫は、部分合計を出さずに null とする。
+     *
+     * @param  list<array{amazon: int|null, boss: int|null, free: int|null, stock: int|null}>  $skuQuantities
+     * @return array{amazon: int|null, boss: int|null, free: int|null, stock: int|null}
+     */
+    private function sumWarehouses(array $skuQuantities): array
+    {
+        $totals = [];
+        foreach (['amazon', 'boss', 'free', 'stock'] as $warehouse) {
+            $values = array_column($skuQuantities, $warehouse);
+            $totals[$warehouse] = $values === [] || in_array(null, $values, true) ? null : array_sum($values);
+        }
+
+        return $totals;
     }
 }
