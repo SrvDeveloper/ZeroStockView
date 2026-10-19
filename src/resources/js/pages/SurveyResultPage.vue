@@ -457,7 +457,7 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
 
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
-        <BaseCard title="取込元ファイル"><SurveyFileDownloads :survey="survey" /></BaseCard>
+        <BaseCard><SurveyFileDownloads :survey="survey" /></BaseCard>
         <div v-if="(canRerunSurvey && !rerunAvailable) || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
             <p v-if="canRerunSurvey && !isRerunnableSource" data-testid="rerun-unavailable-legacy">Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。</p>
             <p v-else-if="canRerunSurvey && !hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>

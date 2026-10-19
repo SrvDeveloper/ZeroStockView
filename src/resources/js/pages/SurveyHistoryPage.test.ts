@@ -103,13 +103,14 @@ describe("SurveyHistoryPage", () => {
         const wrapper = mount(SurveyHistoryPage);
 
         expect(wrapper.get('[data-file-entry="倉庫毎の在庫数レポート"] button').attributes("disabled")).toBeUndefined();
-        expect(wrapper.get("[data-survey-file-downloads]").text()).toContain("一括ZIPをダウンロード");
+        expect(wrapper.get('[data-testid="survey-files-zip"]').text()).toContain("一括ダウンロード");
         expect(wrapper.get("[data-survey-detail]").text()).toContain("Excel出力");
         expect(wrapper.text()).not.toContain("この日の調査を削除");
 
         await wrapper.get('[data-history-view] [data-value="list"]').trigger("click");
         expect(wrapper.find('[data-survey-id="latest"] [aria-label="削除"]').exists()).toBe(false);
-        expect(wrapper.get('[data-survey-id="latest"]').text()).toContain("Excel出力");
+        expect(wrapper.find('[data-survey-id="latest"] [aria-label="Excel出力"]').exists()).toBe(true);
+        expect(wrapper.get('[data-survey-id="latest"]').text()).not.toContain("Excel出力");
     });
 
     it("lets a viewer export the survey Excel file from history", async () => {

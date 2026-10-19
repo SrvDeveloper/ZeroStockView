@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import axios from "axios";
 import { computed, ref, watch } from "vue";
-import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { IMPORT_FILE_TYPES, type Survey, type SurveyFile } from "@/types";
@@ -35,10 +34,11 @@ function isAvailable(file: SurveyFile | null): file is SurveyFile {
 const availableFiles = computed(() => props.survey.files.filter((file) => isAvailable(file)));
 const canDownloadZip = computed(() => availableFiles.value.length > 0 && !zipUnavailable.value);
 
+/** 狭い詳細欄に収まるよう、ダウンロードできないときは短い理由だけを出す（ファイル名はツールチップ） */
 function fileStatus(file: SurveyFile | null): string {
-    if (!file) return "ファイルなし（未取込・期限切れ・削除済み）";
-    if (missingIds.value.has(file.id)) return "ファイルが見つかりません";
-    if (!(fileRemainingDays(file.uploadedAt) > 0)) return `${file.fileName}（保存期限切れ）`;
+    if (!file) return "ファイルなし";
+    if (missingIds.value.has(file.id)) return "見つかりません";
+    if (!(fileRemainingDays(file.uploadedAt) > 0)) return "保存期限切れ";
     return file.fileName;
 }
 
@@ -94,35 +94,39 @@ async function downloadZip(): Promise<void> {
 </script>
 
 <template>
-    <div class="flex flex-col gap-2" data-survey-file-downloads>
-        <div v-for="entry in entries" :key="entry.key" class="flex min-w-0 items-center gap-2" :data-file-entry="entry.key">
-            <StatusLamp :state="isAvailable(entry.file) ? 'ok' : 'warn'" :label="entry.label" class="w-[92px] shrink-0" />
-            <span class="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted" :title="fileStatus(entry.file)">{{ fileStatus(entry.file) }}</span>
-            <BaseButton
-                v-if="entry.file"
-                variant="ghost"
-                size="sm"
-                icon="download"
-                :aria-label="`${entry.file.fileName}をダウンロード`"
-                :disabled="!isAvailable(entry.file) || downloading !== null"
-                :loading="downloading === entry.file.id"
-                @click="downloadFile(entry.file)"
-                >取得</BaseButton
-            >
-        </div>
-        <p v-if="availableFiles.length === 0" class="text-[11px] text-muted">ダウンロード可能な取込ファイルはありません。</p>
-        <div class="flex justify-end">
+    <section class="flex flex-col gap-1" aria-label="取込ファイル" data-survey-file-downloads>
+        <div class="flex items-center justify-between gap-2">
+            <h3 class="text-[11px] font-medium text-muted">取込ファイル</h3>
             <BaseButton
                 data-testid="survey-files-zip"
-                variant="secondary"
+                variant="ghost"
                 size="sm"
                 icon="folder_zip"
                 :disabled="!canDownloadZip || downloading !== null"
                 :loading="downloading === 'zip'"
                 @click="downloadZip"
-                >一括ZIPをダウンロード</BaseButton
+                >一括ダウンロード</BaseButton
             >
         </div>
-        <BaseAlert v-if="errorMessage" tone="danger">{{ errorMessage }}</BaseAlert>
-    </div>
+        <div v-for="entry in entries" :key="entry.key" class="flex h-[26px] min-w-0 items-center gap-2.5" :data-file-entry="entry.key">
+            <StatusLamp :state="isAvailable(entry.file) ? 'ok' : 'warn'" :label="entry.label" class="w-[92px] shrink-0" />
+            <span class="min-w-0 flex-1 truncate font-mono text-[10.5px]" :class="isAvailable(entry.file) ? 'text-ink-2' : 'text-muted'" :title="entry.file?.fileName">{{
+                fileStatus(entry.file)
+            }}</span>
+            <BaseButton
+                v-if="entry.file"
+                variant="ghost"
+                size="sm"
+                icon="download"
+                class="w-[26px] shrink-0 px-0!"
+                :aria-label="`${entry.file.fileName}をダウンロード`"
+                :title="isAvailable(entry.file) ? 'ダウンロード' : undefined"
+                :disabled="!isAvailable(entry.file) || downloading !== null"
+                :loading="downloading === entry.file.id"
+                @click="downloadFile(entry.file)"
+            />
+            <span v-else class="w-[26px] shrink-0" aria-hidden="true"></span>
+        </div>
+        <p v-if="errorMessage" class="text-[11px] leading-relaxed text-danger" role="alert">{{ errorMessage }}</p>
+    </section>
 </template>
