@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import axios from "axios";
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import SurveyCalendar from "@/components/survey/SurveyCalendar.vue";
+import SurveyFileDownloads from "@/components/survey/SurveyFileDownloads.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
@@ -11,16 +13,20 @@ import BasePagination from "@/components/ui/BasePagination.vue";
 import ConfirmModal from "@/components/ui/ConfirmModal.vue";
 import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
+import { ADMIN_ROLES, canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import { IMPORT_FILE_TYPES, type Survey } from "@/types";
+import type { Survey } from "@/types";
 import { formatDateTime } from "@/utils/format";
 import { summarizeSurvey } from "@/utils/stock";
 import { amazonLampOf, buildCalendar, dailySurveys, localDateKey, previousDailySurvey, uploadedFileCount } from "@/utils/surveyCalendar";
 
 const router = useRouter();
+const auth = useAuthStore();
 const surveys = useSurveysStore();
 const toast = useUiStore();
+const canDelete = computed(() => canAccess(auth.role, ADMIN_ROLES));
 const refreshing = ref(false);
 const refreshError = ref("");
 
@@ -109,14 +115,6 @@ function compareWithPreviousDay(key: "allZeroCount" | "partialZeroCount"): strin
     return diff > 0 ? `前日比 +${diff}` : `前日比 −${Math.abs(diff)}`;
 }
 
-const FILE_LABELS: Record<string, string> = { 倉庫毎の在庫数レポート: "BOSS", KEEP一覧表: "ECストック", 在庫一覧照会表: "フリー在庫" };
-const selectedFiles = computed(() =>
-    IMPORT_FILE_TYPES.map(({ type }) => ({
-        label: FILE_LABELS[type] ?? type,
-        file: selectedSurvey.value?.files.find((file) => file.type === type) ?? null,
-    })),
-);
-
 /* ── リスト ── */
 const PER_PAGE = 10;
 const page = ref(1);
@@ -171,11 +169,12 @@ const pendingDeleteLabel = computed(() => {
 });
 
 function requestDelete(id: string) {
+    if (!canDelete.value) return;
     pendingDeleteId.value = id;
 }
 
 async function confirmDelete() {
-    if (!pendingDeleteId.value) return;
+    if (!pendingDeleteId.value || !canDelete.value) return;
     const deletedId = pendingDeleteId.value;
     await surveys.removeSurvey(deletedId);
     toast.push("調査履歴を削除しました");
@@ -185,6 +184,23 @@ async function confirmDelete() {
 
 function openResult(id: string) {
     router.push({ name: "survey-result", params: { id } });
+}
+
+async function exportExcel(survey: Survey) {
+    try {
+        const { data } = await axios.get<Blob>(`/api/surveys/${survey.id}/export`, { responseType: "blob" });
+        const url = URL.createObjectURL(data);
+        try {
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${formatDateTime(survey.executedAt).replace(/\D/g, "").slice(0, 12)}_在庫調査結果.xlsx`;
+            link.click();
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    } catch {
+        toast.push("Excel出力に失敗しました。時間をおいて再度お試しください。", "error");
+    }
 }
 </script>
 
@@ -242,7 +258,13 @@ function openResult(id: string) {
                 </div>
             </BaseCard>
 
-            <BaseCard v-if="selectedSurvey && selectedSummary" :title="selectedTitle" description="同じ日にもう一度取り込むと、この調査を更新します。" :padded="false" data-survey-detail>
+            <BaseCard
+                v-if="selectedSurvey && selectedSummary"
+                :title="selectedTitle"
+                :description="canDelete ? '同じ日にもう一度取り込むと、この調査を更新します。' : '調査内容と保存ファイルを確認できます。'"
+                :padded="false"
+                data-survey-detail
+            >
                 <template #actions><BaseBadge v-if="selectedSurvey.id === latestId" tone="brand">最新</BaseBadge></template>
                 <div class="flex flex-col gap-3 px-[18px] py-3.5 text-[11.5px]">
                     <div class="grid grid-cols-2 gap-2">
@@ -285,14 +307,12 @@ function openResult(id: string) {
                             </dd>
                         </template>
                     </dl>
-                    <div class="flex flex-col gap-1.5 border-t border-line-2 pt-2.5">
-                        <div v-for="entry in selectedFiles" :key="entry.label" class="flex items-center gap-2.5">
-                            <StatusLamp :state="entry.file ? 'ok' : 'warn'" :label="entry.label" class="w-[92px] shrink-0" />
-                            <span class="min-w-0 truncate font-mono text-[10.5px] text-muted">{{ entry.file?.fileName ?? "ファイルなし" }}</span>
-                        </div>
+                    <SurveyFileDownloads :key="selectedSurvey.id" :survey="selectedSurvey" class="border-t border-line-2 pt-2.5" />
+                    <div class="flex gap-2">
+                        <BaseButton variant="primary" block @click="openResult(selectedSurvey.id)">結果を開く</BaseButton>
+                        <BaseButton variant="secondary" size="sm" icon="table_view" @click="exportExcel(selectedSurvey)">Excel出力</BaseButton>
                     </div>
-                    <BaseButton variant="primary" block @click="openResult(selectedSurvey.id)">結果を開く</BaseButton>
-                    <div class="flex justify-end">
+                    <div v-if="canDelete" class="flex justify-end">
                         <BaseButton variant="danger-ghost" size="sm" icon="delete" @click="requestDelete(selectedSurvey.id)">この日の調査を削除</BaseButton>
                     </div>
                 </div>
@@ -350,7 +370,7 @@ function openResult(id: string) {
                                 <th class="px-4 py-2.5 font-semibold">取込ファイル</th>
                                 <th class="px-4 py-2.5 font-semibold">Amazon 在庫</th>
                                 <th class="px-4 py-2.5 text-right font-semibold">全倉庫ゼロ</th>
-                                <th class="w-44 px-4 py-2.5 text-right font-semibold">操作</th>
+                                <th class="w-60 px-4 py-2.5 text-right font-semibold">操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -394,7 +414,8 @@ function openResult(id: string) {
                                 <td class="px-4 py-2 text-right">
                                     <div class="flex justify-end gap-1.5">
                                         <BaseButton variant="secondary" size="sm" @click="openResult(survey.id)">結果を開く</BaseButton>
-                                        <BaseButton variant="danger-ghost" size="sm" icon="delete" aria-label="削除" @click="requestDelete(survey.id)" />
+                                        <BaseButton variant="ghost" size="sm" icon="table_view" @click="exportExcel(survey)">Excel出力</BaseButton>
+                                        <BaseButton v-if="canDelete" variant="danger-ghost" size="sm" icon="delete" aria-label="削除" @click="requestDelete(survey.id)" />
                                     </div>
                                 </td>
                             </tr>
@@ -407,6 +428,7 @@ function openResult(id: string) {
         </template>
 
         <ConfirmModal
+            v-if="canDelete"
             :open="pendingDeleteId !== null"
             title="調査履歴の削除"
             :message="`${pendingDeleteLabel} の調査結果を削除します。関連するメモと取込ファイルも削除され、元に戻せません。`"

@@ -1,5 +1,6 @@
 import type { LampState } from "@/components/ui/StatusLamp.vue";
 import { IMPORT_FILE_TYPES, type Survey } from "@/types";
+import { fileRemainingDays } from "@/utils/files";
 import { hasAmazonStock, summarizeSurvey } from "@/utils/stock";
 
 export type CalendarDayKind = "blank" | "survey" | "none" | "future";
@@ -37,7 +38,7 @@ export function dailySurveys(surveys: Survey[]): Map<string, Survey> {
 
 /** 画面から取り込む 3 種類のうち、ファイルが残っている種類の数 */
 export function uploadedFileCount(survey: Survey): number {
-    const types = new Set(survey.files.map((file) => file.type));
+    const types = new Set(survey.files.filter((file) => fileRemainingDays(file.uploadedAt) > 0).map((file) => file.type));
     return IMPORT_FILE_TYPES.filter(({ type }) => types.has(type)).length;
 }
 

@@ -16,6 +16,7 @@ class SurveyFileController extends Controller
 {
     public function download(SurveyFile $surveyFile): StreamedResponse
     {
+        abort_unless($surveyFile->expires_at->isFuture(), 404);
         abort_unless(Storage::disk($surveyFile->disk)->exists($surveyFile->stored_path), 404);
 
         return Storage::disk($surveyFile->disk)->download(
@@ -44,7 +45,8 @@ class SurveyFileController extends Controller
 
     public function downloadZip(Survey $survey): BinaryFileResponse
     {
-        $files = $survey->files;
+        $files = $survey->files->filter(fn (SurveyFile $file): bool => $file->expires_at->isFuture() && Storage::disk($file->disk)->exists($file->stored_path)
+        );
         abort_if($files->isEmpty(), 404);
 
         $temporaryPath = tempnam(sys_get_temp_dir(), 'zsv-');
@@ -58,9 +60,6 @@ class SurveyFileController extends Controller
         }
 
         foreach ($files as $file) {
-            if (! Storage::disk($file->disk)->exists($file->stored_path)) {
-                continue;
-            }
             $contents = Storage::disk($file->disk)->get($file->stored_path);
             $zip->addFromString($file->original_name, $contents);
         }
