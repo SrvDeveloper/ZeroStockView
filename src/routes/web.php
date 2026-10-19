@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\IntegrationStatusController;
 use App\Http\Controllers\Api\InventoryTrendController;
 use App\Http\Controllers\Api\SurveyController;
 use App\Http\Controllers\Api\SurveyFileController;
+use App\Http\Controllers\Api\UserController;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +50,11 @@ Route::prefix('api')->group(function (): void {
         });
 
         Route::middleware('role:'.User::ROLE_ADMIN)->group(function (): void {
+            Route::get('/users', [UserController::class, 'index']);
+            Route::post('/users', [UserController::class, 'store']);
+            Route::put('/users/{user}', [UserController::class, 'update']);
+            Route::delete('/users/{user}', [UserController::class, 'destroy']);
+
             Route::get('/api-connection-settings', [ApiConnectionSettingController::class, 'show']);
             Route::put('/api-connection-settings', [ApiConnectionSettingController::class, 'update']);
             Route::post('/api-connection-settings/rotate-key', [ApiConnectionSettingController::class, 'rotateKey']);
