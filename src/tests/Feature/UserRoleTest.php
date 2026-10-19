@@ -46,6 +46,12 @@ class UserRoleTest extends TestCase
         $this->getJson('/api/user')->assertOk()->assertExactJson($expected);
     }
 
+    public function test_guest_can_check_login_state_without_a_401_error(): void
+    {
+        $this->getJson('/api/user')->assertOk()->assertExactJson(['user' => null]);
+        $this->getJson('/api/surveys')->assertUnauthorized();
+    }
+
     public function test_migration_preserves_existing_user_and_assigns_admin_role(): void
     {
         $legacy = User::factory()->create();

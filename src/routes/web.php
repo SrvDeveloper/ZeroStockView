@@ -19,9 +19,9 @@ Route::prefix('api')->group(function (): void {
         ->middleware(['inventory.api', 'throttle:60,1']);
 
     Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
+    Route::get('/user', [AuthController::class, 'user']);
 
     Route::middleware('auth')->group(function (): void {
-        Route::get('/user', [AuthController::class, 'user']);
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::put('/password', [AuthController::class, 'changePassword']);
 
