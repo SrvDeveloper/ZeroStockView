@@ -13,10 +13,10 @@ class AmazonInventoryImportApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_authenticated_user_can_queue_one_manual_import_and_retry_after_failure(): void
+    public function test_admin_can_queue_one_manual_import_and_retry_after_failure(): void
     {
         Queue::fake();
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_ADMIN]));
 
         $this->postJson('/api/amazon-inventory-imports')
             ->assertAccepted()
@@ -48,7 +48,7 @@ class AmazonInventoryImportApiTest extends TestCase
 
     public function test_manual_import_is_persisted_in_the_database_queue_without_running_it(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_ADMIN]));
 
         $this->postJson('/api/amazon-inventory-imports')->assertAccepted();
 
@@ -56,7 +56,7 @@ class AmazonInventoryImportApiTest extends TestCase
         $this->assertDatabaseHas('jobs', ['queue' => 'amazon-inventory', 'attempts' => 0]);
     }
 
-    public function test_authenticated_user_can_read_success_and_failure_history(): void
+    public function test_editor_can_read_success_and_failure_history(): void
     {
         $success = AmazonInventoryImport::query()->create([
             'status' => 'succeeded',
@@ -85,7 +85,7 @@ class AmazonInventoryImportApiTest extends TestCase
             'completed_at' => now(),
             'error_message' => 'FBAレポートの生成に失敗しました。',
         ]);
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_EDITOR]));
 
         $this->getJson('/api/amazon-inventory-imports')
             ->assertOk()
