@@ -31,7 +31,7 @@ async function submit() {
     const ok = await auth.login(loginId.value, password.value);
     if (!ok) {
         submitting.value = false;
-        errorMessage.value = "ログインIDまたはパスワードが正しくありません。";
+        errorMessage.value = "認証情報が正しくありません。";
         return;
     }
     await Promise.allSettled([surveys.load(), ...(canAccess(auth.role, EDITOR_ROLES) ? [importSettings.load()] : [])]);
