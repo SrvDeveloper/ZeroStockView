@@ -225,6 +225,8 @@
 
 **運用:** 本番に反映した後、当日分を作るために `php artisan survey:amazon-reconcile 2026-10-19 --create-survey` を一度実行する。
 
+**実装状況（2026-10-19）:** `InventoryImportService::createFromAmazonImport` を追加し、`import()` から品番・SKU・グループ所属の組み立て（`loadTargets`、`writeProducts`）を切り出して共通化した。`AmazonInventoryImportService::process` は取込成功後、`syncDate` の前に調査を作成する（失敗はログのみ）。`survey:amazon-reconcile` に `--create-survey` を追加し、`SurveyAmazonInventorySyncService::latestSuccessfulImport` を公開した。再照合できないときの案内文は「再照合に使える取込ファイルがないため、再照合機能は利用できません。」（API は「…再照合できません。」）にした。期限切れのファイルが残っている場合の API の文言は従来どおり。テストは `AmazonInventoryImportServiceTest.php`（作成・日付またぎ・既存の調査の更新・取込失敗・作成失敗とコマンドでの復旧・削除後に作り直さない・取込なしの日）、`ApiBackendTest.php`（後のファイル取込で同じ調査を更新し、初回取込日時とメモを保つ）、`InventoryTrendApiTest.php`（在庫推移と日別 CSV で他の在庫区分が取込待ちのまま）。
+
 ## 進行状況
 
 | ID | 状態 |
@@ -238,4 +240,4 @@
 | AMZSYNC-07 | 実装完了・本番適用待ち |
 | AMZSYNC-08 | 実装完了・本番適用待ち |
 | AMZSYNC-09 | バッチ・手順実装済み、本番検証待ち |
-| AMZSYNC-10 | 未着手 |
+| AMZSYNC-10 | 実装完了・本番適用待ち（当日分の作成コマンドを実行） |

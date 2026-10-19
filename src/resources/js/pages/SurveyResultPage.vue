@@ -441,7 +441,7 @@ async function exportExcel(scope: "all" | "filtered") {
 
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
         <div v-if="!hasReusableFiles || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
-            <p v-if="!hasReusableFiles">取込ファイルが削除されているため、再照合機能は利用できません。</p>
+            <p v-if="!hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>
             <p v-if="amazonStatus === 'pending'">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
             <p v-else-if="amazonStatus === 'partial'">
                 Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}

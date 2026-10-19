@@ -361,6 +361,37 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-09-27', 'amazon' => 10, 'boss' => null, 'free' => null, 'stock' => null]);
     }
 
+    public function test_amazon_only_survey_keeps_other_warehouses_pending_in_trends_and_daily_csv(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        $survey = Survey::factory()->spApi()->create(['executed_at' => '2026-10-19 09:05:00', 'survey_date' => '2026-10-19']);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        SurveySku::factory()->for($product, 'product')->create([
+            'sku_code' => 'A-1001-M',
+            'child_asin' => 'B000000001',
+            'amazon_own_stock' => 4,
+            'amazon_fba_stock' => 6,
+            'boss_own_stock' => null,
+            'boss_rfc_stock' => null,
+            'free_stock' => null,
+            'ec_stock' => null,
+        ]);
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-10-19&to=2026-10-19&scope=amazon')
+            ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', 10);
+        foreach (['boss', 'mallTotal', 'grandTotal'] as $scope) {
+            $this->getJson("/api/inventory-trends?product_code=A-1001&from=2026-10-19&to=2026-10-19&scope={$scope}")
+                ->assertOk()
+                ->assertJsonPath('data.series.0.points.0.quantity', null)
+                ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-10-19', 'amazon' => 10, 'boss' => null, 'free' => null, 'stock' => null]);
+        }
+
+        $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-10-19'), CarbonImmutable::parse('2026-10-19'));
+        $this->assertCount(1, $rows);
+        $this->assertSame([4, 6, null, null, null, null], [$rows[0]['amazonOwn'], $rows[0]['amazonFba'], $rows[0]['bossOwn'], $rows[0]['bossRfc'], $rows[0]['freeStock'], $rows[0]['ecStock']]);
+    }
+
     public function test_daily_inventory_can_be_exported_as_csv_by_sku_and_warehouse(): void
     {
         $this->actingAs(User::factory()->create());

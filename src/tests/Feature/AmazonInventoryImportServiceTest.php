@@ -17,6 +17,7 @@ use App\Services\AmazonInventoryImportService;
 use App\Services\AmazonInventoryReport;
 use App\Services\AmazonReportClient;
 use App\Services\CrossWalkerClient;
+use App\Services\InventoryImportService;
 use App\Services\SurveyAmazonInventorySyncService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,6 +60,142 @@ class AmazonInventoryImportServiceTest extends TestCase
         $this->assertSame('2026-10-14 09:02:00', $run->basis_at->format('Y-m-d H:i:s'));
         $this->assertDatabaseHas('amazon_inventory_snapshots', ['amazon_inventory_import_id' => $run->id, 'sku_code' => 'SKU-1', 'amazon_own_stock' => 5, 'amazon_fba_stock' => 3, 'source' => 'sp_api']);
         $this->assertDatabaseHas('amazon_inventory_snapshots', ['amazon_inventory_import_id' => $run->id, 'sku_code' => 'SKU-2', 'amazon_own_stock' => 0, 'amazon_fba_stock' => 0]);
+        // 調査のない日だったので、Amazon在庫だけの調査が 1 件作られる（詳細は専用のテスト）。
+        $this->assertSame(1, Survey::query()->count());
+    }
+
+    public function test_success_creates_an_amazon_only_survey_for_a_day_without_one(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 09:05:00', 'Asia/Tokyo'));
+        $product = $this->target('P-1', 'SKU-1', 'B000000001');
+        Sku::factory()->for($product)->create(['sku_code' => 'SKU-NOASIN', 'child_asin' => null, 'sort_order' => 2]);
+        $this->fakeCrossWalker(1);
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '5']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '3']]);
+
+        $service = app(AmazonInventoryImportService::class);
+        $import = $service->process($service->queue('scheduled')->id);
+
+        $survey = Survey::query()->sole();
+        $this->assertSame('2026-10-14', $survey->survey_date);
+        $this->assertSame($import->completed_at->toDateTimeString(), $survey->executed_at->toDateTimeString());
+        $this->assertSame(Survey::AMAZON_SOURCE_SP_API, $survey->amazon_source);
+        $this->assertFalse($survey->includes_amazon_inventory);
+        $this->assertNull($survey->import_setting_name);
+        $this->assertSame($import->id, $survey->amazon_inventory_import_id);
+        $this->assertSame(0, $survey->files()->count());
+
+        $surveyProduct = $survey->products()->with('skus')->sole();
+        $this->assertSame('P-1', $surveyProduct->product_code);
+        $this->assertSame([['key' => 'setting:'.ImportTarget::query()->value('import_setting_id'), 'name' => '設定P-1', 'sortOrder' => 1]], $surveyProduct->group_memberships);
+        $skus = $surveyProduct->skus->keyBy('sku_code');
+        $this->assertSame(5, $skus['SKU-1']->amazon_own_stock);
+        $this->assertSame(3, $skus['SKU-1']->amazon_fba_stock);
+        $this->assertNull($skus['SKU-NOASIN']->amazon_own_stock);
+        foreach ($skus as $sku) {
+            $this->assertNull($sku->boss_own_stock);
+            $this->assertNull($sku->boss_rfc_stock);
+            $this->assertNull($sku->free_stock);
+            $this->assertNull($sku->ec_stock);
+        }
+    }
+
+    public function test_amazon_only_survey_uses_the_basis_time_when_the_import_finishes_after_midnight(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15 00:10:00', 'Asia/Tokyo'));
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1);
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '5']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '3']]);
+
+        $service = app(AmazonInventoryImportService::class);
+        $import = $service->process($service->queue('manual')->id);
+
+        $survey = Survey::query()->sole();
+        $this->assertSame('2026-10-14', $survey->survey_date);
+        $this->assertSame($import->basis_at->toDateTimeString(), $survey->executed_at->toDateTimeString());
+    }
+
+    public function test_success_on_a_day_with_a_survey_updates_it_instead_of_creating_another(): void
+    {
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1, 2);
+        $sku = $this->surveySku('2026-10-14 08:00:00');
+
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '2']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '3']]);
+        $service = app(AmazonInventoryImportService::class);
+        $service->process($service->queue('manual')->id);
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '4']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '5']]);
+        app(AmazonInventoryImportService::class)->process($service->queue('manual')->id);
+
+        $this->assertSame(1, Survey::query()->count());
+        $this->assertSame(4, $sku->fresh()->amazon_own_stock);
+        $this->assertSame(5, $sku->fresh()->amazon_fba_stock);
+    }
+
+    public function test_failed_import_does_not_create_a_survey(): void
+    {
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1);
+        $reports = Mockery::mock(AmazonReportClient::class);
+        $reports->shouldReceive('fetchOwnInventory')->once()->andReturn($this->report('OWN', [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '9']]));
+        $reports->shouldReceive('fetchFbaInventory')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
+        $this->app->instance(AmazonReportClient::class, $reports);
+
+        $service = app(AmazonInventoryImportService::class);
+        $this->assertSame('failed', $service->process($service->queue('manual')->id)->status);
+        $this->assertSame(0, Survey::query()->count());
+    }
+
+    public function test_survey_creation_failure_keeps_the_import_successful_and_the_command_can_create_it_later(): void
+    {
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1);
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '7']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '8']]);
+        $importer = Mockery::mock(InventoryImportService::class);
+        $importer->shouldReceive('createFromAmazonImport')->once()->andThrow(new \RuntimeException('simulated creation failure'));
+        $this->app->instance(InventoryImportService::class, $importer);
+
+        $service = app(AmazonInventoryImportService::class);
+        $import = $service->process($service->queue('manual')->id);
+        $this->assertSame('succeeded', $import->status);
+        $this->assertSame(0, Survey::query()->count());
+
+        $this->app->forgetInstance(InventoryImportService::class);
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-10-14', '--create-survey' => true])
+            ->expectsOutput('2026-10-14 のAmazon在庫だけの調査を作成しました。')
+            ->assertSuccessful();
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-10-14', '--create-survey' => true])
+            ->expectsOutput('2026-10-14 の調査はすでにあるため、作成しませんでした。')
+            ->assertSuccessful();
+
+        $survey = Survey::query()->sole();
+        $this->assertSame($import->id, $survey->amazon_inventory_import_id);
+        $this->assertSame(7, $survey->products()->sole()->skus()->sole()->amazon_own_stock);
+    }
+
+    public function test_reconcile_without_the_option_does_not_recreate_a_deleted_amazon_only_survey(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14 09:05:00', 'Asia/Tokyo'));
+        $this->target('P-1', 'SKU-1', 'B000000001');
+        $this->fakeCrossWalker(1);
+        $this->fakeReports([['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '7']], [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '8']]);
+        $service = app(AmazonInventoryImportService::class);
+        $service->process($service->queue('manual')->id);
+        Survey::query()->sole()->delete();
+
+        $this->artisan('survey:amazon-reconcile')->assertSuccessful();
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-10-14'])->assertSuccessful();
+
+        $this->assertSame(0, Survey::query()->count());
+    }
+
+    public function test_create_survey_option_does_nothing_on_a_day_without_a_successful_import(): void
+    {
+        $this->target('P-1', 'SKU-1', 'B000000001');
+
+        $this->artisan('survey:amazon-reconcile', ['date' => '2026-10-14', '--create-survey' => true])
+            ->expectsOutput('2026-10-14 は成功したAmazon在庫取込がないため、調査を作成しません。')
+            ->assertSuccessful();
+
         $this->assertSame(0, Survey::query()->count());
     }
 

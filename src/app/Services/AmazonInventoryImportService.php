@@ -22,6 +22,7 @@ class AmazonInventoryImportService
         private CrossWalkerClient $crossWalker,
         private AmazonReportClient $reports,
         private SurveyAmazonInventorySyncService $surveySync,
+        private InventoryImportService $surveyImporter,
     ) {}
 
     public function queue(string $triggerSource): AmazonInventoryImport
@@ -116,6 +117,16 @@ class AmazonInventoryImportService
 
         $import = AmazonInventoryImport::query()->with('snapshots')->findOrFail($importId);
         if ($import->status === 'succeeded') {
+            try {
+                // ファイル取込がまだない日も、その日の調査を作って Amazon 在庫を表示する。
+                $this->surveyImporter->createFromAmazonImport($import);
+            } catch (Throwable $exception) {
+                Log::error('Amazon在庫の取得後、その日の調査の作成に失敗しました。', [
+                    'import_id' => $import->id,
+                    'snapshot_date' => $import->snapshot_date->toDateString(),
+                    'exception' => $exception,
+                ]);
+            }
             try {
                 $this->surveySync->syncDate($import->snapshot_date);
             } catch (Throwable $exception) {
