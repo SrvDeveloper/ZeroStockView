@@ -33,6 +33,7 @@ class AuthController extends Controller
             'user' => $request->user() === null ? null : [
                 'id' => (string) $request->user()->getKey(),
                 'loginId' => $request->user()->login_id,
+                'role' => $request->user()->role,
             ],
         ]);
     }
