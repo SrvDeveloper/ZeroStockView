@@ -6,6 +6,7 @@ use App\Models\AmazonInventoryImport;
 use App\Models\ImportSetting;
 use App\Models\ImportTarget;
 use App\Models\Survey;
+use App\Models\SurveyProduct;
 use Carbon\CarbonInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
@@ -343,6 +344,7 @@ class InventoryImportService
         $skuMemos = $existingProducts->flatMap->skus->pluck('memo', 'sku_code');
         $priorProducts = $existingProducts->keyBy('product_code');
         $survey->products()->delete();
+        $settingKeysByName = $groupMemberships->flatten(1)->pluck('key', 'name')->all();
 
         foreach ($targets as $index => $target) {
             $product = $target->product;
@@ -351,8 +353,11 @@ class InventoryImportService
             if ($priorProduct !== null && $priorMemberships->isEmpty() && $previousSettingName !== null) {
                 $priorMemberships->push(['key' => 'legacy:'.$previousSettingName, 'name' => $previousSettingName, 'sortOrder' => $priorProduct->sort_order]);
             }
-            $memberships = $priorMemberships->concat($groupMemberships->get($product->id, []))
-                ->unique('key')->values()->all();
+            // 現在の所属を先に置き、同じグループは現在の名前と並び順を使う
+            $memberships = SurveyProduct::mergeGroupMemberships(
+                collect($groupMemberships->get($product->id, []))->concat($priorMemberships),
+                $settingKeysByName,
+            );
             $surveyProduct = $survey->products()->create([
                 'product_code' => $product->product_code,
                 'brand' => $product->brand,
