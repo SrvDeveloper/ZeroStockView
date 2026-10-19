@@ -5,6 +5,7 @@ import { reactive } from "vue";
 import AppSidebar from "@/components/AppSidebar.vue";
 import AppTopBar from "@/components/AppTopBar.vue";
 import { isNavItemActive, NAV_ITEMS } from "@/constants/navigation";
+import type { UserRole } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
@@ -38,7 +39,11 @@ describe("navigation", () => {
 });
 
 describe("AppSidebar", () => {
-    beforeEach(() => setRoute("survey-result", ["在庫調査履歴"], { id: "1" }));
+    beforeEach(() => {
+        setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
+        setRoute("survey-result", ["在庫調査履歴"], { id: "1" });
+    });
 
     it("groups menu items and marks the current one", () => {
         const wrapper = mount(AppSidebar, { props: { open: false }, global: { stubs: { RouterLink: RouterLinkStub, IntegrationStatus: true } } });
@@ -57,12 +62,25 @@ describe("AppSidebar", () => {
 
         expect(wrapper.emitted("close")).toHaveLength(1);
     });
+
+    it.each([
+        ["viewer", ["survey-history", "inventory-trends", "manual"], false],
+        ["editor", ["data-import", "survey-history", "inventory-trends", "import-settings", "manual"], true],
+        ["admin", ["data-import", "survey-history", "inventory-trends", "import-settings", "file-management", "api-connection-settings", "user-management", "manual"], true],
+    ] as [UserRole, string[], boolean][])("shows the correct navigation for %s", (role, expectedItems, hasStatus) => {
+        useAuthStore().user = { id: "1", loginId: role, role };
+        const wrapper = mount(AppSidebar, { props: { open: false }, global: { stubs: { RouterLink: RouterLinkStub, IntegrationStatus: true } } });
+
+        expect(wrapper.findAll("[data-nav-item]").map((item) => item.attributes("data-nav-item"))).toEqual(expectedItems);
+        expect(wrapper.find("integration-status-stub").exists()).toBe(hasStatus);
+        expect(wrapper.findAllComponents(RouterLinkStub)[0].props("to")).toEqual({ name: role === "viewer" ? "survey-history" : "data-import" });
+    });
 });
 
 describe("AppTopBar", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
-        useAuthStore().user = { id: "1", loginId: "admin" };
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
     });
 
     it("shows the static breadcrumb of the route", () => {
@@ -89,8 +107,9 @@ describe("AppTopBar", () => {
         expect(wrapper.get("[data-breadcrumb]").text()).toBe("設定/品番グループ/秋冬アウター");
     });
 
-    it("opens the account menu", async () => {
-        setRoute("data-import", ["データ取込"]);
+    it.each(["admin", "editor", "viewer"] as UserRole[])("keeps the account menu for %s", async (role) => {
+        useAuthStore().user = { id: "1", loginId: role, role };
+        setRoute("manual", ["ヘルプ", "操作マニュアル"]);
         const wrapper = mount(AppTopBar, { props: { menuOpen: false }, global: { stubs: { RouterLink: RouterLinkStub } } });
 
         await wrapper.get('[aria-label="アカウントメニュー"]').trigger("click");

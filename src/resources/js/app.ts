@@ -6,6 +6,7 @@ import router from "./router";
 import { beginPageLoadingTask } from "./router/loading";
 import piniaPluginPersistedstate from "pinia-plugin-persistedstate";
 import { useAuthStore } from "@/stores/auth";
+import { EDITOR_ROLES, canAccess } from "@/constants/roles";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import "@css/app.css";
@@ -29,7 +30,7 @@ void (async () => {
         await router.isReady();
         const auth = useAuthStore(pinia);
         if (auth.isLoggedIn) {
-            await Promise.allSettled([useImportSettingsStore(pinia).load(), useSurveysStore(pinia).load()]);
+            await Promise.allSettled([useSurveysStore(pinia).load(), ...(canAccess(auth.role, EDITOR_ROLES) ? [useImportSettingsStore(pinia).load()] : [])]);
         }
     } finally {
         finishBootstrapLoading();

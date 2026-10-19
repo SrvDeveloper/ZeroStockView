@@ -1,10 +1,12 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { ADMIN_ROLES, ALL_ROLES, EDITOR_ROLES, canAccess, homeRouteName, type UserRole } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 import { setRouteLoading } from "./loading";
 
 declare module "vue-router" {
     interface RouteMeta {
         public?: boolean;
+        roles?: readonly UserRole[];
         /** 上部バーに出す現在地。調査結果と品番グループの編集は、画面側で末尾に名前を足す */
         breadcrumb?: string[];
     }
@@ -24,75 +26,81 @@ const router = createRouter({
             path: "/import",
             name: "data-import",
             component: () => import("@/pages/DataImportPage.vue"),
-            meta: { breadcrumb: ["データ取込"] },
+            meta: { roles: EDITOR_ROLES, breadcrumb: ["データ取込"] },
         },
         {
             path: "/import/settings",
             name: "import-settings",
             component: () => import("@/pages/ImportSettingsListPage.vue"),
-            meta: { breadcrumb: ["設定", "品番グループ"] },
+            meta: { roles: EDITOR_ROLES, breadcrumb: ["設定", "品番グループ"] },
         },
         {
             path: "/import/settings/new",
             name: "import-setting-new",
             component: () => import("@/pages/ImportSettingsPage.vue"),
-            meta: { breadcrumb: ["設定", "品番グループ", "新規作成"] },
+            meta: { roles: EDITOR_ROLES, breadcrumb: ["設定", "品番グループ", "新規作成"] },
         },
         {
             path: "/import/settings/:id",
             name: "import-setting-edit",
             component: () => import("@/pages/ImportSettingsPage.vue"),
-            meta: { breadcrumb: ["設定", "品番グループ"] },
+            meta: { roles: EDITOR_ROLES, breadcrumb: ["設定", "品番グループ"] },
             props: true,
         },
         {
             path: "/surveys",
             name: "survey-history",
             component: () => import("@/pages/SurveyHistoryPage.vue"),
-            meta: { breadcrumb: ["在庫調査履歴"] },
+            meta: { roles: ALL_ROLES, breadcrumb: ["在庫調査履歴"] },
         },
         {
             path: "/inventory-trends",
             name: "inventory-trends",
             component: () => import("@/pages/InventoryTrendPage.vue"),
-            meta: { breadcrumb: ["在庫推移"] },
+            meta: { roles: ALL_ROLES, breadcrumb: ["在庫推移"] },
         },
         {
             path: "/surveys/:id",
             name: "survey-result",
             component: () => import("@/pages/SurveyResultPage.vue"),
-            meta: { breadcrumb: ["在庫調査履歴"] },
+            meta: { roles: ALL_ROLES, breadcrumb: ["在庫調査履歴"] },
             props: (route) => ({ id: route.params.id, initialGroup: typeof route.query.group === "string" ? route.query.group : "" }),
         },
         {
             path: "/files",
             name: "file-management",
             component: () => import("@/pages/FileManagementPage.vue"),
-            meta: { breadcrumb: ["設定", "ファイル管理"] },
+            meta: { roles: ADMIN_ROLES, breadcrumb: ["設定", "ファイル管理"] },
         },
         {
             path: "/manual",
             name: "manual",
             component: () => import("@/pages/ManualPage.vue"),
-            meta: { breadcrumb: ["ヘルプ", "操作マニュアル"] },
+            meta: { roles: ALL_ROLES, breadcrumb: ["ヘルプ", "操作マニュアル"] },
         },
         {
             path: "/password",
             name: "password-change",
             component: () => import("@/pages/PasswordChangePage.vue"),
-            meta: { breadcrumb: ["アカウント", "パスワード変更"] },
+            meta: { roles: ALL_ROLES, breadcrumb: ["アカウント", "パスワード変更"] },
         },
         {
             path: "/api-settings",
             name: "api-connection-settings",
             component: () => import("@/pages/ApiConnectionSettingsPage.vue"),
-            meta: { breadcrumb: ["設定", "API連携設定"] },
+            meta: { roles: ADMIN_ROLES, breadcrumb: ["設定", "API連携設定"] },
+        },
+        {
+            path: "/users",
+            name: "user-management",
+            component: () => import("@/pages/UserManagementPage.vue"),
+            meta: { roles: ADMIN_ROLES, breadcrumb: ["設定", "ユーザー管理"] },
         },
         {
             path: "/:pathMatch(.*)*",
             name: "not-found",
             component: () => import("@/pages/NotFoundPage.vue"),
-            meta: { public: true, breadcrumb: ["ページが見つかりません"] },
+            meta: { roles: ALL_ROLES, breadcrumb: ["ページが見つかりません"] },
         },
     ],
 });
@@ -105,7 +113,10 @@ router.beforeEach(async (to) => {
         return { name: "login", query: { redirect: to.fullPath } };
     }
     if (auth.isLoggedIn && to.name === "login") {
-        return { name: "data-import" };
+        return { name: homeRouteName(auth.user!.role) };
+    }
+    if (auth.isLoggedIn && to.meta.roles && !canAccess(auth.role, to.meta.roles)) {
+        return { name: homeRouteName(auth.user!.role) };
     }
     return true;
 });
