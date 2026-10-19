@@ -1,7 +1,9 @@
+import axios from "axios";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurveyHistoryPage from "@/pages/SurveyHistoryPage.vue";
+import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import type { Survey } from "@/types";
 
@@ -17,7 +19,7 @@ function survey(id: string, day: number, fileName = "boss.csv"): Survey {
         importSettingName: null,
         amazonSource: "sp_api",
         amazonInventoryStatus: "complete",
-        files: [{ id: `${id}-f`, type: "倉庫毎の在庫数レポート", fileName, uploadedAt: "", sizeKb: 1 }],
+        files: [{ id: `${id}-f`, type: "倉庫毎の在庫数レポート", fileName, uploadedAt: new Date().toISOString(), sizeKb: 1 }],
         products: [],
     };
 }
@@ -25,6 +27,7 @@ function survey(id: string, day: number, fileName = "boss.csv"): Survey {
 describe("SurveyHistoryPage", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         push.mockReset();
         useSurveysStore().surveys = [survey("older", 14, "boss_1014.csv"), survey("latest", 16, "boss_1016.csv")];
     });
@@ -93,5 +96,37 @@ describe("SurveyHistoryPage", () => {
 
         expect(wrapper.find("[data-calendar-month]").exists()).toBe(false);
         expect(wrapper.findAll("[data-survey-id]").map((row) => row.attributes("data-survey-id"))).toEqual(["latest", "older"]);
+    });
+
+    it.each(["editor", "viewer"] as const)("keeps downloads visible without delete controls for %s", async (role) => {
+        useAuthStore().user = { id: "2", loginId: role, role };
+        const wrapper = mount(SurveyHistoryPage);
+
+        expect(wrapper.get('[data-file-entry="倉庫毎の在庫数レポート"] button').attributes("disabled")).toBeUndefined();
+        expect(wrapper.get("[data-survey-file-downloads]").text()).toContain("一括ZIPをダウンロード");
+        expect(wrapper.get("[data-survey-detail]").text()).toContain("Excel出力");
+        expect(wrapper.text()).not.toContain("この日の調査を削除");
+
+        await wrapper.get('[data-history-view] [data-value="list"]').trigger("click");
+        expect(wrapper.find('[data-survey-id="latest"] [aria-label="削除"]').exists()).toBe(false);
+        expect(wrapper.get('[data-survey-id="latest"]').text()).toContain("Excel出力");
+    });
+
+    it("lets a viewer export the survey Excel file from history", async () => {
+        useAuthStore().user = { id: "2", loginId: "viewer", role: "viewer" };
+        const get = vi.spyOn(axios, "get").mockResolvedValue({ data: new Blob(["excel"]) });
+        const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+        vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:excel");
+        const wrapper = mount(SurveyHistoryPage);
+
+        const exportButton = wrapper
+            .get("[data-survey-detail]")
+            .findAll("button")
+            .find((button) => button.text().includes("Excel出力"))!;
+        await exportButton.trigger("click");
+        await flushPromises();
+
+        expect(get).toHaveBeenCalledWith("/api/surveys/latest/export", { responseType: "blob" });
+        expect(click).toHaveBeenCalledOnce();
     });
 });

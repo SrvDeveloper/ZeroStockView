@@ -2,6 +2,7 @@
 import axios from "axios";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import SurveyFileDownloads from "@/components/survey/SurveyFileDownloads.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
@@ -16,19 +17,25 @@ import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import StatCard from "@/components/ui/StatCard.vue";
 import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
 import StockCell from "@/components/ui/StockCell.vue";
+import { ADMIN_ROLES, EDITOR_ROLES, canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities } from "@/types";
 import { formatDateTime } from "@/utils/format";
+import { fileRemainingDays } from "@/utils/files";
 import { amazonStockState as amazonStockStateOf, amazonTotal, bossTotal, previousSurvey, skuTotal, stockState, summarizeSurvey, type StockState } from "@/utils/stock";
 
 const props = defineProps<{ id: string; initialGroup?: string }>();
 
 const router = useRouter();
+const auth = useAuthStore();
 const importSettingsStore = useImportSettingsStore();
 const surveysStore = useSurveysStore();
 const toast = useUiStore();
+const canEditMemo = computed(() => canAccess(auth.role, ADMIN_ROLES));
+const canRerunSurvey = computed(() => canAccess(auth.role, EDITOR_ROLES));
 
 const survey = computed(() => surveysStore.getSurvey(props.id));
 const includesAmazonInventory = computed(() => survey.value?.includesAmazonInventory !== false);
@@ -68,14 +75,14 @@ const rerunMenuOpen = ref(false);
 const rerunRunning = ref(false);
 const rerunError = ref("");
 const hasReusableFiles = computed(() => {
-    const fileTypes = new Set(survey.value?.files.map((file) => file.type) ?? []);
+    const fileTypes = new Set(survey.value?.files.filter((file) => fileRemainingDays(file.uploadedAt) > 0).map((file) => file.type) ?? []);
     return IMPORT_FILE_TYPES.some(({ type }) => fileTypes.has(type));
 });
 const rerunSettingOptions = computed<SelectOption[]>(() => importSettingsStore.settings.map((setting) => ({ value: setting.id, label: `${setting.name}（${setting.productCodes.length}件）` })));
 /** 旧5ファイル調査・取得方式が未確定の調査は、Amazon在庫の保存値を守るため再照合できない（API も断る） */
 const isRerunnableSource = computed(() => survey.value?.amazonSource === "sp_api");
 const rerunAvailable = computed(() => hasReusableFiles.value && isRerunnableSource.value);
-const canRerun = computed(() => rerunAvailable.value && rerunSettingId.value !== null && !rerunRunning.value);
+const canRerun = computed(() => canRerunSurvey.value && rerunAvailable.value && rerunSettingId.value !== null && !rerunRunning.value);
 
 const selectedGroupKey = ref(props.initialGroup ?? "");
 watch(
@@ -411,7 +418,14 @@ async function exportExcel(scope: "all" | "filtered") {
                 </div>
                 <div class="flex flex-wrap gap-2 xl:ml-auto">
                     <BaseButton data-testid="refresh-survey" variant="secondary" icon="refresh" :loading="refreshingSurvey" @click="refreshSurvey">最新の在庫を再読込</BaseButton>
-                    <BaseButton data-testid="rerun-menu-button" variant="secondary" icon="compare_arrows" :disabled="!rerunAvailable" :aria-expanded="rerunMenuOpen" @click="rerunMenuOpen = true"
+                    <BaseButton
+                        v-if="canRerunSurvey"
+                        data-testid="rerun-menu-button"
+                        variant="secondary"
+                        icon="compare_arrows"
+                        :disabled="!rerunAvailable"
+                        :aria-expanded="rerunMenuOpen"
+                        @click="rerunMenuOpen = true"
                         >保存ファイルで再照合</BaseButton
                     >
                     <BaseButton variant="secondary" icon="table_view" @click="exportExcel('filtered')">絞込結果をExcel出力</BaseButton>
@@ -443,9 +457,10 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
 
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
-        <div v-if="!rerunAvailable || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
-            <p v-if="!isRerunnableSource" data-testid="rerun-unavailable-legacy">Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。</p>
-            <p v-else-if="!hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>
+        <BaseCard title="取込元ファイル"><SurveyFileDownloads :survey="survey" /></BaseCard>
+        <div v-if="(canRerunSurvey && !rerunAvailable) || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
+            <p v-if="canRerunSurvey && !isRerunnableSource" data-testid="rerun-unavailable-legacy">Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。</p>
+            <p v-else-if="canRerunSurvey && !hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>
             <p v-if="amazonStatus === 'pending'">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
             <p v-else-if="amazonStatus === 'partial'">
                 Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}
@@ -454,6 +469,7 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
 
         <BaseModal
+            v-if="canRerunSurvey"
             :open="rerunMenuOpen"
             title="差異照合メニュー"
             description="現在残っている取込ファイルと全品番グループの対象品番を再照合し、同じ日の調査結果を更新します（初回取込日時は変わりません）。ファイルがない種類は取込待ちになります。"
@@ -533,7 +549,7 @@ async function exportExcel(scope: "all" | "filtered") {
             <BaseEmpty icon="filter_alt_off" title="条件に一致するSKUがありません" description="0件です。絞込条件を見直してください。" />
         </BaseCard>
 
-        <BaseCard v-for="product in filteredProducts" :key="product.productCode" v-memo="[product]" :padded="false" class="survey-product-card">
+        <BaseCard v-for="product in filteredProducts" :key="product.productCode" v-memo="[product, canEditMemo]" :padded="false" class="survey-product-card">
             <div class="flex flex-col gap-2 border-b border-line-2 px-4 py-2.5 lg:flex-row lg:items-center lg:gap-3">
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <p class="font-mono text-[15px] leading-relaxed font-semibold uppercase">{{ product.productCode }}</p>
@@ -542,7 +558,8 @@ async function exportExcel(scope: "all" | "filtered") {
                     <BaseBadge>{{ product.category }}</BaseBadge>
                 </div>
                 <div class="w-full lg:ml-auto lg:w-[300px]">
-                    <MemoField :model-value="product.memo" framed placeholder="品番のメモを追加" @save="(v) => surveysStore.updateProductMemo(survey!.id, product.productCode, v)" />
+                    <MemoField v-if="canEditMemo" :model-value="product.memo" framed placeholder="品番のメモを追加" @save="(v) => surveysStore.updateProductMemo(survey!.id, product.productCode, v)" />
+                    <p v-else data-readonly-memo class="min-h-6 rounded-control bg-surface-2 px-2 py-1 text-[11.5px] text-ink-2">{{ product.memo || "メモなし" }}</p>
                 </div>
             </div>
 
@@ -659,7 +676,8 @@ async function exportExcel(scope: "all" | "filtered") {
                                 </span>
                             </td>
                             <td class="px-3 py-1.5 text-left text-[11.5px]">
-                                <MemoField :model-value="sku.memo" placeholder="メモを追加" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />
+                                <MemoField v-if="canEditMemo" :model-value="sku.memo" placeholder="メモを追加" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />
+                                <span v-else data-readonly-memo>{{ sku.memo || "メモなし" }}</span>
                             </td>
                         </tr>
                     </tbody>

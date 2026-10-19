@@ -21,8 +21,8 @@ function survey(id: string, month: number, day: number, allZero = 0, hour = 9): 
         amazonSource: "sp_api",
         amazonInventoryStatus: "complete",
         files: [
-            { id: `${id}-f1`, type: "倉庫毎の在庫数レポート", fileName: "boss.csv", uploadedAt: "", sizeKb: 1 },
-            { id: `${id}-f2`, type: "KEEP一覧表", fileName: "keep.csv", uploadedAt: "", sizeKb: 1 },
+            { id: `${id}-f1`, type: "倉庫毎の在庫数レポート", fileName: "boss.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
+            { id: `${id}-f2`, type: "KEEP一覧表", fileName: "keep.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
         ],
         products: [{ id: `${id}-p`, productCode: "A", brand: "", category: "", parentAsin: "", memo: "", skus }],
     };

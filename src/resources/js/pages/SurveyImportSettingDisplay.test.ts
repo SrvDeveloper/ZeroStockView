@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurveyHistoryPage from "@/pages/SurveyHistoryPage.vue";
 import MemoField from "@/components/ui/MemoField.vue";
 import SurveyResultPage from "@/pages/SurveyResultPage.vue";
+import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 
@@ -40,6 +41,7 @@ async function mountHistoryList() {
 describe("survey import setting display", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         push.mockReset();
         seedSurvey();
     });
@@ -586,9 +588,9 @@ describe("survey import setting display", () => {
         surveys.surveys[0].includesAmazonInventory = false;
         surveys.surveys[0].amazonSource = "sp_api";
         surveys.surveys[0].files = [
-            { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
-            { id: "4", type: "KEEP一覧表", fileName: "KEEP一覧表.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
-            { id: "5", type: "在庫一覧照会表", fileName: "在庫一覧照会表.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
+            { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
+            { id: "4", type: "KEEP一覧表", fileName: "KEEP一覧表.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
+            { id: "5", type: "在庫一覧照会表", fileName: "在庫一覧照会表.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
         ];
         const settings = useImportSettingsStore();
         settings.settings = [
@@ -630,8 +632,8 @@ describe("survey import setting display", () => {
         surveys.surveys[0].includesAmazonInventory = true;
         surveys.surveys[0].amazonSource = "survey";
         surveys.surveys[0].files = [
-            { id: "1", type: "在庫商品レポート", fileName: "在庫商品レポート.txt", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
-            { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
+            { id: "1", type: "在庫商品レポート", fileName: "在庫商品レポート.txt", uploadedAt: new Date().toISOString(), sizeKb: 1 },
+            { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
         ];
         const rerunImport = vi.spyOn(surveys, "rerunImport");
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
@@ -710,5 +712,47 @@ describe("survey import setting display", () => {
         const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.get("[data-survey-summary]").text()).not.toContain("前回比");
+    });
+
+    it.each(["admin", "editor", "viewer"] as const)("shows only permitted result actions for %s", (role) => {
+        useAuthStore().user = { id: "2", loginId: role, role };
+        const current = useSurveysStore().surveys[0];
+        current.amazonSource = "sp_api";
+        current.files = [{ id: "file-1", type: "倉庫毎の在庫数レポート", fileName: "boss.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 }];
+        current.products = [
+            {
+                id: "product-1",
+                productCode: "A-1001",
+                brand: "A",
+                category: "A",
+                parentAsin: "",
+                memo: "品番メモ",
+                skus: [
+                    {
+                        id: "sku-1",
+                        skuCode: "A-1001-M",
+                        colorName: "",
+                        size: "M",
+                        asin: "",
+                        tqCode: "",
+                        tqColorNo: "",
+                        tqSize: "M",
+                        memo: "SKUメモ",
+                        stock: { amazonOwn: 1, amazonFba: 0, bossOwn: 2, bossRfc: 0, freeStock: 1, ecStock: 1 },
+                    },
+                ],
+            },
+        ];
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
+
+        expect(wrapper.find('[data-testid="rerun-menu-button"]').exists()).toBe(role !== "viewer");
+        expect(wrapper.text()).toContain("絞込結果をExcel出力");
+        expect(wrapper.text()).toContain("全件をExcel出力");
+        expect(wrapper.get('[aria-label="boss.csvをダウンロード"]').attributes("disabled")).toBeUndefined();
+        expect(wrapper.get('[data-testid="survey-files-zip"]').attributes("disabled")).toBeUndefined();
+        expect(wrapper.findAllComponents(MemoField)).toHaveLength(role === "admin" ? 2 : 0);
+        if (role !== "admin") {
+            expect(wrapper.findAll("[data-readonly-memo]").map((memo) => memo.text())).toEqual(["品番メモ", "SKUメモ"]);
+        }
     });
 });
