@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AmazonInventoryImport } from "@/api/amazonInventoryImports";
+import type { CrossWalkerConnectionStatus } from "@/api/integrations";
 import IntegrationStatus from "@/components/IntegrationStatus.vue";
 import { useSurveysStore } from "@/stores/surveys";
 import type { Survey } from "@/types";
@@ -9,7 +10,10 @@ import { countExpiringFiles, fileRemainingDays } from "@/utils/files";
 
 const { fetchAmazonInventoryImports } = vi.hoisted(() => ({ fetchAmazonInventoryImports: vi.fn() }));
 
+const { fetchIntegrationStatus } = vi.hoisted(() => ({ fetchIntegrationStatus: vi.fn() }));
+
 vi.mock("@/api/amazonInventoryImports", () => ({ fetchAmazonInventoryImports }));
+vi.mock("@/api/integrations", () => ({ fetchIntegrationStatus }));
 
 function amazonImport(overrides: Partial<AmazonInventoryImport>): AmazonInventoryImport {
     return {
@@ -59,6 +63,8 @@ describe("IntegrationStatus", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
         fetchAmazonInventoryImports.mockReset();
+        fetchIntegrationStatus.mockReset();
+        fetchIntegrationStatus.mockResolvedValue({ crossWalker: null });
         vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     });
 
@@ -95,6 +101,41 @@ describe("IntegrationStatus", () => {
         expect(wrapper.find('[data-integration="amazon"] [data-lamp-state]').exists()).toBe(false);
     });
 
+    it.each<[CrossWalkerConnectionStatus, string]>([
+        [{ status: "succeeded", checkedAt: "2026-10-16T00:15:00Z", message: null }, "ok"],
+        [{ status: "failed", checkedAt: "2026-10-16T00:15:00Z", message: "CrossWalker APIのAPIキーが正しくありません。" }, "error"],
+    ])("shows the latest CrossWalker connection as a lamp with its time", async (crossWalker, state) => {
+        fetchAmazonInventoryImports.mockResolvedValue([]);
+        fetchIntegrationStatus.mockResolvedValue({ crossWalker });
+        const wrapper = mount(IntegrationStatus);
+        await flushPromises();
+
+        const row = wrapper.get('[data-integration="crosswalker"]');
+        expect(row.get("[data-lamp-state]").attributes("data-lamp-state")).toBe(state);
+        expect(row.text()).toContain("10-16 09:15");
+        expect(row.attributes("title")).toBe(crossWalker.message ?? undefined);
+    });
+
+    it("shows a warning when no CrossWalker connection is recorded", async () => {
+        fetchAmazonInventoryImports.mockResolvedValue([]);
+        const wrapper = mount(IntegrationStatus);
+        await flushPromises();
+
+        expect(wrapper.get('[data-integration="crosswalker"]').text()).toContain("記録なし");
+        expect(wrapper.get('[data-integration="crosswalker"] [data-lamp-state]').attributes("data-lamp-state")).toBe("warn");
+    });
+
+    it("keeps the Amazon lamp when the CrossWalker status cannot be loaded", async () => {
+        fetchAmazonInventoryImports.mockResolvedValue([amazonImport({ status: "succeeded" })]);
+        fetchIntegrationStatus.mockRejectedValue(new Error("network"));
+        const wrapper = mount(IntegrationStatus);
+        await flushPromises();
+
+        expect(wrapper.get('[data-integration="crosswalker"]').text()).toContain("状態を取得できません");
+        expect(wrapper.find('[data-integration="crosswalker"] [data-lamp-state]').exists()).toBe(false);
+        expect(wrapper.get('[data-integration="amazon"] [data-lamp-state]').attributes("data-lamp-state")).toBe("ok");
+    });
+
     it("warns about saved files close to expiry", async () => {
         fetchAmazonInventoryImports.mockResolvedValue([]);
         const uploadedAt = new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString();
@@ -111,12 +152,15 @@ describe("IntegrationStatus", () => {
         const wrapper = mount(IntegrationStatus);
         await flushPromises();
         expect(fetchAmazonInventoryImports).toHaveBeenCalledTimes(1);
+        expect(fetchIntegrationStatus).toHaveBeenCalledTimes(1);
 
         vi.advanceTimersByTime(5 * 60 * 1000);
         expect(fetchAmazonInventoryImports).toHaveBeenCalledTimes(2);
+        expect(fetchIntegrationStatus).toHaveBeenCalledTimes(2);
 
         wrapper.unmount();
         vi.advanceTimersByTime(10 * 60 * 1000);
         expect(fetchAmazonInventoryImports).toHaveBeenCalledTimes(2);
+        expect(fetchIntegrationStatus).toHaveBeenCalledTimes(2);
     });
 });

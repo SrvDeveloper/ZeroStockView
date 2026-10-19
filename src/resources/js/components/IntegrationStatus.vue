@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
 import { type AmazonInventoryImport, fetchAmazonInventoryImports } from "@/api/amazonInventoryImports";
+import { type CrossWalkerConnectionStatus, fetchIntegrationStatus } from "@/api/integrations";
 import { useSurveysStore } from "@/stores/surveys";
 import { countExpiringFiles } from "@/utils/files";
 
@@ -11,6 +12,9 @@ const surveys = useSurveysStore();
 const latestImport = ref<AmazonInventoryImport | null>(null);
 const loaded = ref(false);
 const failed = ref(false);
+const crossWalkerStatus = ref<CrossWalkerConnectionStatus | null>(null);
+const crossWalkerLoaded = ref(false);
+const crossWalkerFailed = ref(false);
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
 const timeFormatter = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -32,9 +36,15 @@ const amazonLamp = computed<{ state: LampState; detail: string }>(() => {
     return { state: "warn", detail: "取得中" };
 });
 
+const crossWalkerLamp = computed<{ state: LampState; detail: string }>(() => {
+    const status = crossWalkerStatus.value;
+    if (!status) return { state: "warn", detail: "記録なし" };
+    return { state: status.status === "succeeded" ? "ok" : "error", detail: formatLampTime(status.checkedAt) };
+});
+
 const expiringFileCount = computed(() => countExpiringFiles(surveys.surveys));
 
-async function refresh() {
+async function refreshAmazon() {
     try {
         latestImport.value = (await fetchAmazonInventoryImports())[0] ?? null;
         failed.value = false;
@@ -43,6 +53,22 @@ async function refresh() {
     } finally {
         loaded.value = true;
     }
+}
+
+async function refreshCrossWalker() {
+    try {
+        crossWalkerStatus.value = (await fetchIntegrationStatus()).crossWalker;
+        crossWalkerFailed.value = false;
+    } catch {
+        crossWalkerFailed.value = true;
+    } finally {
+        crossWalkerLoaded.value = true;
+    }
+}
+
+/** 片方の取得に失敗しても、もう片方は表示する */
+async function refresh() {
+    await Promise.all([refreshAmazon(), refreshCrossWalker()]);
 }
 
 onMounted(() => {
@@ -67,6 +93,20 @@ onBeforeUnmount(() => clearInterval(refreshTimer));
             </template>
             <template v-else>
                 <span>Amazon SP-API</span>
+                <span class="ml-auto text-[10px] text-sidebar-dim">確認中…</span>
+            </template>
+        </div>
+        <div class="flex items-center gap-2 text-sidebar-strong" data-integration="crosswalker" :title="crossWalkerStatus?.message ?? undefined">
+            <template v-if="crossWalkerFailed">
+                <span>CrossWalker</span>
+                <span class="ml-auto text-[10px] text-sidebar-dim">状態を取得できません</span>
+            </template>
+            <template v-else-if="crossWalkerLoaded">
+                <StatusLamp :state="crossWalkerLamp.state" label="CrossWalker" />
+                <span class="ml-auto font-mono text-[10px] text-sidebar-dim">{{ crossWalkerLamp.detail }}</span>
+            </template>
+            <template v-else>
+                <span>CrossWalker</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">確認中…</span>
             </template>
         </div>

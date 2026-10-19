@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Http;
 
 class CrossWalkerClient
 {
+    public function __construct(private CrossWalkerConnectionStatus $connectionStatus) {}
+
     /**
      * @return array{
      *     products: list<array<string, mixed>>,
@@ -25,28 +27,7 @@ class CrossWalkerClient
      */
     public function searchItems(?string $keyword, int $page, int $perPage): array
     {
-        try {
-            $response = $this->request()->get('/items', array_filter([
-                'keyword' => $keyword,
-                'status' => 'active',
-                'page' => $page,
-                'per_page' => $perPage,
-            ], fn (mixed $value): bool => $value !== null && $value !== ''));
-        } catch (ConnectionException) {
-            throw new CrossWalkerException('CrossWalker APIに接続できませんでした。時間をおいて再度お試しください。');
-        }
-
-        $payload = $this->payload($response);
-        $items = $this->items($payload);
-        $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
-
-        return [
-            'products' => array_map(fn (array $item): array => $this->toProduct($item), $items),
-            'page' => max(1, (int) ($meta['current_page'] ?? $page)),
-            'perPage' => max(1, (int) ($meta['per_page'] ?? $perPage)),
-            'total' => max(0, (int) ($meta['total'] ?? count($items))),
-            'totalPages' => max(1, (int) ($meta['last_page'] ?? 1)),
-        ];
+        return $this->recordConnection(fn (): array => $this->fetchItems($keyword, $page, $perPage));
     }
 
     /**
@@ -55,15 +36,7 @@ class CrossWalkerClient
      */
     public function lookupItems(array $itemNos): array
     {
-        try {
-            $response = $this->request()->post('/items/lookup', [
-                'item_nos' => array_values(array_unique($itemNos)),
-            ]);
-        } catch (ConnectionException) {
-            throw new CrossWalkerException('CrossWalker APIに接続できませんでした。時間をおいて再度お試しください。');
-        }
-
-        return $this->items($this->payload($response));
+        return $this->recordConnection(fn (): array => $this->fetchLookupItems($itemNos));
     }
 
     /** @param Collection<int, ImportTarget> $targets */
@@ -113,6 +86,82 @@ class CrossWalkerClient
                 'sort_order' => $index + 1,
             ]);
         }
+    }
+
+    /**
+     * @return array{
+     *     products: list<array<string, mixed>>,
+     *     page: int,
+     *     perPage: int,
+     *     total: int,
+     *     totalPages: int
+     * }
+     */
+    private function fetchItems(?string $keyword, int $page, int $perPage): array
+    {
+        try {
+            $response = $this->request()->get('/items', array_filter([
+                'keyword' => $keyword,
+                'status' => 'active',
+                'page' => $page,
+                'per_page' => $perPage,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+        } catch (ConnectionException) {
+            throw new CrossWalkerException('CrossWalker APIに接続できませんでした。時間をおいて再度お試しください。');
+        }
+
+        $payload = $this->payload($response);
+        $items = $this->items($payload);
+        $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
+
+        return [
+            'products' => array_map(fn (array $item): array => $this->toProduct($item), $items),
+            'page' => max(1, (int) ($meta['current_page'] ?? $page)),
+            'perPage' => max(1, (int) ($meta['per_page'] ?? $perPage)),
+            'total' => max(0, (int) ($meta['total'] ?? count($items))),
+            'totalPages' => max(1, (int) ($meta['last_page'] ?? 1)),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $itemNos
+     * @return list<array<string, mixed>>
+     */
+    private function fetchLookupItems(array $itemNos): array
+    {
+        try {
+            $response = $this->request()->post('/items/lookup', [
+                'item_nos' => array_values(array_unique($itemNos)),
+            ]);
+        } catch (ConnectionException) {
+            throw new CrossWalkerException('CrossWalker APIに接続できませんでした。時間をおいて再度お試しください。');
+        }
+
+        return $this->items($this->payload($response));
+    }
+
+    /**
+     * 接続の成否を記録する。失敗時に保存するのは CrossWalkerException の固定の要約文だけで、
+     * 接続例外の詳細（URL を含む）は保存しない。
+     *
+     * @template TResult
+     *
+     * @param  callable(): TResult  $call
+     * @return TResult
+     */
+    private function recordConnection(callable $call): mixed
+    {
+        try {
+            $result = $call();
+        } catch (CrossWalkerException $exception) {
+            $this->connectionStatus->recordFailure($exception->getMessage());
+
+            throw $exception;
+        }
+
+        $this->connectionStatus->recordSuccess();
+
+        return $result;
     }
 
     private function request(): PendingRequest

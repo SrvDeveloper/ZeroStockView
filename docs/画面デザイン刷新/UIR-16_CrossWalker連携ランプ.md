@@ -33,3 +33,5 @@ php artisan test --compact --filter=Integration
 vendor/bin/pint --dirty --format agent
 npm run check
 ```
+
+**実装状況（2026-10-19）:** 記録先はキャッシュ（`Cache::forever`、最新 1 件）にした。`Services/CrossWalkerConnectionStatus` が記録と読み出しを受け持ち、`CrossWalkerClient` の `searchItems` と `lookupItems` が 1 リクエストごとに成否を記録する。失敗時に保存するのは `CrossWalkerException` の固定の要約文だけで、接続例外の詳細（URL を含む）や応答本文は保存しない。設定漏れ（URL・API キー未設定）も失敗として記録する。品番が見つからない場合（`refresh` の不足品番）は接続自体は成功しているので、成功のままにする。エンドポイントは `GET /api/integrations/status`（`IntegrationStatusController`）で、応答は `{ data: { crossWalker: { status, checkedAt, message } | null } }`。画面は `IntegrationStatus.vue` に「CrossWalker」の行を Amazon と保存ファイルの間に足し、失敗の要約は行のツールチップ（`title`）に出す。Amazon と CrossWalker の状態は別々に取得し、片方の取得に失敗してももう片方は表示する。テストは `tests/Feature/IntegrationStatusApiTest.php` と `components/IntegrationStatus.test.ts`。
