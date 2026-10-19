@@ -9,6 +9,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class SurveyResource extends JsonResource
 {
+    /** @var array<string, string>|null グループ名 => `setting:ID`（調査に保存されている現在のグループ） */
+    private ?array $settingKeysByName = null;
+
     /**
      * Transform the resource into an array.
      *
@@ -85,11 +88,22 @@ class SurveyResource extends JsonResource
         ];
     }
 
+    /** @return array<string, string> */
+    private function settingKeysByName(): array
+    {
+        return $this->settingKeysByName ??= $this->products
+            ->flatMap(fn (SurveyProduct $product): array => $product->group_memberships ?? [])
+            ->filter(fn (array $membership): bool => str_starts_with($membership['key'], 'setting:'))
+            ->pluck('key', 'name')
+            ->all();
+    }
+
     /** @return array<int, array{key: string, name: string, sortOrder: int}> */
     private function memberships(SurveyProduct $product): array
     {
         if ($product->group_memberships !== null) {
-            return $product->group_memberships;
+            // 再照合前の重複（`legacy:名前` と同名の `setting:ID`）が保存済みの調査も、1 つのグループとして返す
+            return SurveyProduct::mergeGroupMemberships($product->group_memberships, $this->settingKeysByName());
         }
 
         return $this->import_setting_name === null ? [] : [[

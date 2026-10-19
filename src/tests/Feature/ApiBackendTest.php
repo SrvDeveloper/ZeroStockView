@@ -277,6 +277,55 @@ class ApiBackendTest extends TestCase
         $this->assertSame(1, $fresh->files()->count());
     }
 
+    public function test_rerunning_a_survey_from_before_group_memberships_does_not_duplicate_the_same_group(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
+        $surveyId = $this->post('/api/surveys', [
+            'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,5,1\n")],
+        ])->assertCreated()->json('data.id');
+        // 改修前の調査: 品番ごとのグループ所属がなく、当時のグループ名だけを持つ
+        Survey::query()->whereKey($surveyId)->update(['import_setting_name' => '売上TOP20']);
+        SurveyProduct::query()->update(['group_memberships' => null]);
+        $this->getJson('/api/surveys/'.$surveyId)->assertJsonPath('data.groups', [['key' => 'legacy:売上TOP20', 'name' => '売上TOP20']]);
+
+        $this->postJson('/api/surveys/'.$surveyId.'/rerun', ['import_setting_id' => $settingId])
+            ->assertOk()
+            ->assertJsonPath('data.groups', [['key' => 'setting:'.$settingId, 'name' => '売上TOP20']])
+            ->assertJsonCount(1, 'data.products.0.groups');
+
+        $this->assertSame([['key' => 'setting:'.$settingId, 'name' => '売上TOP20', 'sortOrder' => 1]], SurveyProduct::query()->sole()->group_memberships);
+    }
+
+    public function test_survey_groups_merge_a_saved_legacy_group_with_the_current_group_of_the_same_name(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $survey = Survey::factory()->spApi()->create();
+        SurveyProduct::factory()->for($survey)->create([
+            'product_code' => 'A-1001',
+            'sort_order' => 1,
+            'group_memberships' => [
+                ['key' => 'legacy:売上TOP20', 'name' => '売上TOP20', 'sortOrder' => 1],
+                ['key' => 'setting:7', 'name' => '売上TOP20', 'sortOrder' => 1],
+                ['key' => 'legacy:旧キャンペーン', 'name' => '旧キャンペーン', 'sortOrder' => 2],
+            ],
+        ]);
+        SurveyProduct::factory()->for($survey)->create([
+            'product_code' => 'B-2001',
+            'sort_order' => 2,
+            'group_memberships' => [['key' => 'legacy:売上TOP20', 'name' => '売上TOP20', 'sortOrder' => 2]],
+        ]);
+
+        $this->getJson('/api/surveys/'.$survey->id)
+            ->assertOk()
+            ->assertJsonPath('data.groups', [
+                ['key' => 'setting:7', 'name' => '売上TOP20'],
+                ['key' => 'legacy:旧キャンペーン', 'name' => '旧キャンペーン'],
+            ])
+            ->assertJsonPath('data.products.1.groups', [['key' => 'setting:7', 'name' => '売上TOP20', 'sortOrder' => 2]]);
+    }
+
     public function test_import_can_refresh_more_than_fifty_distinct_products_across_groups(): void
     {
         Storage::fake('local');
