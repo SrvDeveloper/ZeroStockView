@@ -61,7 +61,12 @@ describe("UserManagementPage", () => {
         expect(wrapper.text()).toContain("特権管理者");
         expect(wrapper.text()).toContain("staff");
         expect(wrapper.text()).toContain("編集者");
-        expect(wrapper.get('[data-user-id="1"]').text()).toContain("自分自身・最後の特権管理者は削除できません");
+        expect(wrapper.text()).toContain("ユーザー 2人");
+        expect(wrapper.get('[data-user-id="1"] [data-current-user]').text()).toBe("自分");
+        expect(wrapper.get('[data-user-id="2"] [data-user-role="editor"]').text()).toBe("編集者");
+        expect(wrapper.get('[data-user-id="1"] [data-delete-blocked]').attributes("title")).toBe("自分自身・最後の特権管理者は削除できません");
+        expect(wrapper.get('[aria-label="adminを削除"]').attributes("disabled")).toBeDefined();
+        expect(wrapper.get('[aria-label="staffを削除"]').attributes("disabled")).toBeUndefined();
     });
 
     it("shows an error when the user list cannot be loaded", async () => {
@@ -126,7 +131,7 @@ describe("UserManagementPage", () => {
         const wrapper = mountPage();
         await flushPromises();
         await wrapper.get('[aria-label="staffを編集"]').trigger("click");
-        await wrapper.get("#managed-user-role").setValue("viewer");
+        await wrapper.get('[data-role-option="viewer"] input').setValue(true);
 
         expect(wrapper.text()).toContain("このユーザーの全セッションが即時終了します");
         await submitForm(wrapper);
@@ -140,7 +145,10 @@ describe("UserManagementPage", () => {
         const wrapper = mountPage();
         await flushPromises();
         await wrapper.get('[aria-label="staffを編集"]').trigger("click");
+        expect(wrapper.find('input[type="password"]').exists()).toBe(false);
+        await wrapper.get('[data-testid="open-password-reset"]').trigger("click");
         await fillForm(wrapper, "staff", "replacement123");
+        expect(wrapper.findAll('[data-password-rules] [data-valid="true"]')).toHaveLength(2);
         await submitForm(wrapper);
 
         expect(updateUser).toHaveBeenCalledWith("2", { loginId: "staff", password: "replacement123", passwordConfirmation: "replacement123", role: "editor" });
@@ -151,10 +159,10 @@ describe("UserManagementPage", () => {
         fetchUsers.mockResolvedValueOnce([admin]);
         const wrapper = mountPage();
         await flushPromises();
-        expect(wrapper.get('[data-user-id="1"]').text()).toContain("最後の特権管理者は削除できません");
+        expect(wrapper.get('[data-user-id="1"] [data-delete-blocked]').attributes("title")).toContain("最後の特権管理者は削除できません");
 
         await wrapper.get('[aria-label="adminを編集"]').trigger("click");
-        await wrapper.get("#managed-user-role").setValue("editor");
+        await wrapper.get('[data-role-option="editor"] input').setValue(true);
         expect(wrapper.text()).toContain("最後の特権管理者は降格できません");
         await submitForm(wrapper);
         expect(updateUser).not.toHaveBeenCalled();
@@ -184,6 +192,29 @@ describe("UserManagementPage", () => {
         expect(wrapper.find('[data-user-id="2"]').exists()).toBe(false);
     });
 
+    it("describes each role and keeps the password fields closed while editing until requested", async () => {
+        const wrapper = mountPage();
+        await flushPromises();
+        await wrapper.get('[aria-label="staffを編集"]').trigger("click");
+
+        expect(wrapper.findAll("[data-role-option]").map((option) => option.attributes("data-role-option"))).toEqual(["admin", "editor", "viewer"]);
+        expect(wrapper.get('[data-role-option="editor"]').text()).toContain("データ取込・再照合・品番グループの追加と編集");
+        expect((wrapper.get('[data-role-option="editor"] input').element as HTMLInputElement).checked).toBe(true);
+        expect(wrapper.find("[data-password-fields]").exists()).toBe(false);
+
+        await wrapper.get('[data-testid="open-password-reset"]').trigger("click");
+        expect(wrapper.find("[data-password-fields]").exists()).toBe(true);
+        await submitForm(wrapper);
+        expect(wrapper.text()).toContain("新しいパスワードを入力してください");
+        expect(updateUser).not.toHaveBeenCalled();
+
+        await wrapper
+            .findAll("button")
+            .find((button) => button.text() === "再設定をやめる")!
+            .trigger("click");
+        expect(wrapper.find("[data-password-fields]").exists()).toBe(false);
+    });
+
     it("ends the local session and opens login after changing its own role", async () => {
         fetchUsers.mockResolvedValueOnce([admin, { id: "3", loginId: "other", role: "admin" }]);
         updateUser.mockResolvedValue({ ...admin, role: "editor" });
@@ -192,7 +223,7 @@ describe("UserManagementPage", () => {
         const wrapper = mountPage();
         await flushPromises();
         await wrapper.get('[aria-label="adminを編集"]').trigger("click");
-        await wrapper.get("#managed-user-role").setValue("editor");
+        await wrapper.get('[data-role-option="editor"] input').setValue(true);
         expect(wrapper.text()).toContain("自分の権限を変更した場合はログイン画面に戻ります");
         await submitForm(wrapper);
 
