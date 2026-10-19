@@ -41,13 +41,15 @@ describe("SurveyFileDownloads", () => {
     it("disables expired and deleted files with a clear explanation", () => {
         const expired = mount(SurveyFileDownloads, { props: { survey: survey(31) } });
         expect(expired.get('[aria-label="boss.csvをダウンロード"]').attributes("disabled")).toBeDefined();
-        expect(expired.text()).toContain("保存期限切れ");
-        expect(expired.text()).toContain("ダウンロード可能な取込ファイルはありません");
+        const expiredRow = expired.get('[data-file-entry="倉庫毎の在庫数レポート"]');
+        expect(expiredRow.text()).toContain("保存期限切れ");
+        expect(expiredRow.find('[title="boss.csv"]').exists()).toBe(true);
+        expect(expired.get('[data-testid="survey-files-zip"]').attributes("disabled")).toBeDefined();
 
         const deletedSurvey = survey();
         deletedSurvey.files = [];
         const deleted = mount(SurveyFileDownloads, { props: { survey: deletedSurvey } });
-        expect(deleted.text()).toContain("ファイルなし（未取込・期限切れ・削除済み）");
+        expect(deleted.get('[data-file-entry="倉庫毎の在庫数レポート"]').text()).toContain("ファイルなし");
         expect(deleted.find('[aria-label="boss.csvをダウンロード"]').exists()).toBe(false);
         expect(deleted.get('[data-testid="survey-files-zip"]').attributes("disabled")).toBeDefined();
     });
@@ -59,7 +61,8 @@ describe("SurveyFileDownloads", () => {
         await wrapper.get('[aria-label="boss.csvをダウンロード"]').trigger("click");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("ファイルが見つかりません。保存期限が過ぎたか、削除された可能性があります。");
+        expect(wrapper.get('[role="alert"]').text()).toBe("ファイルが見つかりません。保存期限が過ぎたか、削除された可能性があります。");
+        expect(wrapper.get('[data-file-entry="倉庫毎の在庫数レポート"]').text()).toContain("見つかりません");
         expect(wrapper.get('[aria-label="boss.csvをダウンロード"]').attributes("disabled")).toBeDefined();
     });
 

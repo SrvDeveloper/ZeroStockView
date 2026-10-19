@@ -307,10 +307,10 @@ async function exportExcel(survey: Survey) {
                             </dd>
                         </template>
                     </dl>
-                    <SurveyFileDownloads :key="selectedSurvey.id" :survey="selectedSurvey" class="border-t border-line-2 pt-2.5" />
-                    <div class="flex gap-2">
-                        <BaseButton variant="primary" block @click="openResult(selectedSurvey.id)">結果を開く</BaseButton>
-                        <BaseButton variant="secondary" size="sm" icon="table_view" @click="exportExcel(selectedSurvey)">Excel出力</BaseButton>
+                    <SurveyFileDownloads :key="selectedSurvey.id" :survey="selectedSurvey" class="border-t border-line-2 pt-2" />
+                    <div class="flex gap-2 border-t border-line-2 pt-3">
+                        <BaseButton variant="primary" class="min-w-0 flex-1" @click="openResult(selectedSurvey.id)">結果を開く</BaseButton>
+                        <BaseButton variant="secondary" icon="table_view" @click="exportExcel(selectedSurvey)">Excel出力</BaseButton>
                     </div>
                     <div v-if="canDelete" class="flex justify-end">
                         <BaseButton variant="danger-ghost" size="sm" icon="delete" @click="requestDelete(selectedSurvey.id)">この日の調査を削除</BaseButton>
@@ -370,7 +370,7 @@ async function exportExcel(survey: Survey) {
                                 <th class="px-4 py-2.5 font-semibold">取込ファイル</th>
                                 <th class="px-4 py-2.5 font-semibold">Amazon 在庫</th>
                                 <th class="px-4 py-2.5 text-right font-semibold">全倉庫ゼロ</th>
-                                <th class="w-60 px-4 py-2.5 text-right font-semibold">操作</th>
+                                <th class="w-44 px-4 py-2.5 text-right font-semibold">操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -414,7 +414,7 @@ async function exportExcel(survey: Survey) {
                                 <td class="px-4 py-2 text-right">
                                     <div class="flex justify-end gap-1.5">
                                         <BaseButton variant="secondary" size="sm" @click="openResult(survey.id)">結果を開く</BaseButton>
-                                        <BaseButton variant="ghost" size="sm" icon="table_view" @click="exportExcel(survey)">Excel出力</BaseButton>
+                                        <BaseButton variant="ghost" size="sm" icon="table_view" aria-label="Excel出力" title="Excel出力" @click="exportExcel(survey)" />
                                         <BaseButton v-if="canDelete" variant="danger-ghost" size="sm" icon="delete" aria-label="削除" @click="requestDelete(survey.id)" />
                                     </div>
                                 </td>
