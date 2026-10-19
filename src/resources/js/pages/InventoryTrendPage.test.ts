@@ -171,7 +171,7 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
         expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({ productCode: "API-ONLY", from: "2026-08-30", to: "2026-09-28" });
         expect(click).toHaveBeenCalledOnce();
-        expect(wrapper.get('[data-summary-sku="API-ONLY-M"]').text()).toContain("7点");
+        expect(wrapper.get('[data-summary-sku="API-ONLY-M"] [data-summary-field="latest"]').text()).toBe("7");
         expect(wrapper.find('[data-testid="survey-scope-note"]').exists()).toBe(false);
     });
 
@@ -188,11 +188,11 @@ describe("InventoryTrendPage", () => {
         await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
         await flushPromises();
 
-        expect(wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"] [data-summary-field="latest"]').text()).not.toBe("8点");
+        expect(wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"] [data-summary-field="latest"]').text()).not.toBe("8");
         refreshed = true;
         await wrapper.get('[data-testid="refresh-trend"]').trigger("click");
         await flushPromises();
-        expect(wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"] [data-summary-field="latest"]').text()).toBe("8点");
+        expect(wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"] [data-summary-field="latest"]').text()).toBe("8");
         expect(wrapper.find('[data-testid="amazon-daily-sources"]').exists()).toBe(false);
     });
 
@@ -267,11 +267,14 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get('[data-testid="sku-summary-table"]').text()).not.toContain("ステータス");
 
         const firstSku = wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"]');
-        expect(firstSku.get('[data-summary-field="latest"]').text()).toBe("0点");
-        expect(firstSku.get('[data-summary-field="average"]').text()).toBe("24.3点");
-        expect(firstSku.get('[data-summary-field="minimum"]').text()).toBe("0点");
-        expect(firstSku.get('[data-summary-field="maximum"]').text()).toBe("42点");
-        expect(firstSku.get('[data-summary-field="stockout-days"]').text()).toBe("1日");
+        expect(firstSku.get('[data-summary-field="latest"]').text()).toBe("0");
+        expect(firstSku.get('[data-summary-field="average"]').text()).toBe("24.3");
+        expect(firstSku.get('[data-summary-field="minimum"]').text()).toBe("0");
+        expect(firstSku.get('[data-summary-field="maximum"]').text()).toBe("42");
+        expect(firstSku.get('[data-summary-field="stockout-days"]').text()).toBe("1");
+        expect(firstSku.get('[data-summary-field="latest"] span').classes()).toContain("bg-hazard-pale");
+        expect(firstSku.get('[data-summary-field="stockout-days"] span').classes()).toContain("bg-signal");
+        expect(wrapper.text()).toContain("2026-08-30 → 09-28（30 日間）");
     });
 
     it("updates the daily chart when a custom target period is selected", async () => {
