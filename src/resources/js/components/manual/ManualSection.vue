@@ -16,17 +16,17 @@ withDefaults(
 </script>
 
 <template>
-    <section :id="id" class="scroll-mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" :aria-labelledby="`${id}-title`">
-        <header class="flex items-center gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
-            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
-                <AppIcon :name="icon" :size="20" />
+    <section :id="id" class="scroll-mt-16 overflow-hidden rounded-card border border-line bg-surface shadow-card" :aria-labelledby="`${id}-title`">
+        <header class="flex items-center gap-3 border-b border-line-2 px-[18px] py-3">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-control bg-tint text-ink-2">
+                <AppIcon :name="icon" :size="18" />
             </span>
             <div>
-                <h2 :id="`${id}-title`" class="text-base font-semibold text-slate-900">{{ title }}</h2>
-                <p v-if="description" class="mt-1 text-sm leading-6 text-slate-500">{{ description }}</p>
+                <h2 :id="`${id}-title`" class="text-[15px] font-bold text-ink">{{ title }}</h2>
+                <p v-if="description" class="mt-0.5 text-xs leading-relaxed text-muted">{{ description }}</p>
             </div>
         </header>
-        <div class="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
+        <div class="space-y-5 px-[18px] py-5">
             <slot />
         </div>
     </section>

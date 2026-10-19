@@ -5,12 +5,12 @@ defineProps<{
 </script>
 
 <template>
-    <nav aria-label="操作マニュアルの目次" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p class="px-2 text-xs font-semibold tracking-wide text-slate-400 uppercase">目次</p>
-        <ol class="mt-2 space-y-1">
+    <nav aria-label="操作マニュアルの目次" class="rounded-card border border-line bg-surface p-3 shadow-card">
+        <p class="px-2 text-[11px] font-semibold text-muted">目次</p>
+        <ol class="mt-1.5 space-y-0.5">
             <li v-for="(item, index) in items" :key="item.id">
-                <a :href="`#${item.id}`" class="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-slate-600 transition-colors hover:bg-primary-50 hover:text-primary-700">
-                    <span class="w-5 text-right text-xs text-slate-400">{{ index + 1 }}.</span>
+                <a :href="`#${item.id}`" class="flex items-center gap-2 rounded-control px-2 py-1.5 text-[12.5px] text-ink-2 transition-colors hover:bg-tint hover:text-ink">
+                    <span class="w-5 text-right font-mono text-[10.5px] text-faint">{{ `${index + 1}`.padStart(2, "0") }}</span>
                     <span>{{ item.title }}</span>
                 </a>
             </li>

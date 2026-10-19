@@ -17,28 +17,28 @@ const sections = [
 </script>
 
 <template>
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-4">
         <div>
-            <h1 class="text-xl font-extrabold tracking-[0.04em] text-slate-900">操作マニュアル</h1>
-            <p class="mt-1 text-sm text-slate-500">システムの操作方法をご案内します。</p>
+            <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">操作マニュアル</h1>
+            <p class="mt-1 text-[12.5px] text-ink-2">システムの操作方法をご案内します。</p>
         </div>
 
-        <div class="grid items-start gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
-            <div class="lg:sticky lg:top-6">
+        <div class="grid items-start gap-4 lg:grid-cols-[13rem_minmax(0,1fr)]">
+            <div class="lg:sticky lg:top-16">
                 <ManualTableOfContents :items="sections" />
             </div>
 
-            <div class="min-w-0 space-y-6">
+            <div class="min-w-0 space-y-4">
                 <!-- 必要に応じて ManualSection を複製し、sections に同じ id とタイトルを追加してください。 -->
                 <ManualSection id="introduction" title="はじめに" description="取込対象の品番を事前に登録してください。" icon="waving_hand">
-                    <p class="text-sm leading-7 text-slate-600">照合を行う品番がまだ商品識別子管理システム「Crosswalker」に登録されていない場合は、事前に追加登録してください。</p>
+                    <p class="text-[13px] leading-7 text-ink-2">照合を行う品番がまだ商品識別子管理システム「Crosswalker」に登録されていない場合は、事前に追加登録してください。</p>
                 </ManualSection>
 
                 <ManualSection id="basic-operation-amazon" title="Amazon在庫取得" description="Amazon在庫はSP-APIから取得します。ファイルの準備は不要です。" icon="touch_app">
                     <ManualStep :number="1" title="データ取込画面でAmazon在庫を確認する">
                         <p>Amazon在庫の取得状況と最終取得日時を確認します。必要に応じて手動取得を実行してください。</p>
                         <ManualCallout title="調査履歴のAmazon在庫" tone="tip"
-                            >調査時点までに取得に成功した最新のSP-API在庫を表示します。在庫の基準日時は調査日時と異なる場合があります。</ManualCallout
+                            >調査時点までに取得に成功した最新のSP-API在庫を表示します。Amazon の基準日時は、調査の初回取込日時と異なる場合があります。</ManualCallout
                         >
                     </ManualStep>
                 </ManualSection>
@@ -48,7 +48,9 @@ const sections = [
                         <p>
                             BOSSにログインして、在庫・商品一覧画面を開き、検索条件を変更しないで検索ボタンを押下します。<br />
                             ログイン済みの場合は下記URLからアクセス可能です。<br />
-                            <a href="https://boss-oms.jp/BOSSWeb/ItemInventoryList" target="_blank" class="text-primary-600 hover:text-primary-500">https://boss-oms.jp/BOSSWeb/ItemInventoryList</a>
+                            <a href="https://boss-oms.jp/BOSSWeb/ItemInventoryList" target="_blank" class="font-mono text-xs text-ink underline underline-offset-2 hover:text-ink-2"
+                                >https://boss-oms.jp/BOSSWeb/ItemInventoryList</a
+                            >
                         </p>
                         <ManualScreenshot src="/img/manual/02-1.png" caption="在庫・商品一覧画面を開く" />
                     </ManualStep>
@@ -107,14 +109,14 @@ const sections = [
                 </ManualSection>
 
                 <ManualSection id="faq" title="よくある質問" description="問い合わせの多い内容を質問と回答の形式で記載します。" icon="help">
-                    <div class="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                    <div class="divide-y divide-line-2 rounded-card border border-line">
                         <details class="group p-4" open>
-                            <summary class="cursor-pointer list-none text-sm font-semibold text-slate-900 marker:hidden">質問を記載してください</summary>
-                            <p class="mt-3 text-sm leading-6 text-slate-600">ここに回答を記載してください。</p>
+                            <summary class="cursor-pointer list-none text-[13px] font-semibold text-ink marker:hidden">質問を記載してください</summary>
+                            <p class="mt-3 text-[13px] leading-7 text-ink-2">ここに回答を記載してください。</p>
                         </details>
                         <details class="group p-4">
-                            <summary class="cursor-pointer list-none text-sm font-semibold text-slate-900 marker:hidden">質問を追加してください</summary>
-                            <p class="mt-3 text-sm leading-6 text-slate-600">ここに回答を記載してください。</p>
+                            <summary class="cursor-pointer list-none text-[13px] font-semibold text-ink marker:hidden">質問を追加してください</summary>
+                            <p class="mt-3 text-[13px] leading-7 text-ink-2">ここに回答を記載してください。</p>
                         </details>
                     </div>
                 </ManualSection>
