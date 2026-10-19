@@ -2,130 +2,107 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
 
+function datesFrom(start: string, count: number): string[] {
+    return Array.from({ length: count }, (_, index) => {
+        const date = new Date(`${start}T00:00:00Z`);
+        date.setUTCDate(date.getUTCDate() + index);
+        return date.toISOString().slice(0, 10);
+    });
+}
+
+function warehouseSeries(dates: string[], quantities: Record<string, (number | null)[]>) {
+    const colors: Record<string, string> = { amazon: "#e08a2e", boss: "#3a6fb8", free: "#5f9e3a", stock: "#8e5bb8" };
+    return Object.entries(quantities).map(([key, values]) => ({
+        skuCode: key,
+        label: key,
+        color: colors[key]!,
+        points: dates.map((date, index) => ({ date, quantity: values[index] ?? null })),
+    }));
+}
+
 describe("InventoryTrendChart", () => {
-    it("connects the points around missing dates with a dashed line", () => {
+    it("stacks warehouses bottom-up with gaps and rounds only the top of each bar", () => {
+        const dates = datesFrom("2026-10-03", 2);
         const wrapper = mount(InventoryTrendChart, {
-            props: {
-                series: [
-                    {
-                        skuCode: "SKU-001",
-                        label: "SKU-001",
-                        color: "#2563eb",
-                        points: [
-                            { date: "2026-09-25", quantity: 10 },
-                            { date: "2026-09-26", quantity: 12 },
-                            { date: "2026-09-27", quantity: null },
-                            { date: "2026-09-28", quantity: 20 },
-                            { date: "2026-09-29", quantity: 21 },
-                        ],
-                    },
-                ],
-            },
+            props: { series: warehouseSeries(dates, { amazon: [4, 0], boss: [3, 5], free: [2, 0], stock: [1, 0] }) },
         });
 
-        expect(wrapper.findAll('[data-line-style="solid"]')).toHaveLength(2);
-        expect(wrapper.findAll('[data-line-style="dashed"]')).toHaveLength(1);
-        expect(wrapper.get('[data-line-style="dashed"]').attributes("stroke-dasharray")).toBe("3 5");
-        expect(wrapper.findAll("[data-chart-point]")).toHaveLength(4);
+        const segments = wrapper.findAll("[data-chart-bar-segment]");
+        expect(segments.map((segment) => segment.attributes("fill"))).toEqual(["#e08a2e", "#3a6fb8", "#5f9e3a", "#8e5bb8", "#3a6fb8"]);
+        expect(segments.map((segment) => segment.element.tagName)).toEqual(["rect", "rect", "rect", "path", "path"]);
+
+        const amazon = segments[0]!;
+        const boss = segments[1]!;
+        const amazonTop = Number(amazon.attributes("y"));
+        const bossBottom = Number(boss.attributes("y")) + Number(boss.attributes("height"));
+        expect(amazonTop - bossBottom).toBeCloseTo(2);
     });
 
-    it("renders one stacked bar per date and shows each SKU's share of the daily total", async () => {
-        const wrapper = mount(InventoryTrendChart, {
-            props: {
-                displayMode: "bar",
-                series: [
-                    {
-                        skuCode: "SKU-001",
-                        label: "SKU-001",
-                        color: "#2563eb",
-                        points: [
-                            { date: "2026-09-27", quantity: 10 },
-                            { date: "2026-09-28", quantity: null },
-                            { date: "2026-09-29", quantity: 0 },
-                        ],
-                    },
-                    {
-                        skuCode: "SKU-002",
-                        label: "SKU-002",
-                        color: "#7c3aed",
-                        points: [
-                            { date: "2026-09-27", quantity: 30 },
-                            { date: "2026-09-28", quantity: null },
-                            { date: "2026-09-29", quantity: 0 },
-                        ],
-                    },
-                ],
-            },
-        });
+    it("draws bars at half of each day's width", () => {
+        const dates = datesFrom("2026-09-01", 30);
+        const wrapper = mount(InventoryTrendChart, { props: { series: warehouseSeries(dates, { amazon: dates.map(() => 5), boss: dates.map(() => 5) }) } });
 
-        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(2);
-        expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(2);
-        expect(wrapper.find("polyline").exists()).toBe(false);
-
-        await wrapper.findAll("[data-chart-bar]")[0]!.trigger("mouseenter");
-
-        const tooltip = wrapper.get("[data-chart-tooltip]");
-        expect(tooltip.classes()).toContain("fixed");
-        expect(tooltip.text()).toContain("合計 40点");
-        expect(tooltip.text()).toContain("SKU-00110点25%");
-        expect(tooltip.text()).toContain("SKU-00230点75%");
+        const dayWidth = Number(wrapper.findAll("[data-chart-bar]")[0]!.attributes("width"));
+        const bottomSegment = wrapper.get("rect[data-chart-bar-segment]");
+        expect(Number(bottomSegment.attributes("width"))).toBe(Math.round(dayWidth / 2));
     });
 
-    it("spaces integer stockout-axis ticks evenly", () => {
-        const dates = ["2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28"];
+    it("labels every day up to 31 days and thins the labels for longer periods", () => {
+        const shortDates = datesFrom("2026-09-29", 5);
+        const short = mount(InventoryTrendChart, { props: { series: warehouseSeries(shortDates, { amazon: [1, 1, 1, 1, 1] }) } });
+        expect(short.findAll("[data-chart-date]").map((tick) => tick.text())).toEqual(["09-29", "30", "10-01", "02", "03"]);
+
+        const longDates = datesFrom("2026-07-01", 90);
+        const long = mount(InventoryTrendChart, { props: { series: warehouseSeries(longDates, { amazon: longDates.map(() => 1) }) } });
+        const longTicks = long.findAll("[data-chart-date]").map((tick) => tick.text());
+        expect(longTicks).toHaveLength(6);
+        expect(longTicks[0]).toBe("07-01");
+        expect(longTicks.at(-1)).toBe("09-28");
+    });
+
+    it("marks stockout SKU counts under the date axis only on days with stockouts", () => {
+        const dates = datesFrom("2026-10-14", 3);
         const wrapper = mount(InventoryTrendChart, {
             props: {
-                series: [
-                    {
-                        skuCode: "PRODUCT-001",
-                        label: "総在庫数",
-                        color: "#2563eb",
-                        points: dates.map((date) => ({ date, quantity: 40 })),
-                    },
-                ],
+                series: warehouseSeries(dates, { amazon: [3, 2, 1] }),
                 stockoutSeries: {
                     label: "欠品SKU数",
-                    color: "#e11d48",
-                    points: [2, 2, 3, 5, 6].map((quantity, index) => ({ date: dates[index]!, quantity })),
+                    color: "#f5c400",
+                    points: [
+                        { date: dates[0]!, quantity: 0 },
+                        { date: dates[1]!, quantity: 1 },
+                        { date: dates[2]!, quantity: null },
+                    ],
                 },
             },
         });
 
-        const ticks = wrapper.findAll("[data-stockout-axis-tick]");
-        expect(ticks.map((tick) => tick.text())).toEqual(["0", "2", "4", "6", "8"]);
-
-        const positions = ticks.map((tick) => Number(tick.attributes("y")));
-        const intervals = positions.slice(1).map((position, index) => position - positions[index]!);
-        expect(new Set(intervals).size).toBe(1);
+        const marks = wrapper.findAll("[data-stockout-point]");
+        expect(marks).toHaveLength(1);
+        expect(marks[0]!.attributes("data-stockout-count")).toBe("1");
+        expect(marks[0]!.get("rect").attributes("fill")).toBe("#f5c400");
+        expect(marks[0]!.text()).toBe("1");
+        expect(wrapper.text()).toContain("欠品");
+        expect(wrapper.find("polyline").exists()).toBe(false);
+        expect(wrapper.findAll("[data-chart-bar]")[1]!.attributes("aria-label")).toBe(`${dates[1]}、在庫合計2点、欠品SKU 1件`);
     });
 
-    it("renders stockout counts on a separate scale and includes both product metrics in the tooltip", async () => {
+    it("highlights the hovered day and shows the warehouse breakdown, total and stockout SKUs", async () => {
+        const dates = datesFrom("2026-09-27", 2);
         const wrapper = mount(InventoryTrendChart, {
             props: {
-                series: [
-                    {
-                        skuCode: "PRODUCT-001",
-                        label: "総在庫数",
-                        color: "#2563eb",
-                        points: [
-                            { date: "2026-09-27", quantity: 40 },
-                            { date: "2026-09-28", quantity: 0 },
-                        ],
-                    },
-                ],
+                series: warehouseSeries(dates, { amazon: [10, 0], boss: [30, 0] }),
                 stockoutSeries: {
                     label: "欠品SKU数",
-                    color: "#e11d48",
+                    color: "#f5c400",
                     points: [
-                        { date: "2026-09-27", quantity: 1 },
+                        { date: dates[0]!, quantity: 0, skus: [], periodStockoutDays: 8 },
                         {
-                            date: "2026-09-28",
-                            quantity: 4,
+                            date: dates[1]!,
+                            quantity: 2,
                             skus: [
                                 { skuCode: "SKU-001", stockoutDays: 3 },
-                                { skuCode: "SKU-002", stockoutDays: 2 },
-                                { skuCode: "SKU-003", stockoutDays: 1 },
-                                { skuCode: "SKU-004", stockoutDays: 2 },
+                                { skuCode: "SKU-002", stockoutDays: 5 },
                             ],
                             periodStockoutDays: 8,
                         },
@@ -134,78 +111,43 @@ describe("InventoryTrendChart", () => {
             },
         });
 
-        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
-        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(2);
+        expect(wrapper.find("[data-chart-highlight]").exists()).toBe(false);
+        await wrapper.findAll("[data-chart-bar]")[0]!.trigger("mouseenter");
 
-        await wrapper.findAll('circle[aria-label^="総在庫数"]')[1]!.trigger("mouseenter");
-
-        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
-        expect(wrapper.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
-        expect(wrapper.find("[data-tooltip-stockout-details]").exists()).toBe(false);
-
-        await wrapper.findAll('circle[aria-label*="欠品SKU"]')[1]!.trigger("mouseenter");
-
-        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
-        expect(wrapper.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
-        expect(wrapper.findAll("[data-tooltip-stockout-sku]")).toHaveLength(4);
-        expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("SKU-001");
-        expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("期間累計 3日");
-        expect(wrapper.get("[data-tooltip-period-stockout-days]").text()).toContain("全SKUの期間累計欠品日数8日");
-    });
-
-    it("uses columns to keep a many-SKU tooltip compact", async () => {
-        const wrapper = mount(InventoryTrendChart, {
-            props: {
-                displayMode: "bar",
-                series: Array.from({ length: 13 }, (_, index) => ({
-                    skuCode: `SKU-${String(index + 1).padStart(3, "0")}`,
-                    label: `SKU-${String(index + 1).padStart(3, "0")}`,
-                    color: "#2563eb",
-                    points: [{ date: "2026-09-29", quantity: index + 1 }],
-                })),
-            },
-        });
-
-        await wrapper.get("[data-chart-bar]").trigger("mouseenter");
-
+        expect(wrapper.find("[data-chart-highlight]").exists()).toBe(true);
         const tooltip = wrapper.get("[data-chart-tooltip]");
-        expect(tooltip.attributes("style")).toContain("width: 330px");
-        expect(tooltip.get(".grid").attributes("style")).toContain("repeat(2, minmax(0, 1fr))");
-        expect(tooltip.findAll("[data-tooltip-series]")).toHaveLength(13);
+        expect(tooltip.classes()).toContain("fixed");
+        expect(tooltip.findAll("[data-tooltip-breakdown-row]").map((row) => row.text())).toEqual(["amazon10点", "boss30点"]);
+        expect(tooltip.get("[data-tooltip-total]").text()).toBe("総在庫数40点");
+        expect(tooltip.get("[data-tooltip-stockout]").text()).toBe("欠品SKU数0SKU");
+        expect(tooltip.find("[data-tooltip-stockout-details]").exists()).toBe(false);
+
+        await wrapper.findAll("[data-chart-bar]")[1]!.trigger("mouseenter");
+        expect(wrapper.get("[data-tooltip-total]").text()).toBe("総在庫数0点");
+        expect(wrapper.findAll("[data-tooltip-stockout-sku]").map((row) => row.text())).toEqual(["SKU-001期間累計 3日", "SKU-002期間累計 5日"]);
+        expect(wrapper.get("[data-tooltip-period-stockout-days]").text()).toBe("全SKUの期間累計欠品日数8日");
+
+        await wrapper.findAll("[data-chart-bar]")[1]!.trigger("mouseleave");
+        expect(wrapper.find("[data-chart-tooltip]").exists()).toBe(false);
+        expect(wrapper.find("[data-chart-highlight]").exists()).toBe(false);
     });
 
     it("keeps a hoverable unconfirmed bar on a day where no series is confirmed yet", async () => {
+        const dates = ["2026-09-26", "2026-09-27"];
         const wrapper = mount(InventoryTrendChart, {
             props: {
-                displayMode: "bar",
                 pendingDates: ["2026-09-27"],
                 stockoutSeries: {
                     label: "欠品SKU数",
-                    color: "#11161a",
+                    color: "#f5c400",
                     points: [
                         { date: "2026-09-26", quantity: 0 },
                         { date: "2026-09-27", quantity: null },
                     ],
                 },
                 series: [
-                    {
-                        skuCode: "amazon",
-                        label: "Amazon",
-                        color: "#e08a2e",
-                        points: [
-                            { date: "2026-09-26", quantity: 5 },
-                            { date: "2026-09-27", quantity: null },
-                        ],
-                    },
-                    {
-                        skuCode: "boss",
-                        label: "BOSS",
-                        color: "#3a6fb8",
-                        points: [
-                            { date: "2026-09-26", quantity: 3 },
-                            { date: "2026-09-27", quantity: null },
-                        ],
-                    },
+                    { skuCode: "amazon", label: "Amazon", color: "#e08a2e", points: dates.map((date, index) => ({ date, quantity: index === 0 ? 5 : null })) },
+                    { skuCode: "boss", label: "BOSS", color: "#3a6fb8", points: dates.map((date, index) => ({ date, quantity: index === 0 ? 3 : null })) },
                 ],
             },
         });

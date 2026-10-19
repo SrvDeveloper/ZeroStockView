@@ -6,6 +6,7 @@ interface TrendPoint {
     quantity: number | null;
 }
 
+/** 積み上げる 1 段（倉庫）。配列の先頭が棒のいちばん下になる */
 interface TrendSeries {
     skuCode: string;
     label: string;
@@ -29,10 +30,22 @@ interface StockoutSeries {
     points: StockoutPoint[];
 }
 
-interface TooltipEntry {
-    series: TrendSeries;
-    quantity: number;
-    percentage?: number;
+interface BarSegment {
+    key: string;
+    color: string;
+    /** いちばん上の段は上端を角丸にした path で描く */
+    path: string | null;
+    y: number;
+    height: number;
+}
+
+interface StackedBar {
+    date: string;
+    index: number;
+    total: number;
+    /** 未確定の段がある日。確定した段だけを積み、上に「未確定」の印を付ける */
+    pending: boolean;
+    segments: BarSegment[];
 }
 
 interface BreakdownEntry {
@@ -40,586 +53,291 @@ interface BreakdownEntry {
     quantity: number | null;
 }
 
-interface HoveredPoint {
-    date: string;
-    entries: TooltipEntry[];
-    /** 系列ごとの内訳（未確定は null）。棒グラフで系列が複数あるか、未確定の日に出す */
-    breakdown: BreakdownEntry[] | null;
-    pending: boolean;
-    activeColor: string;
-    x: number;
-    y: number;
-    totalQuantity: number | null;
-    stockoutCount: number | null;
-    stockoutSkus: StockoutSkuDetail[] | null;
-    periodStockoutDays: number | null;
-    tooltipX: number;
-    tooltipY: number;
-    usesViewportCoordinates: boolean;
-}
-
-interface LineSegment {
-    points: string;
-    dashed: boolean;
-}
-
-interface StackedBar {
+interface HoveredBar {
     date: string;
     index: number;
-    total: number;
-    /** 未確定の系列がある日。確定した系列だけを積み、上に「未確定」の印を付ける */
     pending: boolean;
-    entries: TooltipEntry[];
-    segments: { series: TrendSeries; y: number; height: number }[];
+    totalQuantity: number | null;
+    breakdown: BreakdownEntry[];
+    stockout: StockoutPoint | null;
+    x: number;
+    y: number;
 }
 
-type ChartMode = "line" | "bar";
-
-const props = withDefaults(defineProps<{ series: TrendSeries[]; displayMode?: ChartMode; stockoutSeries?: StockoutSeries | null; pendingDates?: string[] }>(), {
-    displayMode: "line",
+const props = withDefaults(defineProps<{ series: TrendSeries[]; stockoutSeries?: StockoutSeries | null; pendingDates?: string[] }>(), {
     stockoutSeries: null,
     pendingDates: () => [],
 });
 
-const PENDING_CAP_HEIGHT = 12;
-const pendingPatternId = `pending-hatch-${useId()}`;
-const pendingDateSet = computed(() => new Set(props.pendingDates));
-
 const width = 960;
-const height = 360;
-const plot = { left: 56, right: 56, top: 20, bottom: 48 };
+const height = 300;
+const plot = { left: 48, right: 12, top: 12, bottom: 58 };
 const plotWidth = width - plot.left - plot.right;
 const plotHeight = height - plot.top - plot.bottom;
-const hovered = ref<HoveredPoint | null>(null);
+const plotBottom = plot.top + plotHeight;
+/** 毎日の日付の目盛りを出す最長の日数 */
+const DAILY_TICK_LIMIT = 31;
+const SEGMENT_GAP = 2;
+const TOP_RADIUS = 3;
+const PENDING_CAP_HEIGHT = 12;
+const pendingPatternId = `pending-hatch-${useId()}`;
+const hovered = ref<HoveredBar | null>(null);
 
 const dates = computed(() => props.series[0]?.points.map((point) => point.date) ?? []);
+const pendingDateSet = computed(() => new Set(props.pendingDates));
+const stockoutByDate = computed(() => new Map(props.stockoutSeries?.points.map((point) => [point.date, point]) ?? []));
+const band = computed(() => plotWidth / Math.max(1, dates.value.length));
+const barWidth = computed(() => Math.max(1, Math.min(32, Math.round(band.value * 0.5))));
+const segmentGap = computed(() => (barWidth.value >= 6 ? SEGMENT_GAP : 0));
+const chartMinWidth = computed(() => Math.max(680, dates.value.length * 6));
+
+function quantityOn(series: TrendSeries, date: string): number | null {
+    return series.points.find((point) => point.date === date)?.quantity ?? null;
+}
+
 const maxQuantity = computed(() => {
-    const quantities =
-        props.displayMode === "bar"
-            ? dates.value.map((date) => props.series.reduce((total, series) => total + (series.points.find((point) => point.date === date)?.quantity ?? 0), 0))
-            : props.series.flatMap((item) => item.points.map((point) => point.quantity).filter((quantity): quantity is number => quantity !== null));
-    const maximum = Math.max(0, ...quantities);
-    return Math.max(20, Math.ceil(maximum / 10) * 10);
+    const totals = dates.value.map((date) => props.series.reduce((total, series) => total + (quantityOn(series, date) ?? 0), 0));
+    return Math.max(20, Math.ceil(Math.max(0, ...totals) / 10) * 10);
 });
 const yTicks = computed(() => Array.from({ length: 5 }, (_, index) => Math.round((maxQuantity.value * index) / 4)));
-const maximumStockoutValue = computed(() => Math.max(0, ...(props.stockoutSeries?.points.map((point) => point.quantity).filter((quantity): quantity is number => quantity !== null) ?? [])));
-const stockoutTickInterval = computed(() => Math.max(1, Math.ceil(maximumStockoutValue.value / 4)));
-const maxStockoutCount = computed(() => stockoutTickInterval.value * 4);
-const stockoutTicks = computed(() => Array.from({ length: 5 }, (_, index) => stockoutTickInterval.value * index));
-const xTickIndexes = computed(() => {
-    if (dates.value.length <= 1) return [0];
-    const count = dates.value.length <= 14 ? 7 : 6;
-    return Array.from(new Set(Array.from({ length: count }, (_, index) => Math.round((index * (dates.value.length - 1)) / (count - 1)))));
+
+const xTicks = computed(() => {
+    const count = dates.value.length;
+    if (count === 0) return [];
+    if (count <= DAILY_TICK_LIMIT) {
+        return dates.value.map((date, index) => ({ index, label: index === 0 || date.endsWith("-01") ? date.slice(5) : date.slice(8) }));
+    }
+    const indexes = new Set(Array.from({ length: 6 }, (_, index) => Math.round((index * (count - 1)) / 5)));
+    return [...indexes].map((index) => ({ index, label: dates.value[index]!.slice(5) }));
 });
-const barWidth = computed(() => {
-    const dateWidth = plotWidth / Math.max(1, dates.value.length);
-    return Math.max(2, Math.min(dateWidth * 0.64, 24));
-});
-const chartMinWidth = computed(() => (props.displayMode === "bar" ? Math.max(680, dates.value.length * 14) : 680));
+
 const stackedBars = computed<StackedBar[]>(() =>
     dates.value.flatMap((date, index) => {
         const values = props.series.flatMap((series) => {
-            const point = series.points.find((candidate) => candidate.date === date);
-            return point?.quantity === null || point === undefined ? [] : [{ series, quantity: point.quantity }];
+            const quantity = quantityOn(series, date);
+            return quantity === null ? [] : [{ series, quantity }];
         });
         const pending = pendingDateSet.value.has(date);
         if (values.length === 0 && !pending) return [];
 
         const total = values.reduce((sum, value) => sum + value.quantity, 0);
-        const entries = values.map((value) => ({ ...value, percentage: total === 0 ? 0 : (value.quantity / total) * 100 }));
+        const visible = values.filter((value) => value.quantity > 0);
+        const x = barX(index);
         let cumulative = 0;
-        const segments = values.flatMap((value) => {
-            const segmentBottom = cumulative;
+        const segments = visible.flatMap((value, segmentIndex) => {
+            const bottom = pointY(cumulative);
             cumulative += value.quantity;
-            if (value.quantity === 0) return [];
-            return [{ series: value.series, y: pointY(cumulative), height: pointY(segmentBottom) - pointY(cumulative) }];
+            const isTop = segmentIndex === visible.length - 1;
+            const top = pointY(cumulative) + (isTop ? 0 : segmentGap.value);
+            const segmentHeight = bottom - top;
+            if (segmentHeight <= 0) return [];
+            const radius = Math.min(TOP_RADIUS, barWidth.value / 2, segmentHeight);
+            return [
+                {
+                    key: value.series.skuCode,
+                    color: value.series.color,
+                    path: isTop ? roundedTopPath(x, top, barWidth.value, segmentHeight, radius) : null,
+                    y: top,
+                    height: segmentHeight,
+                },
+            ];
         });
 
-        return [{ date, index, total, pending, entries, segments }];
+        return [{ date, index, total, pending, segments }];
     }),
 );
-const tooltipColumnCount = computed(() => {
-    if (props.stockoutSeries) return 1;
-    if (hovered.value?.totalQuantity === null || !hovered.value) return 1;
-    const columnsThatFit = Math.max(1, Math.floor((window.innerWidth - 16) / 165));
-    return Math.min(3, columnsThatFit, Math.ceil(hovered.value.entries.length / 12));
-});
-const tooltipWidth = computed(() => (Array.isArray(hovered.value?.stockoutSkus) ? 340 : props.stockoutSeries ? 220 : tooltipColumnCount.value === 1 ? 190 : tooltipColumnCount.value * 165));
 
-function pointX(index: number): number {
-    if (props.displayMode === "bar") return plot.left + ((index + 0.5) / Math.max(1, dates.value.length)) * plotWidth;
-    return dates.value.length <= 1 ? plot.left : plot.left + (index / (dates.value.length - 1)) * plotWidth;
+function columnX(index: number): number {
+    return plot.left + index * band.value;
+}
+
+function barX(index: number): number {
+    return columnX(index) + (band.value - barWidth.value) / 2;
+}
+
+function barCenter(index: number): number {
+    return columnX(index) + band.value / 2;
 }
 
 function pointY(quantity: number): number {
-    return plot.top + plotHeight - (quantity / maxQuantity.value) * plotHeight;
+    return plotBottom - (quantity / maxQuantity.value) * plotHeight;
 }
 
-function stockoutY(quantity: number): number {
-    return plot.top + plotHeight - (quantity / maxStockoutCount.value) * plotHeight;
-}
-
-function barX(dateIndex: number): number {
-    return pointX(dateIndex) - barWidth.value / 2;
-}
-
-function barTargetY(total: number): number {
-    return total === 0 ? plot.top + plotHeight - 10 : pointY(total);
-}
-
-function barTargetHeight(total: number): number {
-    return Math.max(10, plot.top + plotHeight - pointY(total));
+function roundedTopPath(x: number, y: number, barWidth: number, barHeight: number, radius: number): string {
+    const bottom = y + barHeight;
+    return `M${x},${bottom} V${y + radius} Q${x},${y} ${x + radius},${y} H${x + barWidth - radius} Q${x + barWidth},${y} ${x + barWidth},${y + radius} V${bottom} Z`;
 }
 
 function pendingCapY(total: number): number {
-    return pointY(total) - PENDING_CAP_HEIGHT;
+    return pointY(total) - PENDING_CAP_HEIGHT - (total > 0 ? SEGMENT_GAP : 0);
 }
 
-function breakdownOf(date: string): BreakdownEntry[] | null {
-    const pending = pendingDateSet.value.has(date);
-    if (props.displayMode !== "bar" || (props.series.length <= 1 && !pending)) return null;
-    return props.series.map((series) => ({ series, quantity: series.points.find((point) => point.date === date)?.quantity ?? null }));
+function stockoutCount(date: string): number {
+    return stockoutByDate.value.get(date)?.quantity ?? 0;
 }
 
-function lineSegments(item: TrendSeries): LineSegment[] {
-    const segments: LineSegment[] = [];
-    let current: string[] = [];
-    let previousAvailable: { x: number; y: number } | null = null;
-    let hasGap = false;
-
-    item.points.forEach((point, index) => {
-        if (point.quantity === null) {
-            if (current.length > 1) segments.push({ points: current.join(" "), dashed: false });
-            current = [];
-            if (previousAvailable) hasGap = true;
-            return;
-        }
-
-        const available = { x: pointX(index), y: pointY(point.quantity) };
-        if (hasGap && previousAvailable) {
-            segments.push({ points: `${previousAvailable.x},${previousAvailable.y} ${available.x},${available.y}`, dashed: true });
-        }
-        current.push(`${available.x},${available.y}`);
-        previousAvailable = available;
-        hasGap = false;
-    });
-    if (current.length > 1) segments.push({ points: current.join(" "), dashed: false });
-
-    return segments;
+function barLabel(bar: StackedBar): string {
+    const stockout = stockoutCount(bar.date);
+    const total = bar.pending ? "在庫合計は未確定" : `在庫合計${bar.total}点`;
+    return stockout > 0 ? `${bar.date}、${total}、欠品SKU ${stockout}件` : `${bar.date}、${total}`;
 }
 
-function availablePoints(item: TrendSeries): { point: TrendPoint & { quantity: number }; index: number }[] {
-    return item.points.flatMap((point, index) => (point.quantity === null ? [] : [{ point: point as TrendPoint & { quantity: number }, index }]));
-}
-
-function stockoutLineSegments(): LineSegment[] {
-    const segments: LineSegment[] = [];
-    let current: string[] = [];
-    let previousAvailable: { x: number; y: number } | null = null;
-    let hasGap = false;
-
-    props.stockoutSeries?.points.forEach((point, index) => {
-        if (point.quantity === null) {
-            if (current.length > 1) segments.push({ points: current.join(" "), dashed: false });
-            current = [];
-            if (previousAvailable) hasGap = true;
-            return;
-        }
-
-        const available = { x: pointX(index), y: stockoutY(point.quantity) };
-        if (hasGap && previousAvailable) {
-            segments.push({ points: `${previousAvailable.x},${previousAvailable.y} ${available.x},${available.y}`, dashed: true });
-        }
-        current.push(`${available.x},${available.y}`);
-        previousAvailable = available;
-        hasGap = false;
-    });
-    if (current.length > 1) segments.push({ points: current.join(" "), dashed: false });
-
-    return segments;
-}
-
-function availableStockoutPoints(): { point: TrendPoint & { quantity: number }; index: number }[] {
-    return props.stockoutSeries?.points.flatMap((point, index) => (point.quantity === null ? [] : [{ point: point as TrendPoint & { quantity: number }, index }])) ?? [];
-}
-
-function formatDate(date: string): string {
-    const [, month, day] = date.split("-");
-    return `${Number(month)}/${Number(day)}`;
-}
-
-function tooltipAnchor(event: Event, fallbackX: number, fallbackY: number): { x: number; y: number; usesViewportCoordinates: boolean } {
+function showTooltip(bar: StackedBar, event: Event) {
     const rect = (event.currentTarget as Element).getBoundingClientRect();
-    if (rect.width > 0 || rect.height > 0) {
-        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, usesViewportCoordinates: true };
-    }
-    return { x: fallbackX, y: fallbackY, usesViewportCoordinates: false };
-}
-
-function showTooltip(item: TrendSeries, point: TrendPoint, index: number, event: Event) {
-    if (point.quantity === null) return;
-    const entries = props.series.flatMap((series) => {
-        const matchingPoint = series.points.find((candidate) => candidate.date === point.date);
-        return matchingPoint?.quantity === null || matchingPoint === undefined ? [] : [{ series, quantity: matchingPoint.quantity }];
-    });
-    const x = pointX(index);
-    const y = pointY(point.quantity);
-    const anchor = tooltipAnchor(event, x, y);
-    hovered.value = {
-        date: point.date,
-        entries,
-        breakdown: null,
-        pending: false,
-        activeColor: item.color,
-        x,
-        y,
-        totalQuantity: props.stockoutSeries ? entries.reduce((total, entry) => total + entry.quantity, 0) : null,
-        stockoutCount: props.stockoutSeries?.points.find((candidate) => candidate.date === point.date)?.quantity ?? null,
-        stockoutSkus: null,
-        periodStockoutDays: null,
-        tooltipX: anchor.x,
-        tooltipY: anchor.y,
-        usesViewportCoordinates: anchor.usesViewportCoordinates,
-    };
-}
-
-function showBarTooltip(bar: StackedBar, event: Event) {
-    const x = pointX(bar.index);
-    const y = bar.total === 0 ? plot.top + plotHeight : pointY(bar.total);
-    const anchor = tooltipAnchor(event, x, y);
+    const usesViewport = rect.width > 0 || rect.height > 0;
     hovered.value = {
         date: bar.date,
-        entries: bar.entries,
-        breakdown: breakdownOf(bar.date),
+        index: bar.index,
         pending: bar.pending,
-        activeColor: bar.entries[0]?.series.color ?? "#64748b",
-        x,
-        y,
         totalQuantity: bar.pending ? null : bar.total,
-        stockoutCount: props.stockoutSeries?.points.find((point) => point.date === bar.date)?.quantity ?? null,
-        stockoutSkus: null,
-        periodStockoutDays: null,
-        tooltipX: anchor.x,
-        tooltipY: anchor.y,
-        usesViewportCoordinates: anchor.usesViewportCoordinates,
+        breakdown: props.series.map((series) => ({ series, quantity: quantityOn(series, bar.date) })),
+        stockout: stockoutByDate.value.get(bar.date) ?? null,
+        x: usesViewport ? rect.left + rect.width / 2 : barCenter(bar.index),
+        y: usesViewport ? rect.top + rect.height / 3 : pointY(bar.total),
     };
 }
 
-function showStockoutTooltip(point: TrendPoint, index: number, event: Event) {
-    if (point.quantity === null) return;
-    const entries = props.series.flatMap((series) => {
-        const matchingPoint = series.points.find((candidate) => candidate.date === point.date);
-        return matchingPoint?.quantity === null || matchingPoint === undefined ? [] : [{ series, quantity: matchingPoint.quantity }];
-    });
-    const stockoutPoint = props.stockoutSeries?.points.find((candidate) => candidate.date === point.date);
-    const x = pointX(index);
-    const y = stockoutY(point.quantity);
-    const anchor = tooltipAnchor(event, x, y);
-    const pending = pendingDateSet.value.has(point.date);
-    hovered.value = {
-        date: point.date,
-        entries,
-        breakdown: breakdownOf(point.date),
-        pending,
-        activeColor: props.stockoutSeries?.color ?? "#11161a",
-        x,
-        y,
-        totalQuantity: pending ? null : entries.reduce((total, entry) => total + entry.quantity, 0),
-        stockoutCount: point.quantity,
-        stockoutSkus: stockoutPoint?.skus ?? [],
-        periodStockoutDays: stockoutPoint?.periodStockoutDays ?? null,
-        tooltipX: anchor.x,
-        tooltipY: anchor.y,
-        usesViewportCoordinates: anchor.usesViewportCoordinates,
-    };
+const tooltipWidth = computed(() => ((hovered.value?.stockout?.skus?.length ?? 0) > 0 ? 300 : 210));
+
+function tooltipLeft(x: number): number {
+    const right = x + 14;
+    if (right + tooltipWidth.value <= window.innerWidth - 8) return right;
+    return Math.max(8, x - tooltipWidth.value - 14);
 }
 
-function formatPercentage(percentage: number): string {
-    return `${Number(percentage.toFixed(1))}%`;
-}
-
-function tooltipTransform(x: number, y: number, usesViewportCoordinates: boolean): string {
-    const boundaryWidth = usesViewportCoordinates ? window.innerWidth : width;
-    const boundaryHeight = usesViewportCoordinates ? window.innerHeight : height;
-    const topBoundary = usesViewportCoordinates ? 0 : plot.top;
-    const availableHeight = usesViewportCoordinates ? boundaryHeight : plotHeight;
-    const horizontal = usesViewportCoordinates ? "0" : x > boundaryWidth * 0.68 ? "calc(-100% - 14px)" : "14px";
-    const vertical = y > topBoundary + availableHeight * 0.7 ? "-100%" : y < topBoundary + availableHeight * 0.3 ? "0" : "-50%";
-    return `translate(${horizontal}, ${vertical})`;
-}
-
-function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
-    if (!usesViewportCoordinates) return x;
-    const rightPosition = x + 14;
-    if (rightPosition + tooltipWidth.value <= window.innerWidth - 8) return rightPosition;
-    const leftPosition = x - tooltipWidth.value - 14;
-    if (leftPosition >= 8) return leftPosition;
-    return Math.max(8, Math.min(window.innerWidth - tooltipWidth.value - 8, x - tooltipWidth.value / 2));
+function tooltipTop(y: number): number {
+    return Math.max(8, Math.min(y, window.innerHeight - 280));
 }
 </script>
 
 <template>
     <div class="relative" :style="{ minWidth: `${chartMinWidth}px` }">
-        <svg
-            class="block w-full"
-            :viewBox="`0 0 ${width} ${height}`"
-            role="img"
-            :aria-label="
-                stockoutSeries
-                    ? `品番の日次在庫推移と欠品SKU数（${displayMode === 'line' ? '折れ線' : '積み上げ棒'}グラフ）`
-                    : `SKU別の日次在庫推移（${displayMode === 'line' ? '折れ線' : '棒'}グラフ）`
-            "
-            aria-describedby="inventory-chart-description"
-        >
-            <desc id="inventory-chart-description">
-                {{ stockoutSeries ? "品番の日別在庫数を倉庫別に積み上げ、欠品SKU数とあわせて表すグラフです。" : "選択されたSKUの日別在庫数を表すグラフです。" }}
-            </desc>
+        <svg class="block w-full" :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="品番の日別在庫（倉庫別の積み上げ棒グラフ）と欠品SKU数" aria-describedby="inventory-chart-description">
+            <desc id="inventory-chart-description">品番の日別在庫数を倉庫別に積み上げ、日付の下に欠品SKU数を示すグラフです。</desc>
             <defs>
                 <pattern :id="pendingPatternId" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                     <rect width="1.5" height="4" fill="rgb(17 22 26 / 0.35)" />
                 </pattern>
             </defs>
 
-            <g v-for="tick in yTicks" :key="tick">
-                <line :x1="plot.left" :x2="width - plot.right" :y1="pointY(tick)" :y2="pointY(tick)" stroke="rgb(17 22 26 / 0.12)" stroke-width="1" stroke-dasharray="2 4" />
-                <text :x="plot.left - 12" :y="pointY(tick) + 4" text-anchor="end" class="fill-muted font-mono text-[10px]">{{ tick }}</text>
-            </g>
-
-            <g v-if="stockoutSeries">
-                <text :x="width - plot.right + 12" :y="plot.top - 7" text-anchor="start" class="fill-ink-2 text-[10px]">欠品SKU</text>
-                <text
-                    v-for="tick in stockoutTicks"
-                    :key="`stockout-${tick}`"
-                    data-stockout-axis-tick
-                    :x="width - plot.right + 12"
-                    :y="stockoutY(tick) + 4"
-                    text-anchor="start"
-                    class="fill-ink-2 font-mono text-[10px]"
-                >
-                    {{ tick }}
-                </text>
-            </g>
-
-            <line :x1="plot.left" :x2="width - plot.right" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight" stroke="rgb(17 22 26 / 0.35)" stroke-width="1" />
-
-            <g v-for="index in xTickIndexes" :key="dates[index]">
-                <line :x1="pointX(index)" :x2="pointX(index)" :y1="plot.top + plotHeight" :y2="plot.top + plotHeight + 5" stroke="rgb(17 22 26 / 0.35)" />
-                <text :x="pointX(index)" :y="height - 17" text-anchor="middle" class="fill-muted font-mono text-[10px]">{{ formatDate(dates[index]!) }}</text>
-            </g>
-
-            <template v-if="displayMode === 'line'">
-                <g v-for="item in series" :key="item.skuCode">
-                    <polyline
-                        v-for="(segment, segmentIndex) in lineSegments(item)"
-                        :key="`${item.skuCode}-line-${segmentIndex}`"
-                        :points="segment.points"
-                        :data-line-style="segment.dashed ? 'dashed' : 'solid'"
-                        fill="none"
-                        :stroke="item.color"
-                        stroke-width="1.5"
-                        :stroke-dasharray="segment.dashed ? '3 5' : undefined"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    />
-                    <circle
-                        v-for="entry in availablePoints(item)"
-                        :key="`marker-${item.skuCode}-${entry.point.date}`"
-                        data-chart-point
-                        :cx="pointX(entry.index)"
-                        :cy="pointY(entry.point.quantity)"
-                        r="2.5"
-                        :fill="item.color"
-                        stroke="transparent"
-                        stroke-width="1"
-                        pointer-events="none"
-                    />
-                    <circle
-                        v-for="entry in availablePoints(item)"
-                        :key="`target-${item.skuCode}-${entry.point.date}`"
-                        :cx="pointX(entry.index)"
-                        :cy="pointY(entry.point.quantity)"
-                        r="10"
-                        fill="transparent"
-                        tabindex="0"
-                        :aria-label="`${item.label}、${entry.point.date}、在庫${entry.point.quantity}点`"
-                        @mouseenter="showTooltip(item, entry.point, entry.index, $event)"
-                        @mouseleave="hovered = null"
-                        @focus="showTooltip(item, entry.point, entry.index, $event)"
-                        @blur="hovered = null"
-                    />
-                </g>
-            </template>
-            <template v-else>
-                <g v-for="bar in stackedBars" :key="bar.date">
-                    <rect
-                        v-for="segment in bar.segments"
-                        :key="`${bar.date}-${segment.series.skuCode}`"
-                        data-chart-bar-segment
-                        :x="barX(bar.index)"
-                        :y="segment.y"
-                        :width="barWidth"
-                        :height="segment.height"
-                        :fill="segment.series.color"
-                        pointer-events="none"
-                    />
-                    <rect
-                        v-if="bar.pending"
-                        data-chart-bar-pending
-                        :x="barX(bar.index) + 0.5"
-                        :y="pendingCapY(bar.total)"
-                        :width="Math.max(1, barWidth - 1)"
-                        :height="PENDING_CAP_HEIGHT"
-                        :fill="`url(#${pendingPatternId})`"
-                        stroke="rgb(17 22 26 / 0.55)"
-                        stroke-width="1"
-                        stroke-dasharray="2 2"
-                        pointer-events="none"
-                    />
-                    <rect
-                        data-chart-bar
-                        :data-bar-pending="bar.pending ? 'true' : undefined"
-                        :x="barX(bar.index)"
-                        :y="bar.pending ? pendingCapY(bar.total) : barTargetY(bar.total)"
-                        :width="barWidth"
-                        :height="bar.pending ? plot.top + plotHeight - pendingCapY(bar.total) : barTargetHeight(bar.total)"
-                        fill="transparent"
-                        tabindex="0"
-                        :aria-label="bar.pending ? `${bar.date}、在庫合計は未確定` : `${bar.date}、在庫合計${bar.total}点`"
-                        @mouseenter="showBarTooltip(bar, $event)"
-                        @mouseleave="hovered = null"
-                        @focus="showBarTooltip(bar, $event)"
-                        @blur="hovered = null"
-                    />
-                </g>
+            <template v-for="tick in yTicks" :key="tick">
+                <line v-if="tick > 0" :x1="plot.left" :x2="width - plot.right" :y1="pointY(tick)" :y2="pointY(tick)" stroke="rgb(17 22 26 / 0.12)" stroke-width="1" stroke-dasharray="2 4" />
+                <text :x="plot.left - 8" :y="pointY(tick) + 4" text-anchor="end" class="fill-muted font-mono text-[10px]">{{ tick }}</text>
             </template>
 
-            <g v-if="stockoutSeries">
-                <polyline
-                    v-for="(segment, segmentIndex) in stockoutLineSegments()"
-                    :key="`stockout-line-${segmentIndex}`"
-                    :points="segment.points"
-                    data-stockout-line
-                    :data-line-style="segment.dashed ? 'dashed' : 'solid'"
-                    fill="none"
-                    :stroke="stockoutSeries.color"
-                    stroke-width="2"
-                    :stroke-dasharray="segment.dashed ? '3 5' : undefined"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                />
-                <rect
-                    v-for="entry in availableStockoutPoints()"
-                    :key="`stockout-marker-${entry.point.date}`"
-                    data-stockout-point
-                    :x="pointX(entry.index) - 3.5"
-                    :y="stockoutY(entry.point.quantity) - 3.5"
-                    width="7"
-                    height="7"
-                    rx="1.5"
-                    fill="#f5c400"
-                    stroke="#11161a"
-                    stroke-width="1"
-                    pointer-events="none"
-                />
-                <circle
-                    v-for="entry in availableStockoutPoints()"
-                    :key="`stockout-target-${entry.point.date}`"
-                    :cx="pointX(entry.index)"
-                    :cy="stockoutY(entry.point.quantity)"
-                    r="10"
-                    fill="transparent"
-                    tabindex="0"
-                    :aria-label="`${entry.point.date}、欠品SKU ${entry.point.quantity}件`"
-                    @mouseenter="showStockoutTooltip(entry.point, entry.index, $event)"
-                    @mouseleave="hovered = null"
-                    @focus="showStockoutTooltip(entry.point, entry.index, $event)"
-                    @blur="hovered = null"
-                />
-            </g>
-
-            <line
-                v-if="hovered && displayMode === 'line'"
-                :x1="hovered.x"
-                :x2="hovered.x"
-                :y1="plot.top"
-                :y2="plot.top + plotHeight"
-                stroke="rgb(17 22 26 / 0.35)"
-                stroke-width="1"
-                stroke-dasharray="4 4"
+            <rect
+                v-if="hovered"
+                data-chart-highlight
+                :x="columnX(hovered.index) + 2"
+                :y="plot.top"
+                :width="Math.max(1, band - 4)"
+                :height="plotHeight"
+                fill="rgb(17 22 26 / 0.05)"
                 pointer-events="none"
             />
-            <circle v-if="hovered && displayMode === 'line'" :cx="hovered.x" :cy="hovered.y" r="5" fill="white" :stroke="hovered.activeColor" stroke-width="3" pointer-events="none" />
+
+            <g v-for="bar in stackedBars" :key="bar.date">
+                <template v-for="segment in bar.segments" :key="`${bar.date}-${segment.key}`">
+                    <path v-if="segment.path" data-chart-bar-segment :d="segment.path" :fill="segment.color" pointer-events="none" />
+                    <rect v-else data-chart-bar-segment :x="barX(bar.index)" :y="segment.y" :width="barWidth" :height="segment.height" :fill="segment.color" pointer-events="none" />
+                </template>
+                <rect
+                    v-if="bar.pending"
+                    data-chart-bar-pending
+                    :x="barX(bar.index) + 0.5"
+                    :y="pendingCapY(bar.total)"
+                    :width="Math.max(1, barWidth - 1)"
+                    :height="PENDING_CAP_HEIGHT"
+                    rx="2"
+                    :fill="`url(#${pendingPatternId})`"
+                    stroke="rgb(17 22 26 / 0.55)"
+                    stroke-width="1"
+                    stroke-dasharray="2 2"
+                    pointer-events="none"
+                />
+            </g>
+
+            <line :x1="plot.left" :x2="width - plot.right" :y1="plotBottom" :y2="plotBottom" stroke="rgb(17 22 26 / 0.35)" stroke-width="1" />
+
+            <text v-for="tick in xTicks" :key="`date-${tick.index}`" data-chart-date :x="barCenter(tick.index)" :y="plotBottom + 16" text-anchor="middle" class="fill-muted font-mono text-[10px]">
+                {{ tick.label }}
+            </text>
+
+            <template v-if="stockoutSeries">
+                <text :x="plot.left - 8" :y="height - 12" text-anchor="end" class="fill-muted text-[10px]">欠品</text>
+                <template v-for="(date, index) in dates" :key="`stockout-${date}`">
+                    <g v-if="stockoutCount(date) > 0" data-stockout-point :data-stockout-count="stockoutCount(date)">
+                        <rect :x="barCenter(index) - (band >= 18 ? 10 : 3.5)" :y="height - 19" width="7" height="7" rx="2" fill="#f5c400" />
+                        <text v-if="band >= 18" :x="barCenter(index) - 1" :y="height - 12" class="fill-ink font-num text-[12px] font-semibold">{{ stockoutCount(date) }}</text>
+                    </g>
+                </template>
+            </template>
+
+            <rect
+                v-for="bar in stackedBars"
+                :key="`target-${bar.date}`"
+                data-chart-bar
+                :data-bar-pending="bar.pending ? 'true' : undefined"
+                :x="columnX(bar.index)"
+                :y="plot.top"
+                :width="band"
+                :height="height - plot.top"
+                fill="transparent"
+                tabindex="0"
+                :aria-label="barLabel(bar)"
+                @mouseenter="showTooltip(bar, $event)"
+                @mouseleave="hovered = null"
+                @focus="showTooltip(bar, $event)"
+                @blur="hovered = null"
+            />
         </svg>
 
         <Transition name="chart-tooltip">
             <div
                 v-if="hovered"
                 data-chart-tooltip
-                class="pointer-events-none fixed z-50 rounded-card border border-line bg-surface px-3 py-2 text-[11px] text-ink shadow-float"
-                :style="{
-                    left: `${tooltipLeft(hovered.tooltipX, hovered.usesViewportCoordinates)}px`,
-                    top: `${hovered.tooltipY}px`,
-                    transform: tooltipTransform(hovered.tooltipX, hovered.tooltipY, hovered.usesViewportCoordinates),
-                    width: `${tooltipWidth}px`,
-                    maxWidth: 'none',
-                    whiteSpace: 'nowrap',
-                }"
+                class="pointer-events-none fixed z-50 rounded-card border border-line bg-surface px-3 py-2 text-[11px] whitespace-nowrap text-ink shadow-float"
+                :style="{ left: `${tooltipLeft(hovered.x)}px`, top: `${tooltipTop(hovered.y)}px`, width: `${tooltipWidth}px` }"
             >
-                <p class="flex items-center justify-between gap-4 text-muted">
-                    <span class="font-mono">{{ hovered.date.replaceAll("-", "/") }}</span>
-                    <span v-if="hovered.totalQuantity !== null && !stockoutSeries" class="font-medium text-ink-2">合計 {{ hovered.totalQuantity }}点</span>
+                <p class="font-mono text-[11px] font-medium">{{ hovered.date.replaceAll("-", "/") }}</p>
+                <div class="mt-1 space-y-0.5" data-tooltip-breakdown>
+                    <p v-for="row in hovered.breakdown" :key="row.series.skuCode" data-tooltip-breakdown-row class="flex items-center justify-between gap-4 text-ink-2">
+                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-xs" :style="{ backgroundColor: row.series.color }"></span>{{ row.series.label }}</span>
+                        <span v-if="row.quantity === null" class="text-[10.5px] text-muted">未確定</span>
+                        <span v-else class="font-num text-[13px] font-semibold text-ink">{{ row.quantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span>
+                    </p>
+                </div>
+                <p data-tooltip-total class="mt-1 flex items-center justify-between gap-4 border-t border-line pt-1 font-medium text-ink-2">
+                    <span>総在庫数</span>
+                    <span v-if="hovered.totalQuantity === null" class="text-[10.5px] font-normal text-muted">未確定</span>
+                    <span v-else class="font-num text-sm font-semibold text-ink">{{ hovered.totalQuantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span>
                 </p>
-                <div v-if="stockoutSeries" class="mt-2 space-y-1.5">
-                    <div v-if="hovered.breakdown" class="space-y-1 border-b border-line-2 pb-1.5" data-tooltip-breakdown>
-                        <p v-for="row in hovered.breakdown" :key="row.series.skuCode" data-tooltip-breakdown-row class="flex items-center justify-between gap-5 text-ink-2">
-                            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-xs" :style="{ backgroundColor: row.series.color }"></span>{{ row.series.label }}</span>
-                            <span v-if="row.quantity === null" class="text-[10.5px] text-muted">未確定</span>
-                            <span v-else class="font-num text-[13px] font-semibold text-ink">{{ row.quantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span>
-                        </p>
-                    </div>
-                    <p data-tooltip-total class="flex items-center justify-between gap-5 font-medium text-ink-2">
-                        <span>総在庫数</span>
-                        <span v-if="hovered.pending" class="text-[10.5px] font-normal text-muted">未確定</span>
-                        <span v-else class="font-num text-sm font-semibold text-ink"
-                            >{{ hovered.totalQuantity ?? "—" }}<span v-if="hovered.totalQuantity !== null" class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span
-                        >
-                    </p>
-                    <p data-tooltip-stockout class="flex items-center justify-between gap-5 font-medium text-ink-2">
-                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] border border-ink bg-signal"></span>{{ stockoutSeries.label }}</span>
+                <template v-if="stockoutSeries">
+                    <p data-tooltip-stockout class="mt-0.5 flex items-center justify-between gap-4 font-medium text-ink-2">
+                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-signal"></span>{{ stockoutSeries.label }}</span>
                         <span class="font-num text-sm font-semibold text-ink"
-                            >{{ hovered.stockoutCount ?? "—" }}<span v-if="hovered.stockoutCount !== null" class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">SKU</span></span
+                            >{{ hovered.stockout?.quantity ?? "—" }}<span v-if="hovered.stockout?.quantity != null" class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">SKU</span></span
                         >
                     </p>
-                    <div v-if="hovered.stockoutSkus !== null" class="mt-2 border-t border-line pt-2" data-tooltip-stockout-details>
-                        <p class="mb-1.5 font-medium text-muted">この日の欠品SKU</p>
-                        <div v-if="hovered.stockoutSkus.length > 0" class="max-h-40 space-y-1 overflow-y-auto pr-1">
-                            <p v-for="sku in hovered.stockoutSkus" :key="sku.skuCode" data-tooltip-stockout-sku class="flex items-center justify-between gap-4 text-ink-2">
+                    <div v-if="hovered.stockout?.skus?.length" class="mt-1.5 border-t border-line-2 pt-1.5" data-tooltip-stockout-details>
+                        <div class="max-h-40 space-y-0.5 overflow-y-auto pr-1">
+                            <p v-for="sku in hovered.stockout.skus" :key="sku.skuCode" data-tooltip-stockout-sku class="flex items-center justify-between gap-4 text-ink-2">
                                 <span class="truncate font-mono font-medium uppercase" :title="sku.skuCode">{{ sku.skuCode }}</span>
                                 <span class="shrink-0 text-muted"
                                     >期間累計 <span class="font-semibold text-ink">{{ sku.stockoutDays }}日</span></span
                                 >
                             </p>
                         </div>
-                        <p v-else class="text-muted">欠品SKUはありません</p>
                         <p
-                            v-if="hovered.periodStockoutDays !== null"
+                            v-if="hovered.stockout.periodStockoutDays !== undefined"
                             data-tooltip-period-stockout-days
-                            class="mt-2 flex items-center justify-between gap-4 border-t border-line-2 pt-2 font-medium text-ink-2"
+                            class="mt-1.5 flex items-center justify-between gap-4 border-t border-line-2 pt-1.5 font-medium text-ink-2"
                         >
                             <span>全SKUの期間累計欠品日数</span>
-                            <span class="font-semibold text-ink">{{ hovered.periodStockoutDays }}日</span>
+                            <span class="font-semibold text-ink">{{ hovered.stockout.periodStockoutDays }}日</span>
                         </p>
                     </div>
-                </div>
-                <div v-else class="mt-1 grid gap-x-4 gap-y-1" :style="{ gridTemplateColumns: `repeat(${tooltipColumnCount}, minmax(0, 1fr))` }">
-                    <p v-for="entry in hovered.entries" :key="entry.series.skuCode" data-tooltip-series class="flex items-center justify-between gap-4 font-medium text-ink-2">
-                        <span class="flex shrink-0 items-center gap-1.5"><span class="h-2 w-2 rounded-full" :style="{ backgroundColor: entry.series.color }"></span>{{ entry.series.label }}</span>
-                        <span class="shrink-0 font-num text-sm font-semibold text-ink">
-                            {{ entry.quantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span>
-                            <span v-if="entry.percentage !== undefined" class="ml-2 font-sans text-[10.5px] font-normal text-muted">{{ formatPercentage(entry.percentage) }}</span>
-                        </span>
-                    </p>
-                </div>
+                </template>
             </div>
         </Transition>
     </div>
