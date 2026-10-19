@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InventoryScope, InventoryTrendData, InventoryTrendProductList } from "@/api/inventoryTrends";
+import { warehousesOfScope } from "@/constants/warehouses";
 import InventoryTrendPage from "@/pages/InventoryTrendPage.vue";
 
 const apiMocks = vi.hoisted(() => ({
@@ -46,6 +47,7 @@ function trendResponse(params: { productCode: string; from: string; to: string; 
         to: params.to,
         dates,
         dailySources: [],
+        warehouseTotals: [],
         series: skuCodes.map((skuCode, skuIndex) => ({
             skuCode,
             size: "M",
@@ -59,9 +61,28 @@ function trendResponse(params: { productCode: string; from: string; to: string; 
     };
 }
 
+/**
+ * 応答に倉庫別合計と日別の取得元がなければ、SKU 別の数量から作る。
+ * 品番合計は在庫区分の先頭の倉庫に入れ、残りの倉庫は 0 とする。1 SKU でも未確定なら、その日の倉庫はすべて未確定にする。
+ */
+function withDailyTotals(response: InventoryTrendData): InventoryTrendData {
+    if (response.warehouseTotals.length > 0) return response;
+    const warehouses = warehousesOfScope(response.scope);
+    const dailySources: InventoryTrendData["dailySources"] = [];
+    const warehouseTotals = response.dates.map((date) => {
+        const points = response.series.flatMap((series) => series.points.filter((point) => point.date === date && point.source !== null));
+        const total = points.length === 0 || points.some((point) => point.quantity === null) ? null : points.reduce((sum, point) => sum + (point.quantity ?? 0), 0);
+        if (points.length > 0) dailySources.push({ date, source: "survey", basisAt: `${date}T10:00:00+09:00`, amazonInventoryStatus: "complete" });
+        const row = { date, amazon: null, boss: null, free: null, stock: null } as InventoryTrendData["warehouseTotals"][number];
+        warehouses.forEach((warehouse, index) => (row[warehouse.key] = total === null ? null : index === 0 ? total : 0));
+        return row;
+    });
+    return { ...response, dailySources: response.dailySources.length > 0 ? response.dailySources : dailySources, warehouseTotals };
+}
+
 function mountPage(buildTrend: typeof trendResponse = trendResponse) {
     apiMocks.fetchInventoryTrendProducts.mockResolvedValue(productsResponse);
-    apiMocks.fetchInventoryTrend.mockImplementation((params) => Promise.resolve(buildTrend(params)));
+    apiMocks.fetchInventoryTrend.mockImplementation((params) => Promise.resolve(withDailyTotals(buildTrend(params))));
 
     return mount(InventoryTrendPage, { global: { stubs: { Teleport: true } } });
 }
@@ -290,7 +311,7 @@ describe("InventoryTrendPage", () => {
         await inventoryScopeSelect.setValue("boss");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("BOSSの総在庫数と欠品SKU数を、品番単位で表示しています");
+        expect(wrapper.text()).toContain("BOSSの在庫数を倉庫別に積み上げ、欠品SKU数とあわせて品番単位で表示しています");
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "boss" }));
     });
 
@@ -353,7 +374,7 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get("[data-tooltip-period-stockout-days]").text()).toContain("全SKUの期間累計欠品日数4日");
     });
 
-    it("does not draw a partial product total or stockout count when one SKU is unconfirmed", async () => {
+    it("marks the day unconfirmed without a partial product total or stockout count when one SKU is unconfirmed", async () => {
         const wrapper = mountPage((params) => {
             const response = trendResponse(params);
             response.series[1]!.points[14]!.quantity = null;
@@ -362,8 +383,41 @@ describe("InventoryTrendPage", () => {
         });
         await flushPromises();
 
-        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(29);
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-chart-bar-pending]")).toHaveLength(1);
         expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(29);
+        expect(wrapper.find("[data-legend-pending]").exists()).toBe(true);
+
+        await wrapper.get('[data-bar-pending="true"]').trigger("mouseenter");
+        expect(wrapper.get("[data-tooltip-total]").text()).toContain("未確定");
+        expect(wrapper.get("[data-tooltip-total]").text()).not.toContain("点");
+    });
+
+    it("stacks the product chart by warehouse in the fixed warehouse order", async () => {
+        const wrapper = mountPage((params) => {
+            const response = trendResponse(params);
+            response.scope = params.scope;
+            response.dailySources = response.dates.map((date) => ({ date, source: "survey", basisAt: `${date}T10:00:00+09:00`, amazonInventoryStatus: "complete" }));
+            response.warehouseTotals = response.dates.map((date, index) => (index === 0 ? { date, amazon: 4, boss: null, free: 2, stock: 1 } : { date, amazon: 4, boss: 3, free: 2, stock: 1 }));
+
+            return response;
+        });
+        await flushPromises();
+        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("grandTotal");
+        await flushPromises();
+
+        expect(wrapper.findAll("[data-legend-warehouse]").map((item) => item.attributes("data-legend-warehouse"))).toEqual(["amazon", "boss", "free", "stock"]);
+        const lastDaySegments = wrapper.findAll("[data-chart-bar-segment]").slice(-4);
+        expect(lastDaySegments.map((segment) => segment.attributes("fill"))).toEqual(["#e08a2e", "#3a6fb8", "#5f9e3a", "#8e5bb8"]);
+        expect(wrapper.findAll("[data-chart-bar-pending]")).toHaveLength(1);
+
+        await wrapper.findAll("[data-chart-bar]").at(-1)!.trigger("mouseenter");
+        expect(wrapper.findAll("[data-tooltip-breakdown-row]").map((row) => row.text())).toEqual(["Amazon4点", "BOSS3点", "フリー在庫2点", "ECストック1点"]);
+        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数10点");
+
+        await wrapper.get('[data-bar-pending="true"]').trigger("mouseenter");
+        expect(wrapper.findAll("[data-tooltip-breakdown-row]")[1]!.text()).toBe("BOSS未確定");
+        expect(wrapper.get("[data-tooltip-total]").text()).toContain("未確定");
     });
 
     it("keeps the product total when a SKU was not part of that day's survey", async () => {

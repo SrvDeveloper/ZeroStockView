@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, useId } from "vue";
 
 interface TrendPoint {
     date: string;
@@ -35,9 +35,17 @@ interface TooltipEntry {
     percentage?: number;
 }
 
+interface BreakdownEntry {
+    series: TrendSeries;
+    quantity: number | null;
+}
+
 interface HoveredPoint {
     date: string;
     entries: TooltipEntry[];
+    /** 系列ごとの内訳（未確定は null）。棒グラフで系列が複数あるか、未確定の日に出す */
+    breakdown: BreakdownEntry[] | null;
+    pending: boolean;
     activeColor: string;
     x: number;
     y: number;
@@ -59,16 +67,23 @@ interface StackedBar {
     date: string;
     index: number;
     total: number;
+    /** 未確定の系列がある日。確定した系列だけを積み、上に「未確定」の印を付ける */
+    pending: boolean;
     entries: TooltipEntry[];
     segments: { series: TrendSeries; y: number; height: number }[];
 }
 
 type ChartMode = "line" | "bar";
 
-const props = withDefaults(defineProps<{ series: TrendSeries[]; displayMode?: ChartMode; stockoutSeries?: StockoutSeries | null }>(), {
+const props = withDefaults(defineProps<{ series: TrendSeries[]; displayMode?: ChartMode; stockoutSeries?: StockoutSeries | null; pendingDates?: string[] }>(), {
     displayMode: "line",
     stockoutSeries: null,
+    pendingDates: () => [],
 });
+
+const PENDING_CAP_HEIGHT = 12;
+const pendingPatternId = `pending-hatch-${useId()}`;
+const pendingDateSet = computed(() => new Set(props.pendingDates));
 
 const width = 960;
 const height = 360;
@@ -107,7 +122,8 @@ const stackedBars = computed<StackedBar[]>(() =>
             const point = series.points.find((candidate) => candidate.date === date);
             return point?.quantity === null || point === undefined ? [] : [{ series, quantity: point.quantity }];
         });
-        if (values.length === 0) return [];
+        const pending = pendingDateSet.value.has(date);
+        if (values.length === 0 && !pending) return [];
 
         const total = values.reduce((sum, value) => sum + value.quantity, 0);
         const entries = values.map((value) => ({ ...value, percentage: total === 0 ? 0 : (value.quantity / total) * 100 }));
@@ -119,7 +135,7 @@ const stackedBars = computed<StackedBar[]>(() =>
             return [{ series: value.series, y: pointY(cumulative), height: pointY(segmentBottom) - pointY(cumulative) }];
         });
 
-        return [{ date, index, total, entries, segments }];
+        return [{ date, index, total, pending, entries, segments }];
     }),
 );
 const tooltipColumnCount = computed(() => {
@@ -153,6 +169,16 @@ function barTargetY(total: number): number {
 
 function barTargetHeight(total: number): number {
     return Math.max(10, plot.top + plotHeight - pointY(total));
+}
+
+function pendingCapY(total: number): number {
+    return pointY(total) - PENDING_CAP_HEIGHT;
+}
+
+function breakdownOf(date: string): BreakdownEntry[] | null {
+    const pending = pendingDateSet.value.has(date);
+    if (props.displayMode !== "bar" || (props.series.length <= 1 && !pending)) return null;
+    return props.series.map((series) => ({ series, quantity: series.points.find((point) => point.date === date)?.quantity ?? null }));
 }
 
 function lineSegments(item: TrendSeries): LineSegment[] {
@@ -242,6 +268,8 @@ function showTooltip(item: TrendSeries, point: TrendPoint, index: number, event:
     hovered.value = {
         date: point.date,
         entries,
+        breakdown: null,
+        pending: false,
         activeColor: item.color,
         x,
         y,
@@ -262,10 +290,12 @@ function showBarTooltip(bar: StackedBar, event: Event) {
     hovered.value = {
         date: bar.date,
         entries: bar.entries,
+        breakdown: breakdownOf(bar.date),
+        pending: bar.pending,
         activeColor: bar.entries[0]?.series.color ?? "#64748b",
         x,
         y,
-        totalQuantity: bar.total,
+        totalQuantity: bar.pending ? null : bar.total,
         stockoutCount: props.stockoutSeries?.points.find((point) => point.date === bar.date)?.quantity ?? null,
         stockoutSkus: null,
         periodStockoutDays: null,
@@ -285,13 +315,16 @@ function showStockoutTooltip(point: TrendPoint, index: number, event: Event) {
     const x = pointX(index);
     const y = stockoutY(point.quantity);
     const anchor = tooltipAnchor(event, x, y);
+    const pending = pendingDateSet.value.has(point.date);
     hovered.value = {
         date: point.date,
         entries,
+        breakdown: breakdownOf(point.date),
+        pending,
         activeColor: props.stockoutSeries?.color ?? "#11161a",
         x,
         y,
-        totalQuantity: entries.reduce((total, entry) => total + entry.quantity, 0),
+        totalQuantity: pending ? null : entries.reduce((total, entry) => total + entry.quantity, 0),
         stockoutCount: point.quantity,
         stockoutSkus: stockoutPoint?.skus ?? [],
         periodStockoutDays: stockoutPoint?.periodStockoutDays ?? null,
@@ -332,11 +365,20 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
             :viewBox="`0 0 ${width} ${height}`"
             role="img"
             :aria-label="
-                stockoutSeries ? `品番の日次在庫推移と欠品SKU数（${displayMode === 'line' ? '折れ線' : '棒'}グラフ）` : `SKU別の日次在庫推移（${displayMode === 'line' ? '折れ線' : '棒'}グラフ）`
+                stockoutSeries
+                    ? `品番の日次在庫推移と欠品SKU数（${displayMode === 'line' ? '折れ線' : '積み上げ棒'}グラフ）`
+                    : `SKU別の日次在庫推移（${displayMode === 'line' ? '折れ線' : '棒'}グラフ）`
             "
             aria-describedby="inventory-chart-description"
         >
-            <desc id="inventory-chart-description">{{ stockoutSeries ? "品番の日別総在庫数と欠品SKU数を表すグラフです。" : "選択されたSKUの日別在庫数を表すグラフです。" }}</desc>
+            <desc id="inventory-chart-description">
+                {{ stockoutSeries ? "品番の日別在庫数を倉庫別に積み上げ、欠品SKU数とあわせて表すグラフです。" : "選択されたSKUの日別在庫数を表すグラフです。" }}
+            </desc>
+            <defs>
+                <pattern :id="pendingPatternId" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                    <rect width="1.5" height="4" fill="rgb(17 22 26 / 0.35)" />
+                </pattern>
+            </defs>
 
             <g v-for="tick in yTicks" :key="tick">
                 <line :x1="plot.left" :x2="width - plot.right" :y1="pointY(tick)" :y2="pointY(tick)" stroke="rgb(17 22 26 / 0.12)" stroke-width="1" stroke-dasharray="2 4" />
@@ -421,14 +463,28 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                         pointer-events="none"
                     />
                     <rect
+                        v-if="bar.pending"
+                        data-chart-bar-pending
+                        :x="barX(bar.index) + 0.5"
+                        :y="pendingCapY(bar.total)"
+                        :width="Math.max(1, barWidth - 1)"
+                        :height="PENDING_CAP_HEIGHT"
+                        :fill="`url(#${pendingPatternId})`"
+                        stroke="rgb(17 22 26 / 0.55)"
+                        stroke-width="1"
+                        stroke-dasharray="2 2"
+                        pointer-events="none"
+                    />
+                    <rect
                         data-chart-bar
+                        :data-bar-pending="bar.pending ? 'true' : undefined"
                         :x="barX(bar.index)"
-                        :y="barTargetY(bar.total)"
+                        :y="bar.pending ? pendingCapY(bar.total) : barTargetY(bar.total)"
                         :width="barWidth"
-                        :height="barTargetHeight(bar.total)"
+                        :height="bar.pending ? plot.top + plotHeight - pendingCapY(bar.total) : barTargetHeight(bar.total)"
                         fill="transparent"
                         tabindex="0"
-                        :aria-label="`${bar.date}、在庫合計${bar.total}点`"
+                        :aria-label="bar.pending ? `${bar.date}、在庫合計は未確定` : `${bar.date}、在庫合計${bar.total}点`"
                         @mouseenter="showBarTooltip(bar, $event)"
                         @mouseleave="hovered = null"
                         @focus="showBarTooltip(bar, $event)"
@@ -514,9 +570,17 @@ function tooltipLeft(x: number, usesViewportCoordinates: boolean): number {
                     <span v-if="hovered.totalQuantity !== null && !stockoutSeries" class="font-medium text-ink-2">合計 {{ hovered.totalQuantity }}点</span>
                 </p>
                 <div v-if="stockoutSeries" class="mt-2 space-y-1.5">
+                    <div v-if="hovered.breakdown" class="space-y-1 border-b border-line-2 pb-1.5" data-tooltip-breakdown>
+                        <p v-for="row in hovered.breakdown" :key="row.series.skuCode" data-tooltip-breakdown-row class="flex items-center justify-between gap-5 text-ink-2">
+                            <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-xs" :style="{ backgroundColor: row.series.color }"></span>{{ row.series.label }}</span>
+                            <span v-if="row.quantity === null" class="text-[10.5px] text-muted">未確定</span>
+                            <span v-else class="font-num text-[13px] font-semibold text-ink">{{ row.quantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span>
+                        </p>
+                    </div>
                     <p data-tooltip-total class="flex items-center justify-between gap-5 font-medium text-ink-2">
-                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-xs bg-primary-400"></span>総在庫数</span>
-                        <span class="font-num text-sm font-semibold text-ink"
+                        <span>総在庫数</span>
+                        <span v-if="hovered.pending" class="text-[10.5px] font-normal text-muted">未確定</span>
+                        <span v-else class="font-num text-sm font-semibold text-ink"
                             >{{ hovered.totalQuantity ?? "—" }}<span v-if="hovered.totalQuantity !== null" class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span
                         >
                     </p>

@@ -25,6 +25,15 @@ export interface InventoryTrendDailySource {
     amazonInventoryStatus: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";
 }
 
+/** 品番全体の倉庫別合計。null は取込待ち・未取得を含む未確定の倉庫、またはデータのない日 */
+export interface InventoryTrendWarehouseTotal {
+    date: string;
+    amazon: number | null;
+    boss: number | null;
+    free: number | null;
+    stock: number | null;
+}
+
 export interface InventoryTrendSeries {
     skuCode: string;
     size: string;
@@ -38,6 +47,7 @@ export interface InventoryTrendData {
     to: string;
     dates: string[];
     dailySources: InventoryTrendDailySource[];
+    warehouseTotals: InventoryTrendWarehouseTotal[];
     series: InventoryTrendSeries[];
 }
 

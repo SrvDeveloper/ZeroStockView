@@ -173,4 +173,50 @@ describe("InventoryTrendChart", () => {
         expect(tooltip.get(".grid").attributes("style")).toContain("repeat(2, minmax(0, 1fr))");
         expect(tooltip.findAll("[data-tooltip-series]")).toHaveLength(13);
     });
+
+    it("keeps a hoverable unconfirmed bar on a day where no series is confirmed yet", async () => {
+        const wrapper = mount(InventoryTrendChart, {
+            props: {
+                displayMode: "bar",
+                pendingDates: ["2026-09-27"],
+                stockoutSeries: {
+                    label: "欠品SKU数",
+                    color: "#11161a",
+                    points: [
+                        { date: "2026-09-26", quantity: 0 },
+                        { date: "2026-09-27", quantity: null },
+                    ],
+                },
+                series: [
+                    {
+                        skuCode: "amazon",
+                        label: "Amazon",
+                        color: "#e08a2e",
+                        points: [
+                            { date: "2026-09-26", quantity: 5 },
+                            { date: "2026-09-27", quantity: null },
+                        ],
+                    },
+                    {
+                        skuCode: "boss",
+                        label: "BOSS",
+                        color: "#3a6fb8",
+                        points: [
+                            { date: "2026-09-26", quantity: 3 },
+                            { date: "2026-09-27", quantity: null },
+                        ],
+                    },
+                ],
+            },
+        });
+
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(2);
+        expect(wrapper.findAll("[data-chart-bar-pending]")).toHaveLength(1);
+        const pendingBar = wrapper.get('[data-bar-pending="true"]');
+        expect(pendingBar.attributes("aria-label")).toBe("2026-09-27、在庫合計は未確定");
+
+        await pendingBar.trigger("mouseenter");
+        expect(wrapper.findAll("[data-tooltip-breakdown-row]").map((row) => row.text())).toEqual(["Amazon未確定", "BOSS未確定"]);
+        expect(wrapper.get("[data-tooltip-total]").text()).toBe("総在庫数未確定");
+    });
 });

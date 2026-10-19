@@ -35,3 +35,5 @@ vendor/bin/pint --dirty --format agent
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-19）:** 在庫推移の API（`GET /api/inventory-trends`）に `warehouseTotals`（日別の `amazon`・`boss`・`free`・`stock`）を足した。既存の項目は変えていない。SKU ごとの倉庫別数量は、SKU 別推移と同じ `warehouseQuantities`（ASIN のない SP-API 調査の SKU は Amazon を 0）から出すため、倉庫別の合計は総数の SKU 別合計と一致する。1 SKU でも未確定の倉庫は、部分合計を出さずに `null` とする。調査がない Amazon 取得日（在庫区分が Amazon のとき）は、Amazon だけを確定値にし、ほかの倉庫は `null` にする。**チケットとの違い:** (1) 在庫区分に「すべて」はなく、4 区分の合計は「総数」（`grandTotal`）だった。積み上げは総数に限らず、在庫区分に含まれる倉庫で行う（総数は 4 倉庫、モール全体は Amazon・BOSS、単独の区分はその倉庫の色の 1 段）。倉庫の並びと色は `constants/warehouses.ts` にまとめた。(2) 未確定の倉庫がある日は、確定した倉庫だけを積み、上に斜線と点線の枠の「未確定」の印を付ける。ツールチップは倉庫ごとの数値（未確定は「未確定」）を出し、総在庫数は「未確定」とする。確定した倉庫がない日も、印とツールチップは出す。欠品 SKU 数の線は従来どおり。テストは `InventoryTrendApiTest.php`（3 件追加）、`InventoryTrendPage.test.ts`、`InventoryTrendChart.test.ts`。`ExternalInventoryApiTest.php` は変更なしで通る。
