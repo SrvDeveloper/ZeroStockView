@@ -15,19 +15,19 @@ const props = withDefaults(
     },
 );
 
-const styles: Record<CalloutTone, { container: string; icon: string }> = {
-    info: { container: "border-primary-200 bg-primary-50 text-primary-900", icon: "info" },
-    tip: { container: "border-emerald-200 bg-emerald-50 text-emerald-900", icon: "lightbulb" },
-    warning: { container: "border-amber-200 bg-amber-50 text-amber-950", icon: "warning" },
+const styles: Record<CalloutTone, { container: string; icon: string; iconColor: string }> = {
+    info: { container: "border-line bg-surface-2", icon: "info", iconColor: "text-ink-2" },
+    tip: { container: "border-lamp-ok/25 bg-ok-soft", icon: "lightbulb", iconColor: "text-lamp-ok" },
+    warning: { container: "border-lamp-warn/35 bg-warn-soft", icon: "warning", iconColor: "text-caution" },
 };
 
 const style = computed(() => styles[props.tone]);
 </script>
 
 <template>
-    <aside class="flex gap-3 rounded-lg border p-4" :class="style.container" :role="tone === 'warning' ? 'alert' : 'note'">
-        <AppIcon :name="style.icon" :size="20" class="mt-0.5" />
-        <div class="min-w-0 text-sm leading-6">
+    <aside class="flex gap-2.5 rounded-card border px-3.5 py-3 text-ink" :class="style.container" :role="tone === 'warning' ? 'alert' : 'note'">
+        <AppIcon :name="style.icon" :size="18" :class="['mt-0.5', style.iconColor]" />
+        <div class="min-w-0 text-[12.5px] leading-relaxed">
             <p v-if="title" class="font-semibold">{{ title }}</p>
             <div :class="title ? 'mt-1' : ''"><slot /></div>
         </div>
