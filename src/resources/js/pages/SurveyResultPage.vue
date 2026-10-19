@@ -72,7 +72,10 @@ const hasReusableFiles = computed(() => {
     return IMPORT_FILE_TYPES.some(({ type }) => fileTypes.has(type));
 });
 const rerunSettingOptions = computed<SelectOption[]>(() => importSettingsStore.settings.map((setting) => ({ value: setting.id, label: `${setting.name}（${setting.productCodes.length}件）` })));
-const canRerun = computed(() => hasReusableFiles.value && rerunSettingId.value !== null && !rerunRunning.value);
+/** 旧5ファイル調査・取得方式が未確定の調査は、Amazon在庫の保存値を守るため再照合できない（API も断る） */
+const isRerunnableSource = computed(() => survey.value?.amazonSource === "sp_api");
+const rerunAvailable = computed(() => hasReusableFiles.value && isRerunnableSource.value);
+const canRerun = computed(() => rerunAvailable.value && rerunSettingId.value !== null && !rerunRunning.value);
 
 const selectedGroupKey = ref(props.initialGroup ?? "");
 watch(
@@ -408,7 +411,7 @@ async function exportExcel(scope: "all" | "filtered") {
                 </div>
                 <div class="flex flex-wrap gap-2 xl:ml-auto">
                     <BaseButton data-testid="refresh-survey" variant="secondary" icon="refresh" :loading="refreshingSurvey" @click="refreshSurvey">最新の在庫を再読込</BaseButton>
-                    <BaseButton data-testid="rerun-menu-button" variant="secondary" icon="compare_arrows" :disabled="!hasReusableFiles" :aria-expanded="rerunMenuOpen" @click="rerunMenuOpen = true"
+                    <BaseButton data-testid="rerun-menu-button" variant="secondary" icon="compare_arrows" :disabled="!rerunAvailable" :aria-expanded="rerunMenuOpen" @click="rerunMenuOpen = true"
                         >保存ファイルで再照合</BaseButton
                     >
                     <BaseButton variant="secondary" icon="table_view" @click="exportExcel('filtered')">絞込結果をExcel出力</BaseButton>
@@ -440,8 +443,9 @@ async function exportExcel(scope: "all" | "filtered") {
         </div>
 
         <BaseAlert v-if="refreshError" tone="danger" title="調査結果の更新に失敗しました">{{ refreshError }}</BaseAlert>
-        <div v-if="!hasReusableFiles || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
-            <p v-if="!hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>
+        <div v-if="!rerunAvailable || amazonStatus === 'pending' || amazonStatus === 'partial' || !hasAmazonStock" class="flex flex-col gap-1 text-[11.5px] text-muted">
+            <p v-if="!isRerunnableSource" data-testid="rerun-unavailable-legacy">Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。</p>
+            <p v-else-if="!hasReusableFiles">再照合に使える取込ファイルがないため、再照合機能は利用できません。</p>
             <p v-if="amazonStatus === 'pending'">Amazon 在庫は取込待ちです。数量と在庫総数は取得後に確定します。この画面は30秒ごとに自動更新します。</p>
             <p v-else-if="amazonStatus === 'partial'">
                 Amazon 在庫は一部SKU未取得です。未取得SKUの在庫総数は未確定です。Amazon 基準日時: {{ survey.amazonBasisAt ? formatDateTime(survey.amazonBasisAt) : "記録なし" }}

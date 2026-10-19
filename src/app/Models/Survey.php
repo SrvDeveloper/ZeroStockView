@@ -37,6 +37,15 @@ class Survey extends Model
         return $this->belongsTo(AmazonInventoryImport::class, 'amazon_inventory_import_id');
     }
 
+    /**
+     * Amazon在庫をSP-APIの同日取込から反映する調査か。旧5ファイル調査と取得方式が未確定の調査は false。
+     * Amazon在庫の再同期と再照合は、この調査だけを対象にする（旧方式の保存値を上書きしないため）。
+     */
+    public function usesSpApiAmazonInventory(): bool
+    {
+        return $this->amazon_source === self::AMAZON_SOURCE_SP_API && ! $this->includes_amazon_inventory;
+    }
+
     public function hasSavedAmazonInventory(): bool
     {
         if ($this->amazon_source === self::AMAZON_SOURCE_SP_API) {

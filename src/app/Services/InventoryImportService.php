@@ -32,6 +32,12 @@ class InventoryImportService
 
     public function reimport(Survey $source, ImportSetting $setting): Survey
     {
+        if (! $source->usesSpApiAmazonInventory()) {
+            throw ValidationException::withMessages([
+                'survey' => ['Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。'],
+            ]);
+        }
+
         $source->loadMissing('files');
         $files = [];
 

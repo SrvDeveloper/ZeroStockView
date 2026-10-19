@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AmazonInventoryImport;
+use App\Models\ImportSetting;
 use App\Models\ImportTarget;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
@@ -18,6 +19,7 @@ use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ApiBackendTest extends TestCase
@@ -229,6 +231,50 @@ class ApiBackendTest extends TestCase
         $this->assertNull($response->json('data.products.0.skus.0.stock.ecStock'));
         $this->assertSame('再入荷待ち', $response->json('data.products.0.memo'));
         $this->assertDatabaseCount('surveys', 1);
+    }
+
+    /** @return array<string, array{0: array<string, mixed>}> */
+    public static function nonSpApiSurveys(): array
+    {
+        return [
+            'legacy five-file survey' => [['amazon_source' => Survey::AMAZON_SOURCE_LEGACY_FILE, 'includes_amazon_inventory' => true]],
+            'survey with an undetermined source' => [['amazon_source' => null, 'includes_amazon_inventory' => true]],
+        ];
+    }
+
+    /** @param array<string, mixed> $attributes */
+    #[DataProvider('nonSpApiSurveys')]
+    public function test_rerun_refuses_surveys_that_do_not_use_sp_api_amazon_inventory(array $attributes): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $setting = ImportSetting::query()->create(['name' => '別設定']);
+        $survey = Survey::factory()->create(['executed_at' => '2026-10-01 10:00:00'] + $attributes);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        $sku = SurveySku::factory()->for($product, 'product')->create(['sku_code' => 'A-1001-01-M', 'amazon_own_stock' => 11, 'amazon_fba_stock' => 12, 'boss_own_stock' => 3]);
+        Storage::disk('local')->put('survey-imports/'.$survey->id.'/boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,9,0\n");
+        $survey->files()->create([
+            'file_type' => '倉庫毎の在庫数レポート',
+            'original_name' => 'boss.csv',
+            'disk' => 'local',
+            'stored_path' => 'survey-imports/'.$survey->id.'/boss.csv',
+            'mime_type' => 'text/csv',
+            'size_bytes' => 60,
+            'uploaded_at' => now(),
+            'expires_at' => now()->addDays(30),
+        ]);
+
+        $this->postJson('/api/surveys/'.$survey->id.'/rerun', ['import_setting_id' => $setting->id])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.survey.0', 'Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。');
+
+        Http::assertNothingSent();
+        $fresh = $survey->fresh();
+        $this->assertSame($attributes['amazon_source'], $fresh->amazon_source);
+        $this->assertTrue($fresh->includes_amazon_inventory);
+        $this->assertSame([11, 12, 3], [$sku->fresh()->amazon_own_stock, $sku->fresh()->amazon_fba_stock, $sku->fresh()->boss_own_stock]);
+        $this->assertDatabaseCount('survey_products', 1);
+        $this->assertSame(1, $fresh->files()->count());
     }
 
     public function test_import_can_refresh_more_than_fifty_distinct_products_across_groups(): void

@@ -22,7 +22,7 @@ class SurveyAmazonInventorySyncService
     {
         return DB::transaction(function () use ($surveyId): ?int {
             $survey = Survey::query()->lockForUpdate()->findOrFail($surveyId);
-            if ($survey->amazon_source !== Survey::AMAZON_SOURCE_SP_API || $survey->includes_amazon_inventory) {
+            if (! $survey->usesSpApiAmazonInventory()) {
                 return null;
             }
 

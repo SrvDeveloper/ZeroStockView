@@ -23,6 +23,7 @@
 | AMZSYNC-08 | 画面の状態表示と仕様書更新 | AMZSYNC-06, 07 | 取込待ち・未取得・基準日時を判別できる画面 |
 | AMZSYNC-09 | 既存履歴の移行と本番適用確認 | AMZSYNC-01〜08 | 既存データの補正、照合、運用開始 |
 | AMZSYNC-10 | Amazon取得のみの日の調査作成 | AMZSYNC-05 | ファイル取込前でも、Amazon取得が成功した日の調査が履歴に出る |
+| AMZSYNC-11 | 旧方式の調査の再照合を止める | AMZSYNC-04 | 旧5ファイル調査のAmazon保存値が再照合で失われない |
 
 `AMZSYNC-04` と `05`、`06` と `07` は各組の中で並行して進められる。スキーマとアプリの互換性を確認し、`AMZSYNC-09` で一組として本番へ適用する。
 
@@ -227,6 +228,27 @@
 
 **実装状況（2026-10-19）:** `InventoryImportService::createFromAmazonImport` を追加し、`import()` から品番・SKU・グループ所属の組み立て（`loadTargets`、`writeProducts`）を切り出して共通化した。`AmazonInventoryImportService::process` は取込成功後、`syncDate` の前に調査を作成する（失敗はログのみ）。`survey:amazon-reconcile` に `--create-survey` を追加し、`SurveyAmazonInventorySyncService::latestSuccessfulImport` を公開した。再照合できないときの案内文は「再照合に使える取込ファイルがないため、再照合機能は利用できません。」（API は「…再照合できません。」）にした。期限切れのファイルが残っている場合の API の文言は従来どおり。テストは `AmazonInventoryImportServiceTest.php`（作成・日付またぎ・既存の調査の更新・取込失敗・作成失敗とコマンドでの復旧・削除後に作り直さない・取込なしの日）、`ApiBackendTest.php`（後のファイル取込で同じ調査を更新し、初回取込日時とメモを保つ）、`InventoryTrendApiTest.php`（在庫推移と日別 CSV で他の在庫区分が取込待ちのまま）。
 
+## AMZSYNC-11 旧方式の調査の再照合を止める
+
+**目的:** 旧5ファイル調査（Amazon在庫をファイルで取り込んだ調査）と、取得方式を確定できない調査を再照合できないようにし、保存済みのAmazon数量を守る。
+
+**背景:** 再照合（`InventoryImportService::reimport`）は保存ファイルのうち BOSS・KEEP一覧表・在庫一覧照会表だけを使い、調査の取得方式を `sp_api` に切り替えてAmazon数量を同日のSP-API取込の値（なければ取込待ち）に置き換える。旧5ファイル調査で実行すると、当時のAmazonファイル由来の保存値が失われ、「旧5ファイル調査のAmazon数量は保存値を維持する」という共通の受入条件に反する。2026-10-19 の確認で、画面・APIとも止める仕組みがないことがわかった。依頼者の判断で、再照合を止める案（A案）を採用した（保存値を残したまま品番の範囲を広げる案は採らない）。
+
+**作業**
+
+- 再照合できるのは、同期サービスがAmazon在庫を反映する対象と同じ、`amazon_source = sp_api` かつ旧方式フラグ（`includes_amazon_inventory`）が偽の調査に限る。判定は `Survey` のメソッドにまとめる。
+- API（`POST /api/surveys/{survey}/rerun`）は、対象外の調査を検証エラー（422）で断り、調査・ファイル・数量を変えない。CrossWalker も呼ばない。
+- 調査結果画面は、対象外の調査で「保存ファイルで再照合」を無効にし、理由（「Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。」）を表示する。
+- 要件定義書の再照合の項に、旧方式の調査は対象外であることを書く。
+
+**完了条件**
+
+- PHPUnit で、旧5ファイル調査と取得方式が未確定の調査の再照合が422で断られ、Amazon数量・取得方式・品番が変わらないこと、`sp_api` 調査は従来どおり再照合できることを確認する。
+- Vitest で、旧方式の調査ではボタンが無効になり理由が出ることを確認する。
+- `vendor/bin/pint --dirty --format agent`、`php artisan test --compact`、`npm run check`、`npm run build` が通る。
+
+**実装状況（2026-10-19）:** `Survey::usesSpApiAmazonInventory()`（`amazon_source = sp_api` かつ旧方式フラグが偽）を追加し、`InventoryImportService::reimport` の先頭で判定して、対象外なら `errors.survey` の検証エラーで断る（ファイル・CrossWalker・DBに触れない）。`SurveyAmazonInventorySyncService::syncSurvey` の対象判定も同じメソッドに揃えた。調査結果画面は `amazonSource` が `sp_api` でない調査で「保存ファイルで再照合」を無効にし、理由を表示する。テストは `ApiBackendTest.php`（旧5ファイル・取得方式未確定の 2 ケース）と `SurveyImportSettingDisplay.test.ts`（旧方式で無効・理由表示。既存の再照合テストは 3 ファイルの SP-API 調査に変更）。
+
 ## 進行状況
 
 | ID | 状態 |
@@ -241,3 +263,4 @@
 | AMZSYNC-08 | 実装完了・本番適用待ち |
 | AMZSYNC-09 | バッチ・手順実装済み、本番検証待ち |
 | AMZSYNC-10 | 実装完了・本番適用待ち（当日分の作成コマンドを実行） |
+| AMZSYNC-11 | 実装完了・本番適用待ち |
