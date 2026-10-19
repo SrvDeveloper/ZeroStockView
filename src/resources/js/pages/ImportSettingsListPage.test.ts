@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ImportSettingsListPage from "@/pages/ImportSettingsListPage.vue";
+import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
@@ -37,6 +38,7 @@ function configureStore() {
 describe("ImportSettingsListPage", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         push.mockReset();
     });
 
@@ -75,6 +77,25 @@ describe("ImportSettingsListPage", () => {
 
         expect(store.remove).toHaveBeenCalledWith("1");
         expect(wrapper.text()).not.toContain("売上TOP20");
+    });
+
+    it("lets editors create and edit groups without showing deletion", async () => {
+        useAuthStore().user = { id: "2", loginId: "editor", role: "editor" };
+        const store = configureStore();
+        const remove = vi.spyOn(store, "remove");
+        const wrapper = mount(ImportSettingsListPage, { global: { stubs: { teleport: true } } });
+
+        expect(wrapper.find('button[aria-label="削除"]').exists()).toBe(false);
+        expect(wrapper.text()).not.toContain("品番グループの削除");
+        await wrapper
+            .findAll("button")
+            .find((button) => button.text().includes("新しいグループを作成"))
+            ?.trigger("click");
+        expect(push).toHaveBeenCalledWith({ name: "import-setting-new" });
+
+        await wrapper.get('[data-setting-id="1"]').findAll("button")[1]!.trigger("click");
+        expect(push).toHaveBeenCalledWith({ name: "import-setting-edit", params: { id: "1" } });
+        expect(remove).not.toHaveBeenCalled();
     });
 
     it("summarizes unique products and SKUs across groups and shows the last sync time", () => {

@@ -1,8 +1,9 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import FileManagementPage from "@/pages/FileManagementPage.vue";
 import { useSurveysStore } from "@/stores/surveys";
+import { useUiStore } from "@/stores/ui";
 import type { SurveyFile } from "@/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -44,5 +45,41 @@ describe("FileManagementPage", () => {
 
         expect(wrapper.find('[data-file-id="expired"]').exists()).toBe(false);
         expect(wrapper.get('[data-file-group="old"]').text()).toContain("取込ファイルはありません");
+    });
+
+    it("keeps the file and shows an error when deletion is denied", async () => {
+        const removeFile = vi.spyOn(useSurveysStore(), "removeFile").mockRejectedValue(new Error("forbidden"));
+        const wrapper = mount(FileManagementPage, { global: { stubs: { RouterLink: true, Teleport: true } } });
+
+        await wrapper.get('[data-file-id="fresh"] [aria-label="削除"]').trigger("click");
+        await wrapper
+            .findAll("button")
+            .find((button) => button.text().includes("削除する"))!
+            .trigger("click");
+        await flushPromises();
+
+        expect(removeFile).toHaveBeenCalledWith("recent", "fresh");
+        expect(wrapper.find('[data-file-id="fresh"]').exists()).toBe(true);
+        expect(useUiStore().toasts.at(-1)).toMatchObject({ type: "error", message: "ファイルの削除に失敗しました。時間をおいて再度お試しください。" });
+    });
+
+    it("keeps the files and shows an error when bulk deletion is denied", async () => {
+        const removeFiles = vi.spyOn(useSurveysStore(), "removeFiles").mockRejectedValue(new Error("forbidden"));
+        const wrapper = mount(FileManagementPage, { global: { stubs: { RouterLink: true, Teleport: true } } });
+
+        await wrapper
+            .get('[data-file-group="recent"]')
+            .findAll("button")
+            .find((button) => button.text().includes("一括削除"))!
+            .trigger("click");
+        await wrapper
+            .findAll("button")
+            .find((button) => button.text().includes("削除する"))!
+            .trigger("click");
+        await flushPromises();
+
+        expect(removeFiles).toHaveBeenCalledWith("recent");
+        expect(wrapper.find('[data-file-id="fresh"]').exists()).toBe(true);
+        expect(useUiStore().toasts.at(-1)).toMatchObject({ type: "error", message: "ファイルの一括削除に失敗しました。時間をおいて再度お試しください。" });
     });
 });

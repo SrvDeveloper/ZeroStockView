@@ -5,13 +5,17 @@ import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import ConfirmModal from "@/components/ui/ConfirmModal.vue";
+import { ADMIN_ROLES, canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 import { MAX_TARGET_PRODUCTS, useImportSettingsStore } from "@/stores/importSettings";
 import { useUiStore } from "@/stores/ui";
 import { formatDateTime } from "@/utils/format";
 
 const router = useRouter();
+const auth = useAuthStore();
 const store = useImportSettingsStore();
 const toast = useUiStore();
+const canDelete = computed(() => canAccess(auth.role, ADMIN_ROLES));
 
 const pendingDeleteId = ref<string | null>(null);
 const deleting = ref(false);
@@ -31,7 +35,7 @@ const targetSummary = computed(() => {
 });
 
 async function confirmDelete() {
-    if (!pendingDelete.value || deleting.value) return;
+    if (!canDelete.value || !pendingDelete.value || deleting.value) return;
 
     deleting.value = true;
     try {
@@ -113,7 +117,7 @@ async function confirmDelete() {
                             <td class="px-4 py-2.5">
                                 <div class="flex justify-end gap-1.5">
                                     <BaseButton variant="secondary" size="sm" icon="edit" @click="router.push({ name: 'import-setting-edit', params: { id: setting.id } })"> 編集 </BaseButton>
-                                    <BaseButton variant="danger-ghost" size="sm" icon="delete" aria-label="削除" @click="pendingDeleteId = setting.id" />
+                                    <BaseButton v-if="canDelete" variant="danger-ghost" size="sm" icon="delete" aria-label="削除" @click="pendingDeleteId = setting.id" />
                                 </div>
                             </td>
                         </tr>
@@ -123,6 +127,7 @@ async function confirmDelete() {
         </BaseCard>
 
         <ConfirmModal
+            v-if="canDelete"
             :open="pendingDelete !== null"
             title="品番グループの削除"
             :message="`「${pendingDelete?.name}」を削除します。過去の調査結果に保存されたグループ所属は残ります。`"

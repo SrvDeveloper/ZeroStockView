@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AmazonInventoryImport } from "@/api/amazonInventoryImports";
 import type { CrossWalkerConnectionStatus } from "@/api/integrations";
 import IntegrationStatus from "@/components/IntegrationStatus.vue";
+import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import type { Survey } from "@/types";
 import { countExpiringFiles, fileRemainingDays } from "@/utils/files";
@@ -62,6 +63,7 @@ describe("file expiry", () => {
 describe("IntegrationStatus", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         fetchAmazonInventoryImports.mockReset();
         fetchIntegrationStatus.mockReset();
         fetchIntegrationStatus.mockResolvedValue({ crossWalker: null });
@@ -69,6 +71,16 @@ describe("IntegrationStatus", () => {
     });
 
     afterEach(() => vi.useRealTimers());
+
+    it("does not display or fetch integration status for a viewer", async () => {
+        useAuthStore().user = { id: "2", loginId: "viewer", role: "viewer" };
+        const wrapper = mount(IntegrationStatus);
+        await flushPromises();
+
+        expect(wrapper.find('[aria-label="連携ステータス"]').exists()).toBe(false);
+        expect(fetchAmazonInventoryImports).not.toHaveBeenCalled();
+        expect(fetchIntegrationStatus).not.toHaveBeenCalled();
+    });
 
     it.each([
         [amazonImport({ status: "succeeded" }), "ok"],
