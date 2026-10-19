@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
     exportInventoryTrend,
     fetchInventoryTrend,
@@ -20,6 +20,7 @@ import BaseEmpty from "@/components/ui/BaseEmpty.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import BaseModal from "@/components/ui/BaseModal.vue";
 import BaseSelect from "@/components/ui/BaseSelect.vue";
+import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import { warehousesOfScope } from "@/constants/warehouses";
 import type { SelectOption } from "@/types";
 
@@ -31,6 +32,7 @@ interface TrendSeries {
 }
 
 type TrendView = "sku" | "product";
+type PeriodPreset = "14" | "30" | "90" | "custom";
 
 interface StockoutSeries {
     label: string;
@@ -46,7 +48,6 @@ interface StockoutSeries {
 interface SkuCard {
     skuCode: string;
     size: string;
-    color: string;
     points: { date: string; quantity: number | null }[];
     latest: number | null;
     average: number | null;
@@ -55,9 +56,8 @@ interface SkuCard {
     stockoutDays: number;
 }
 
-const SERIES_COLORS = ["#2563eb", "#7c3aed", "#059669", "#ea580c", "#db2777", "#0891b2", "#65a30d", "#9333ea"];
-/** 欠品SKU数の線（墨）。欠品の点は黄色で描く。品番全体の棒は倉庫色で積み上げる */
-const STOCKOUT_LINE_COLOR = "#11161a";
+/** 欠品SKU数は日付の下に黄色の四角と件数で出す。品番全体の棒は倉庫色で積み上げる */
+const STOCKOUT_COLOR = "#f5c400";
 const products = ref<InventoryTrendProduct[]>([]);
 const availableBrands = ref<string[]>([]);
 const availableRange = ref<{ from: string; to: string } | null>(null);
@@ -65,7 +65,7 @@ const productCode = ref("");
 const inventoryScope = ref<InventoryScope>("mallTotal");
 const trendView = ref<TrendView>("product");
 const MAXIMUM_PERIOD_DAYS = 365;
-const activePreset = ref<14 | 30 | 90 | 365 | "custom">(30);
+const activePreset = ref<PeriodPreset>("30");
 const targetStart = ref("");
 const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
@@ -83,6 +83,8 @@ const productsError = ref("");
 const trendError = ref("");
 const exportError = ref("");
 const exportLoading = ref<"selected" | "all" | null>(null);
+const exportMenuOpen = ref(false);
+const exportMenuRef = ref<HTMLElement | null>(null);
 let trendRequestId = 0;
 
 const selectedProduct = computed(() => products.value.find((product) => product.productCode === productCode.value));
@@ -93,12 +95,11 @@ const filteredProductOptions = computed(() => {
         .filter((product) => !productBrandFilter.value || product.brand === productBrandFilter.value)
         .filter((product) => !query || product.productCode.toLowerCase().includes(query) || product.brand.toLowerCase().includes(query) || product.category.toLowerCase().includes(query));
 });
-const periodOptions = [
-    { value: 14 as const, label: "14日" },
-    { value: 30 as const, label: "30日" },
-    { value: 90 as const, label: "90日" },
-    { value: 365 as const, label: "1年" },
-    { value: "custom" as const, label: "カスタム" },
+const periodOptions: { value: PeriodPreset; label: string }[] = [
+    { value: "14", label: "2週間" },
+    { value: "30", label: "1か月" },
+    { value: "90", label: "3か月" },
+    { value: "custom", label: "期間指定" },
 ];
 const inventoryScopeOptions: SelectOption[] = [
     { value: "mallTotal", label: "モール全体" },
@@ -169,7 +170,7 @@ const productStockoutSeries = computed<StockoutSeries | null>(() => {
 
     return {
         label: "欠品SKU数",
-        color: STOCKOUT_LINE_COLOR,
+        color: STOCKOUT_COLOR,
         points: selectedDates.value.map((date) => {
             const availableSeries = rawSeries.value.flatMap((series) => {
                 const point = series.points.find((item) => item.date === date);
@@ -194,19 +195,18 @@ const productStockoutSeries = computed<StockoutSeries | null>(() => {
         }),
     };
 });
-const chartTitle = computed(() => (trendView.value === "sku" ? "SKU別 在庫数の推移" : "品番別 在庫総数・欠品SKU数の推移"));
+const chartTitle = computed(() => (trendView.value === "sku" ? "SKU別 在庫数の推移" : `${productCode.value.toUpperCase()} の倉庫別在庫`));
 const chartDescription = computed(() =>
     trendView.value === "sku"
         ? `${selectedInventoryScopeLabel.value}の在庫数を、対象品番の全SKUについて1日単位で表示しています。`
-        : `${selectedInventoryScopeLabel.value}の在庫数を倉庫別に積み上げ、欠品SKU数とあわせて品番単位で表示しています。`,
+        : "各日の最後の調査結果を集計しています。棒にマウスを置くと内訳を表示します。",
 );
 const skuCards = computed<SkuCard[]>(() =>
-    rawSeries.value.map((series, index) => {
+    rawSeries.value.map((series) => {
         const quantities = series.points.flatMap((point) => (point.quantity === null ? [] : [point.quantity]));
         return {
             skuCode: series.skuCode,
             size: series.size,
-            color: SERIES_COLORS[index % SERIES_COLORS.length]!,
             points: series.points,
             latest: quantities.at(-1) ?? null,
             average: quantities.length > 0 ? quantities.reduce((sum, quantity) => sum + quantity, 0) / quantities.length : null,
@@ -216,7 +216,24 @@ const skuCards = computed<SkuCard[]>(() =>
         };
     }),
 );
-onMounted(loadProducts);
+onMounted(() => {
+    document.addEventListener("click", closeExportMenuOnOutsideClick);
+    document.addEventListener("keydown", closeExportMenuOnEscape);
+    void loadProducts();
+});
+
+onBeforeUnmount(() => {
+    document.removeEventListener("click", closeExportMenuOnOutsideClick);
+    document.removeEventListener("keydown", closeExportMenuOnEscape);
+});
+
+function closeExportMenuOnOutsideClick(event: MouseEvent) {
+    if (exportMenuOpen.value && exportMenuRef.value && !exportMenuRef.value.contains(event.target as Node)) exportMenuOpen.value = false;
+}
+
+function closeExportMenuOnEscape(event: KeyboardEvent) {
+    if (event.key === "Escape") exportMenuOpen.value = false;
+}
 
 async function loadProducts() {
     productsLoading.value = true;
@@ -231,7 +248,7 @@ async function loadProducts() {
             targetEnd.value = response.dateRange.to;
             const candidateStart = addDays(response.dateRange.to, -29);
             targetStart.value = candidateStart < response.dateRange.from ? response.dateRange.from : candidateStart;
-            activePreset.value = selectedDates.value.length === 30 ? 30 : "custom";
+            activePreset.value = selectedDates.value.length === 30 ? "30" : "custom";
         }
 
         if (products.value.length > 0) {
@@ -298,10 +315,6 @@ function addDays(date: string, amount: number): string {
     return value.toISOString().slice(0, 10);
 }
 
-function formatTargetDate(date: string): string {
-    return date.replaceAll("-", "/");
-}
-
 function formatSummaryQuantity(quantity: number | null): string {
     return quantity === null ? "—" : `${quantity}点`;
 }
@@ -311,18 +324,18 @@ function formatSummaryAverage(quantity: number | null): string {
     return `${Number(quantity.toFixed(1))}点`;
 }
 
-function selectPreset(days: 14 | 30 | 90 | 365) {
+function selectPreset(preset: "14" | "30" | "90") {
     if (!targetEnd.value) return;
-    activePreset.value = days;
+    activePreset.value = preset;
+    const days = Number(preset);
     const start = addDays(targetEnd.value, -(days - 1));
     targetStart.value = availableRange.value && start < availableRange.value.from ? availableRange.value.from : start;
     void loadTrend();
 }
 
-function updatePeriodPreset(value: string | number | null) {
-    const days = Number(value);
-    if (days === 14 || days === 30 || days === 90 || days === 365) selectPreset(days);
-    else if (value === "custom") activePreset.value = "custom";
+function updatePeriodPreset(value: PeriodPreset) {
+    if (value === "custom") activePreset.value = "custom";
+    else selectPreset(value);
 }
 
 function updateInventoryScope(value: string | number | null) {
@@ -367,6 +380,7 @@ function updateTargetEnd(event: Event) {
 
 async function exportCsv(scope: "selected" | "all") {
     if (!targetStart.value || !targetEnd.value || (scope === "selected" && !productCode.value)) return;
+    exportMenuOpen.value = false;
     exportLoading.value = scope;
     exportError.value = "";
     try {
@@ -394,31 +408,45 @@ async function exportCsv(scope: "selected" | "all") {
     <div class="flex flex-col gap-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">在庫推移</h1>
-            <div class="flex flex-wrap gap-2">
+            <div ref="exportMenuRef" class="relative">
                 <BaseButton
-                    data-testid="inventory-trend-export"
-                    variant="secondary"
-                    icon="download"
-                    :loading="exportLoading === 'selected'"
-                    :disabled="!productCode || !targetStart || !targetEnd || trendLoading || exportLoading !== null"
-                    @click="exportCsv('selected')"
-                >
-                    選択品番の日次CSV
-                </BaseButton>
-                <BaseButton
-                    data-testid="inventory-trend-export-all"
+                    data-testid="inventory-trend-export-button"
                     variant="primary"
                     icon="download"
-                    :loading="exportLoading === 'all'"
+                    aria-haspopup="menu"
+                    :aria-expanded="exportMenuOpen"
+                    :loading="exportLoading !== null"
                     :disabled="!targetStart || !targetEnd || trendLoading || exportLoading !== null"
-                    @click="exportCsv('all')"
+                    @click="exportMenuOpen = !exportMenuOpen"
                 >
-                    全品番の日次CSV
+                    日次在庫をCSV出力
                 </BaseButton>
+                <div v-if="exportMenuOpen" class="absolute right-0 z-40 mt-1.5 w-72 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-float" role="menu">
+                    <button
+                        type="button"
+                        data-testid="inventory-trend-export"
+                        role="menuitem"
+                        class="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-faint disabled:hover:bg-transparent"
+                        :disabled="!productCode"
+                        @click="exportCsv('selected')"
+                    >
+                        選択品番の日次CSV<span v-if="productCode" class="ml-2 font-mono text-[11px] text-muted uppercase">{{ productCode }}</span>
+                    </button>
+                    <button
+                        type="button"
+                        data-testid="inventory-trend-export-all"
+                        role="menuitem"
+                        class="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-surface-2"
+                        @click="exportCsv('all')"
+                    >
+                        全品番の日次CSV
+                    </button>
+                    <p class="mt-1 border-t border-line-2 px-3.5 pt-2 pb-1.5 text-[11px] leading-relaxed whitespace-normal text-muted">
+                        対象期間の調査日の在庫と、調査がない日のAmazon取得結果を出力します。Amazon取得だけの日は他の在庫区分が空欄です。
+                    </p>
+                </div>
             </div>
         </div>
-
-        <p class="text-[11.5px] text-muted">CSVには調査日の在庫と、調査がない日のAmazon取得結果を含みます。Amazon取得だけの日は他の在庫区分が空欄です。</p>
 
         <BaseAlert v-if="exportError" tone="danger" title="日次在庫を出力できませんでした">{{ exportError }}</BaseAlert>
 
@@ -429,81 +457,66 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
         </BaseAlert>
 
-        <BaseCard :padded="false">
-            <div class="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:gap-3">
-                <div class="min-w-0 flex-1">
+        <BaseCard>
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto_minmax(0,1.2fr)] lg:items-end">
+                <div class="min-w-0">
                     <span class="mb-1 block text-[11px] font-medium text-ink-2">対象品番</span>
-                    <button
-                        type="button"
-                        data-testid="product-picker-button"
-                        class="flex h-8 w-full items-center justify-between gap-3 rounded-control border border-line-strong bg-surface px-2.5 text-left text-[12.5px] shadow-field transition-colors hover:border-ink-2/50 focus-visible:outline-2 focus-visible:outline-ink-2"
-                        aria-haspopup="dialog"
-                        :disabled="productsLoading || !selectedProduct"
-                        @click="openProductPicker"
-                    >
-                        <span v-if="selectedProduct" class="min-w-0 truncate">
-                            <span class="font-mono font-semibold text-ink uppercase">{{ selectedProduct.productCode }}</span>
-                            <span class="ml-3 text-muted">{{ selectedProduct.brand }} ／ {{ selectedProduct.category }}</span>
-                        </span>
-                        <span v-else class="text-muted">{{ productsLoading ? "読み込み中..." : "対象品番がありません" }}</span>
-                        <span class="flex shrink-0 items-center gap-1.5 text-xs font-medium text-ink-2"><AppIcon name="manage_search" :size="18" />選択</span>
-                    </button>
-                </div>
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-3">
-                    <div class="shrink-0 w-40">
-                        <BaseSelect
-                            :model-value="inventoryScope"
-                            data-testid="inventory-scope-select"
-                            :options="inventoryScopeOptions"
-                            label="在庫区分"
-                            :show-placeholder="false"
-                            @update:model-value="updateInventoryScope"
-                        />
-                    </div>
-                    <div class="shrink-0 w-40">
-                        <BaseSelect
-                            :model-value="activePreset"
-                            data-testid="period-select"
-                            :options="periodOptions"
-                            label="表示期間"
-                            :show-placeholder="false"
-                            @update:model-value="updatePeriodPreset"
-                        />
-                    </div>
-                    <div>
-                        <span class="mb-1 block text-[11px] font-medium text-ink-2">対象期間</span>
-                        <div class="flex items-center gap-2">
-                            <input
-                                type="date"
-                                :value="targetStart"
-                                :min="earliestTargetStart"
-                                :max="availableRange?.to"
-                                :disabled="!availableRange"
-                                aria-label="対象期間の開始日"
-                                class="h-8 rounded-control border border-line-strong bg-surface px-2.5 font-mono text-xs text-ink shadow-field focus:border-ink-2 focus:ring-3 focus:ring-ink/10 focus:outline-none"
-                                @change="updateTargetStart"
-                            />
-                            <span class="text-[12.5px] text-faint">〜</span>
-                            <input
-                                type="date"
-                                :value="targetEnd"
-                                :min="availableRange?.from"
-                                :max="latestTargetEnd"
-                                :disabled="!availableRange"
-                                aria-label="対象期間の終了日"
-                                class="h-8 rounded-control border border-line-strong bg-surface px-2.5 font-mono text-xs text-ink shadow-field focus:border-ink-2 focus:ring-3 focus:ring-ink/10 focus:outline-none"
-                                @change="updateTargetEnd"
-                            />
+                    <div class="flex gap-1.5">
+                        <div class="flex h-8 min-w-0 flex-1 items-center rounded-control border border-line-strong bg-surface px-2.5 text-[12px] shadow-field" data-testid="selected-product">
+                            <span v-if="selectedProduct" class="min-w-0 truncate">
+                                <span class="font-mono font-semibold text-ink uppercase">{{ selectedProduct.productCode }}</span>
+                                <span class="text-muted"> ・ {{ selectedProduct.brand }} ・ {{ selectedProduct.category }}</span>
+                            </span>
+                            <span v-else class="text-muted">{{ productsLoading ? "読み込み中..." : "対象品番がありません" }}</span>
                         </div>
-                        <p class="mt-1 text-[11px] text-muted">対象期間は最大365日間です。</p>
+                        <BaseButton data-testid="product-picker-button" aria-haspopup="dialog" :disabled="productsLoading || !selectedProduct" @click="openProductPicker">変更</BaseButton>
+                    </div>
+                </div>
+                <BaseSelect
+                    :model-value="inventoryScope"
+                    data-testid="inventory-scope-select"
+                    :options="inventoryScopeOptions"
+                    label="在庫区分"
+                    :show-placeholder="false"
+                    @update:model-value="updateInventoryScope"
+                />
+                <div>
+                    <span class="mb-1 block text-[11px] font-medium text-ink-2">表示期間</span>
+                    <div class="flex h-8 items-center" data-testid="period-select">
+                        <SegmentedControl :model-value="activePreset" :options="periodOptions" label="表示期間" @update:model-value="updatePeriodPreset" />
+                    </div>
+                </div>
+                <div class="min-w-0">
+                    <span class="mb-1 block text-[11px] font-medium text-ink-2">期間</span>
+                    <div
+                        class="flex h-8 items-center gap-1.5 rounded-control border border-line-strong bg-surface px-1.5 font-mono text-[11.5px] text-ink shadow-field focus-within:border-ink-2 focus-within:ring-3 focus-within:ring-ink/10"
+                        :title="`対象期間は最大${MAXIMUM_PERIOD_DAYS}日間です`"
+                    >
+                        <input
+                            type="date"
+                            :value="targetStart"
+                            :min="earliestTargetStart"
+                            :max="availableRange?.to"
+                            :disabled="!availableRange"
+                            aria-label="対象期間の開始日"
+                            class="h-7 min-w-0 flex-1 bg-transparent px-1 focus:outline-none"
+                            @change="updateTargetStart"
+                        />
+                        <span class="text-faint" aria-hidden="true">→</span>
+                        <input
+                            type="date"
+                            :value="targetEnd"
+                            :min="availableRange?.from"
+                            :max="latestTargetEnd"
+                            :disabled="!availableRange"
+                            aria-label="対象期間の終了日"
+                            class="h-7 min-w-0 flex-1 bg-transparent px-1 focus:outline-none"
+                            @change="updateTargetEnd"
+                        />
                     </div>
                 </div>
             </div>
         </BaseCard>
-
-        <p v-if="inventoryScope === 'mallTotal' || inventoryScope === 'grandTotal'" data-testid="survey-scope-note" class="text-xs text-ink-2">
-            この区分は調査日の保存済み在庫を合算します。Amazonが未確定のSKUと、調査がないSP-API取得日の合計は表示しません。品番グラフでは、未確定の倉庫がある日は確定した倉庫だけを積み上げ、「未確定」の印を付けます。
-        </p>
 
         <BaseModal :open="productPickerOpen" title="対象品番を選択" description="ブランドやキーワードで対象品番を絞り込めます。" width="lg" @close="closeProductPicker">
             <div class="flex flex-col gap-4">
@@ -549,38 +562,39 @@ async function exportCsv(scope: "selected" | "all") {
 
         <BaseCard :title="chartTitle" :description="chartDescription">
             <template #actions>
-                <BaseButton data-testid="refresh-trend" size="sm" variant="secondary" icon="refresh" :loading="trendLoading" @click="() => loadTrend()">再読込</BaseButton>
+                <BaseButton data-testid="refresh-trend" size="sm" variant="ghost" icon="refresh" :loading="trendLoading" @click="() => loadTrend()">再読込</BaseButton>
                 <div class="inline-flex gap-0.5 rounded-control bg-tint p-0.5" role="group" aria-label="在庫推移の確認単位">
                     <button
                         type="button"
-                        data-testid="trend-view-sku"
-                        class="rounded-chip px-2.5 py-0.5 text-[11px] transition-colors"
-                        :class="trendView === 'sku' ? 'bg-surface font-semibold text-ink shadow-raised' : 'text-ink-2 hover:text-ink'"
-                        :aria-pressed="trendView === 'sku'"
-                        @click="trendView = 'sku'"
-                    >
-                        SKU
-                    </button>
-                    <button
-                        type="button"
                         data-testid="trend-view-product"
-                        class="rounded-chip px-2.5 py-0.5 text-[11px] transition-colors"
-                        :class="trendView === 'product' ? 'bg-surface font-semibold text-ink shadow-raised' : 'text-ink-2 hover:text-ink'"
+                        class="rounded-chip px-3 py-[3px] text-[11.5px] transition-colors"
+                        :class="trendView === 'product' ? 'bg-surface font-semibold text-ink shadow-raised' : 'text-ink-2 hover:cursor-pointer hover:text-ink'"
                         :aria-pressed="trendView === 'product'"
                         @click="trendView = 'product'"
                     >
-                        品番
+                        品番全体
+                    </button>
+                    <button
+                        type="button"
+                        data-testid="trend-view-sku"
+                        class="rounded-chip px-3 py-[3px] text-[11.5px] transition-colors"
+                        :class="trendView === 'sku' ? 'bg-surface font-semibold text-ink shadow-raised' : 'text-ink-2 hover:cursor-pointer hover:text-ink'"
+                        :aria-pressed="trendView === 'sku'"
+                        @click="trendView = 'sku'"
+                    >
+                        SKU別
                     </button>
                 </div>
-                <span v-if="targetStart && targetEnd" class="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted">
-                    <AppIcon name="calendar_today" :size="14" />{{ formatTargetDate(targetStart) }}〜{{ formatTargetDate(targetEnd) }}（{{ selectedDates.length }}日間）
-                </span>
             </template>
+
+            <p v-if="trendView === 'product' && (loadedScope === 'mallTotal' || loadedScope === 'grandTotal')" data-testid="survey-scope-note" class="mb-2 text-[11.5px] text-muted">
+                この区分は調査日の保存済み在庫を合算します。未確定の倉庫がある日は、確定した倉庫だけを積み上げ、「未確定」の印を付けます（合計は出しません）。
+            </p>
 
             <div
                 v-if="rawSeries.length > 0 && trendView === 'product'"
                 data-testid="product-chart-legend"
-                class="mb-4 flex flex-wrap items-center gap-5 border-b border-line-2 pb-3 text-[11px] text-ink-2"
+                class="mb-1 flex flex-wrap items-center gap-x-3.5 gap-y-1 pt-1 pb-0.5 text-[11px] text-ink-2"
             >
                 <span v-for="warehouse in productWarehouses" :key="warehouse.key" :data-legend-warehouse="warehouse.key" class="inline-flex items-center gap-2"
                     ><span class="h-2.5 w-2.5 rounded-xs" :style="{ backgroundColor: warehouse.color }"></span>{{ warehouse.label }}</span
@@ -588,7 +602,7 @@ async function exportCsv(scope: "selected" | "all") {
                 <span v-if="productPendingDates.length > 0" data-legend-pending class="inline-flex items-center gap-2"
                     ><span class="h-2.5 w-2.5 rounded-xs border border-dashed border-ink-2"></span>未確定</span
                 >
-                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-[2px] border border-ink bg-signal"></span>欠品SKU数</span>
+                <span class="inline-flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-[2px] bg-signal"></span>欠品SKU数</span>
             </div>
 
             <div v-if="trendLoading" class="flex min-h-80 items-center justify-center gap-2 text-[12.5px] text-muted" role="status">
@@ -630,11 +644,11 @@ async function exportCsv(scope: "selected" | "all") {
                             >期間平均 <strong class="ml-1 font-num text-sm font-semibold text-ink-2">{{ formatSummaryAverage(sku.average) }}</strong></span
                         >
                     </div>
-                    <InventoryTrendMiniChart :label="sku.skuCode" :points="sku.points" :color="sku.color" />
+                    <InventoryTrendMiniChart :label="sku.skuCode" :points="sku.points" />
                 </article>
             </div>
             <div v-else class="overflow-x-auto pb-1">
-                <InventoryTrendChart :series="productChartSeries" display-mode="bar" :stockout-series="productStockoutSeries" :pending-dates="productPendingDates" />
+                <InventoryTrendChart :series="productChartSeries" :stockout-series="productStockoutSeries" :pending-dates="productPendingDates" />
             </div>
         </BaseCard>
 
@@ -649,6 +663,7 @@ async function exportCsv(scope: "selected" | "all") {
                     <thead class="border-b border-line text-[11px] text-muted">
                         <tr>
                             <th class="px-5 py-2.5 font-semibold">SKU</th>
+                            <th class="px-4 py-2.5 font-semibold">推移</th>
                             <th class="px-4 py-2.5 text-right font-semibold">最新在庫</th>
                             <th class="px-4 py-2.5 text-right font-semibold">期間平均</th>
                             <th class="px-4 py-2.5 text-right font-semibold">期間最小</th>
@@ -658,12 +673,8 @@ async function exportCsv(scope: "selected" | "all") {
                     </thead>
                     <tbody class="divide-y divide-line-2">
                         <tr v-for="summary in skuCards" :key="summary.skuCode" :data-summary-sku="summary.skuCode" class="hover:bg-surface-2">
-                            <td class="px-5 py-2 font-mono font-medium text-ink uppercase">
-                                <span class="inline-flex items-center gap-2">
-                                    <span class="h-2.5 w-2.5 shrink-0 rounded-xs" :style="{ backgroundColor: summary.color }"></span>
-                                    {{ summary.skuCode }}
-                                </span>
-                            </td>
+                            <td class="px-5 py-2 font-mono font-medium text-ink uppercase">{{ summary.skuCode }}</td>
+                            <td data-summary-field="trend" class="px-4 py-2"><InventoryTrendMiniChart :label="summary.skuCode" :points="summary.points" variant="spark" /></td>
                             <td data-summary-field="latest" class="px-4 py-2 text-right font-num text-lg font-semibold text-ink">{{ formatSummaryQuantity(summary.latest) }}</td>
                             <td data-summary-field="average" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryAverage(summary.average) }}</td>
                             <td data-summary-field="minimum" class="px-4 py-2 text-right font-num text-base text-ink-2">{{ formatSummaryQuantity(summary.minimum) }}</td>

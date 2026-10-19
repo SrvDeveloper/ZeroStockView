@@ -80,6 +80,10 @@ function withDailyTotals(response: InventoryTrendData): InventoryTrendData {
     return { ...response, dailySources: response.dailySources.length > 0 ? response.dailySources : dailySources, warehouseTotals };
 }
 
+async function openExportMenu(wrapper: ReturnType<typeof mountPage>) {
+    await wrapper.get('[data-testid="inventory-trend-export-button"]').trigger("click");
+}
+
 function mountPage(buildTrend: typeof trendResponse = trendResponse) {
     apiMocks.fetchInventoryTrendProducts.mockResolvedValue(productsResponse);
     apiMocks.fetchInventoryTrend.mockImplementation((params) => Promise.resolve(withDailyTotals(buildTrend(params))));
@@ -99,9 +103,13 @@ describe("InventoryTrendPage", () => {
         const wrapper = mountPage();
         await flushPromises();
 
+        expect(wrapper.find('[data-testid="inventory-trend-export"]').exists()).toBe(false);
+        await openExportMenu(wrapper);
+        expect(wrapper.get('[role="menu"]').text()).toContain("調査がない日のAmazon取得結果を出力します");
         await wrapper.get('[data-testid="inventory-trend-export"]').trigger("click");
         await flushPromises();
 
+        expect(wrapper.find('[role="menu"]').exists()).toBe(false);
         expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({
             productCode: "ZS-2408-01",
             from: "2026-08-30",
@@ -115,6 +123,7 @@ describe("InventoryTrendPage", () => {
         const wrapper = mountPage();
         await flushPromises();
 
+        await openExportMenu(wrapper);
         await wrapper.get('[data-testid="inventory-trend-export-all"]').trigger("click");
         await flushPromises();
 
@@ -147,8 +156,7 @@ describe("InventoryTrendPage", () => {
         });
         await flushPromises();
 
-        expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("Amazonが未確定のSKU");
-        expect(wrapper.text()).toContain("調査がない日のAmazon取得結果を含みます");
+        expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("確定した倉庫だけを積み上げ");
         await wrapper.get('[data-testid="product-picker-button"]').trigger("click");
         await wrapper.get('[data-product-code="API-ONLY"]').trigger("click");
         await wrapper.get('[data-testid="apply-product-selection"]').trigger("click");
@@ -157,6 +165,7 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.find('[data-testid="amazon-daily-sources"]').exists()).toBe(false);
         expect(wrapper.text()).not.toContain("Amazon在庫の取得元");
+        await openExportMenu(wrapper);
         expect(wrapper.get('[data-testid="inventory-trend-export"]').attributes("disabled")).toBeUndefined();
         await wrapper.get('[data-testid="inventory-trend-export"]').trigger("click");
         await flushPromises();
@@ -204,7 +213,8 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-M"]').text()).toContain("期間平均 28.5点");
         expect(wrapper.text()).toContain("SKU別サマリー");
         expect(wrapper.findAll('[data-testid="inventory-scope-select"] option')).toHaveLength(6);
-        expect(wrapper.findAll('[data-testid="period-select"] option')).toHaveLength(5);
+        expect(wrapper.findAll('[data-testid="period-select"] [role="radio"]').map((option) => option.text())).toEqual(["2週間", "1か月", "3か月", "期間指定"]);
+        expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("1か月");
         expect(wrapper.text()).not.toContain("選択してください");
         expect(wrapper.text()).not.toContain("期間を選択");
         expect(wrapper.text()).not.toContain("ダミーデータ");
@@ -231,7 +241,7 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.text()).toContain("ZS-2501-03");
         expect(wrapper.text()).toContain("ZS-2501-03-NT-F");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(1);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ productCode: "ZS-2501-03" }));
     });
 
@@ -272,10 +282,10 @@ describe("InventoryTrendPage", () => {
         await startInput.setValue("2026-09-25");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("2026/09/25〜2026/09/28（4日間）");
-        expect((wrapper.get('[data-testid="period-select"] select').element as HTMLSelectElement).value).toBe("custom");
+        expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("期間指定");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(4);
-        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(4);
+        expect(wrapper.findAll("[data-chart-date]").map((tick) => tick.text())).toEqual(["09-25", "26", "27", "28"]);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(0);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-09-25", to: "2026-09-28" }));
     });
 
@@ -286,21 +296,32 @@ describe("InventoryTrendPage", () => {
         await wrapper.get('input[aria-label="対象期間の開始日"]').setValue("2025-01-01");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("2025/01/01〜2025/12/31（365日間）");
         expect((wrapper.get('input[aria-label="対象期間の終了日"]').element as HTMLInputElement).value).toBe("2025-12-31");
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2025-01-01", to: "2025-12-31" }));
     });
 
-    it("updates the target dates from the display period select", async () => {
+    it("updates the target dates from the display period buttons", async () => {
         const wrapper = mountPage();
         await flushPromises();
-        const periodSelect = wrapper.get('[data-testid="period-select"] select');
 
-        await periodSelect.setValue("14");
+        await wrapper.get('[data-testid="period-select"] [data-value="14"]').trigger("click");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("2026/09/15〜2026/09/28（14日間）");
+        expect((wrapper.get('input[aria-label="対象期間の開始日"]').element as HTMLInputElement).value).toBe("2026-09-15");
+        expect((wrapper.get('input[aria-label="対象期間の終了日"]').element as HTMLInputElement).value).toBe("2026-09-28");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(14);
+        expect(wrapper.findAll("[data-chart-date]")).toHaveLength(14);
+
+        await wrapper.get('[data-testid="period-select"] [data-value="90"]').trigger("click");
+        await flushPromises();
+        expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-07-01", to: "2026-09-28" }));
+        expect(wrapper.findAll("[data-chart-date]")).toHaveLength(6);
+
+        const callCount = apiMocks.fetchInventoryTrend.mock.calls.length;
+        await wrapper.get('[data-testid="period-select"] [data-value="custom"]').trigger("click");
+        await flushPromises();
+        expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("期間指定");
+        expect(apiMocks.fetchInventoryTrend).toHaveBeenCalledTimes(callCount);
     });
 
     it("requests and displays the selected inventory scope", async () => {
@@ -311,7 +332,8 @@ describe("InventoryTrendPage", () => {
         await inventoryScopeSelect.setValue("boss");
         await flushPromises();
 
-        expect(wrapper.text()).toContain("BOSSの在庫数を倉庫別に積み上げ、欠品SKU数とあわせて品番単位で表示しています");
+        expect(wrapper.findAll("[data-legend-warehouse]").map((item) => item.text())).toEqual(["BOSS"]);
+        expect(wrapper.find('[data-testid="survey-scope-note"]').exists()).toBe(false);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "boss" }));
     });
 
@@ -322,7 +344,7 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get('[data-testid="trend-view-product"]').attributes("aria-pressed")).toBe("true");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
         expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(29);
-        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
+        expect(wrapper.findAll('[data-testid="trend-view-product"], [data-testid="trend-view-sku"]').map((button) => button.text())).toEqual(["品番全体", "SKU別"]);
         expect(wrapper.find('[data-testid="chart-mode-bar"]').exists()).toBe(false);
         expect(wrapper.find('[data-testid="chart-mode-line"]').exists()).toBe(false);
 
@@ -335,7 +357,6 @@ describe("InventoryTrendPage", () => {
         await wrapper.get('[data-testid="trend-view-product"]').trigger("click");
 
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
     });
 
     it("labels each SKU mini chart and its daily inventory points", async () => {
@@ -353,21 +374,20 @@ describe("InventoryTrendPage", () => {
         const wrapper = mountPage();
         await flushPromises();
 
-        expect(wrapper.text()).toContain("品番別 在庫総数・欠品SKU数の推移");
+        expect(wrapper.text()).toContain("ZS-2408-01 の倉庫別在庫");
+        expect(wrapper.text()).toContain("棒にマウスを置くと内訳を表示します");
         expect(wrapper.get('[data-testid="trend-view-product"]').attributes("aria-pressed")).toBe("true");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-        expect(wrapper.findAll("[data-stockout-line]")).toHaveLength(1);
-        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
+        const stockoutMarks = wrapper.findAll("[data-stockout-point]");
+        expect(stockoutMarks).toHaveLength(1);
+        expect(stockoutMarks[0]!.attributes("data-stockout-count")).toBe("4");
 
         await wrapper.findAll("[data-chart-bar]")[29]!.trigger("mouseenter");
 
         const tooltip = wrapper.get("[data-chart-tooltip]");
+        expect(wrapper.find("[data-chart-highlight]").exists()).toBe(true);
         expect(tooltip.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
         expect(tooltip.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
-
-        await wrapper.findAll('circle[aria-label*="欠品SKU"]')[29]!.trigger("mouseenter");
-        expect(wrapper.get("[data-tooltip-total]").text()).toContain("総在庫数0点");
-        expect(wrapper.get("[data-tooltip-stockout]").text()).toContain("欠品SKU数4SKU");
         expect(wrapper.findAll("[data-tooltip-stockout-sku]")).toHaveLength(4);
         expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("ZS-2408-01-NV-S");
         expect(wrapper.get("[data-tooltip-stockout-details]").text()).toContain("期間累計 1日");
@@ -385,12 +405,12 @@ describe("InventoryTrendPage", () => {
 
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
         expect(wrapper.findAll("[data-chart-bar-pending]")).toHaveLength(1);
-        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(29);
         expect(wrapper.find("[data-legend-pending]").exists()).toBe(true);
 
         await wrapper.get('[data-bar-pending="true"]').trigger("mouseenter");
         expect(wrapper.get("[data-tooltip-total]").text()).toContain("未確定");
         expect(wrapper.get("[data-tooltip-total]").text()).not.toContain("点");
+        expect(wrapper.get("[data-tooltip-stockout]").text()).toBe("欠品SKU数—");
     });
 
     it("stacks the product chart by warehouse in the fixed warehouse order", async () => {
@@ -433,6 +453,18 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
 
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-chart-bar-pending]")).toHaveLength(0);
+        expect(wrapper.findAll("[data-stockout-point]")).toHaveLength(1);
+    });
+
+    it("sparks each SKU trend in the summary table and ends at a yellow point when the latest stock is zero", async () => {
+        const wrapper = mountPage();
+        await flushPromises();
+
+        const sparklines = wrapper.findAll('[data-summary-field="trend"] [data-sku-sparkline]');
+        expect(sparklines).toHaveLength(4);
+        const end = sparklines[0]!.findAll("circle").at(-1)!;
+        expect(end.attributes("fill")).toBe("#f5c400");
+        expect(end.attributes("stroke")).toBe("#11161a");
     });
 });

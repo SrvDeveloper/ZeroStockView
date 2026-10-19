@@ -73,3 +73,5 @@ npx vitest run resources/js/pages/InventoryTrendPage.test.ts resources/js/compon
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-19）:** チケットの作業をすべて実装した。`InventoryTrendChart.vue` は品番全体の積み上げ棒専用に作り直し、使われていなかった折れ線表示、SKU ごとの割合のツールチップ、欠品 SKU 数の右側の目盛りと折れ線を削除した。欠品 SKU の一覧と期間累計の欠品日数は、棒（日の列全体）にマウスを置いたときのツールチップに出す。棒の幅は日の間隔の半分（最大 32px）で、幅が 6px 未満のときは倉庫の間の隙間を付けない。欠品の件数の数字は、日の間隔が 18px 未満のときは省き、黄色の四角だけにする。`InventoryTrendMiniChart.vue` に表の「推移」列用の `variant="spark"` を足した。テストの data 属性はカードにだけ付ける。合算区分の注意書き（`survey-scope-note`）は、グラフのカードの本文の先頭に移した。テストは `InventoryTrendPage.test.ts`、`InventoryTrendChart.test.ts`、`InventoryTrendMiniChart.test.ts` を、新しい表示に合わせて書き直した。
