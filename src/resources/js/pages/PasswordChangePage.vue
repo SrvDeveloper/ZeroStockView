@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import AppIcon from "@/components/ui/AppIcon.vue";
+import { ref } from "vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
+import PasswordRules from "@/components/ui/PasswordRules.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useUiStore } from "@/stores/ui";
+import { isValidPassword } from "@/utils/password";
 
 const auth = useAuthStore();
 const toast = useUiStore();
@@ -16,18 +17,10 @@ const newPassword = ref("");
 const confirmPassword = ref("");
 const errorMessage = ref("");
 
-const MIN_LENGTH = 12;
-const VALID_PATTERN = /^[\x21-\x7e]+$/;
-
-const rules = computed(() => [
-    { label: `${MIN_LENGTH}文字以上`, valid: newPassword.value.length >= MIN_LENGTH },
-    { label: "半角英数字記号のみ", valid: newPassword.value.length > 0 && VALID_PATTERN.test(newPassword.value) },
-]);
-
 async function submit() {
     errorMessage.value = "";
 
-    if (newPassword.value.length < MIN_LENGTH || !VALID_PATTERN.test(newPassword.value)) {
+    if (!isValidPassword(newPassword.value)) {
         errorMessage.value = "新しいパスワードは半角英数字記号12文字以上で入力してください。";
         return;
     }
@@ -65,18 +58,7 @@ async function submit() {
 
                     <div>
                         <BaseInput v-model="newPassword" type="password" label="新しいパスワード" autocomplete="new-password" required />
-                        <ul class="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5" data-password-rules>
-                            <li
-                                v-for="rule in rules"
-                                :key="rule.label"
-                                class="flex items-center gap-1 text-[11px]"
-                                :class="rule.valid ? 'text-ok-ink' : 'text-muted'"
-                                :data-valid="rule.valid ? 'true' : 'false'"
-                            >
-                                <AppIcon :name="rule.valid ? 'check_circle' : 'radio_button_unchecked'" :size="14" />
-                                {{ rule.label }}
-                            </li>
-                        </ul>
+                        <PasswordRules :password="newPassword" />
                     </div>
 
                     <BaseInput v-model="confirmPassword" type="password" label="新しいパスワード（確認）" autocomplete="new-password" required />
