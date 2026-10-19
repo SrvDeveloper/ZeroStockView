@@ -583,9 +583,9 @@ describe("survey import setting display", () => {
 
     it("reruns a survey with another setting while at least one source file remains", async () => {
         const surveys = useSurveysStore();
+        surveys.surveys[0].includesAmazonInventory = false;
+        surveys.surveys[0].amazonSource = "sp_api";
         surveys.surveys[0].files = [
-            { id: "1", type: "在庫商品レポート", fileName: "在庫商品レポート.txt", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
-            { id: "2", type: "FBA在庫管理レポート", fileName: "FBA在庫管理レポート.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
             { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
             { id: "4", type: "KEEP一覧表", fileName: "KEEP一覧表.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
             { id: "5", type: "在庫一覧照会表", fileName: "在庫一覧照会表.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
@@ -616,13 +616,33 @@ describe("survey import setting display", () => {
         expect(rerunImport).toHaveBeenCalledWith("1", "2");
         expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "1" }, query: { group: "setting:2" } });
         expect(wrapper.find('[data-testid="rerun-setting-select"]').exists()).toBe(false);
-        surveys.surveys[0].files = [surveys.surveys[0].files[2]!];
+        surveys.surveys[0].files = [surveys.surveys[0].files[0]!];
         await nextTick();
         expect(menuButton.attributes("disabled")).toBeUndefined();
         surveys.surveys[0].files = [];
         await nextTick();
         expect(wrapper.text()).toContain("再照合に使える取込ファイルがないため、再照合機能は利用できません。");
         expect(menuButton.attributes("disabled")).toBeDefined();
+    });
+
+    it("does not offer a rerun for a legacy five-file survey even when its files remain", async () => {
+        const surveys = useSurveysStore();
+        surveys.surveys[0].includesAmazonInventory = true;
+        surveys.surveys[0].amazonSource = "survey";
+        surveys.surveys[0].files = [
+            { id: "1", type: "在庫商品レポート", fileName: "在庫商品レポート.txt", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
+            { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: "2026-09-16T01:00:00Z", sizeKb: 1 },
+        ];
+        const rerunImport = vi.spyOn(surveys, "rerunImport");
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
+
+        const menuButton = wrapper.get('[data-testid="rerun-menu-button"]');
+        expect(menuButton.attributes("disabled")).toBeDefined();
+        expect(wrapper.get('[data-testid="rerun-unavailable-legacy"]').text()).toBe("Amazon在庫をファイルで取り込んだ旧方式の調査のため、再照合できません。");
+        expect(wrapper.text()).not.toContain("再照合に使える取込ファイルがないため");
+        await menuButton.trigger("click");
+        expect(wrapper.find('[data-testid="rerun-setting-select"]').exists()).toBe(false);
+        expect(rerunImport).not.toHaveBeenCalled();
     });
 
     it("saves a memo only after editing and IME composition finish", async () => {
