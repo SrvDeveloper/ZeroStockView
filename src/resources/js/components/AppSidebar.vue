@@ -1,14 +1,21 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useRoute } from "vue-router";
 import AppLogo from "@/components/AppLogo.vue";
 import IntegrationStatus from "@/components/IntegrationStatus.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
-import { isNavItemActive, NAV_GROUPS } from "@/constants/navigation";
+import { isNavItemActive, navGroupsForRole } from "@/constants/navigation";
+import { EDITOR_ROLES, canAccess, homeRouteName } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const route = useRoute();
+const auth = useAuthStore();
+const navGroups = computed(() => navGroupsForRole(auth.role));
+const showIntegrationStatus = computed(() => canAccess(auth.role, EDITOR_ROLES));
+const home = computed(() => (auth.role ? homeRouteName(auth.role) : "survey-history"));
 </script>
 
 <template>
@@ -21,7 +28,7 @@ const route = useRoute();
     >
         <span class="absolute inset-x-0 top-0 h-1 bg-hazard" aria-hidden="true"></span>
         <div class="flex items-center justify-between gap-2 px-2 pt-1 pb-4">
-            <RouterLink :to="{ name: 'data-import' }" class="flex items-center gap-2.5 rounded-control focus-visible:outline-2 focus-visible:outline-signal" @click="emit('close')">
+            <RouterLink :to="{ name: home }" class="flex items-center gap-2.5 rounded-control focus-visible:outline-2 focus-visible:outline-signal" @click="emit('close')">
                 <AppLogo :size="28" dark />
                 <span class="flex flex-col leading-tight">
                     <span class="text-[13.5px] font-semibold text-sidebar-strong">ZeroStockView</span>
@@ -34,7 +41,7 @@ const route = useRoute();
         </div>
 
         <nav class="flex flex-col gap-0.5 overflow-y-auto" aria-label="画面の切り替え">
-            <template v-for="group in NAV_GROUPS" :key="group.label">
+            <template v-for="group in navGroups" :key="group.label">
                 <p class="px-2.5 pt-3.5 pb-1 text-[10.5px] font-medium text-sidebar-dim">{{ group.label }}</p>
                 <RouterLink
                     v-for="item in group.items"
@@ -53,6 +60,6 @@ const route = useRoute();
             </template>
         </nav>
 
-        <div class="mt-auto pt-4"><IntegrationStatus /></div>
+        <div v-if="showIntegrationStatus" class="mt-auto pt-4"><IntegrationStatus /></div>
     </aside>
 </template>

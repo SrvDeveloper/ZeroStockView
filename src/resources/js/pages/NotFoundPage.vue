@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
+import { computed } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
+import { homeRouteName } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 
 const router = useRouter();
+const auth = useAuthStore();
+const home = computed(() => (auth.role ? homeRouteName(auth.role) : "survey-history"));
+const homeLabel = computed(() => (home.value === "survey-history" ? "在庫調査履歴へ" : "データ取込へ"));
+const homeIcon = computed(() => (home.value === "survey-history" ? "history" : "upload"));
 </script>
 
 <template>
@@ -16,8 +23,7 @@ const router = useRouter();
                 <h1 class="mt-2 text-[15px] font-bold">ページが見つかりません</h1>
                 <p class="mt-1 max-w-xs text-[11.5px] text-muted">URL が間違っているか、ページが移動・削除された可能性があります。</p>
                 <div class="mt-5 flex flex-wrap justify-center gap-2">
-                    <BaseButton variant="primary" icon="history" @click="router.push({ name: 'survey-history' })">在庫調査履歴へ</BaseButton>
-                    <BaseButton variant="secondary" icon="upload" @click="router.push({ name: 'data-import' })">データ取込へ</BaseButton>
+                    <BaseButton variant="primary" :icon="homeIcon" @click="router.push({ name: home })">{{ homeLabel }}</BaseButton>
                 </div>
             </div>
         </section>

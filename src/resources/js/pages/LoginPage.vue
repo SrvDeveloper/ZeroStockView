@@ -6,6 +6,7 @@ import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseInput from "@/components/ui/BaseInput.vue";
 import { useAuthStore } from "@/stores/auth";
+import { EDITOR_ROLES, canAccess, homeRouteName } from "@/constants/roles";
 
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
@@ -33,10 +34,10 @@ async function submit() {
         errorMessage.value = "ログインIDまたはパスワードが正しくありません。";
         return;
     }
-    await Promise.allSettled([importSettings.load(), surveys.load()]);
+    await Promise.allSettled([surveys.load(), ...(canAccess(auth.role, EDITOR_ROLES) ? [importSettings.load()] : [])]);
     submitting.value = false;
     const redirect = typeof route.query.redirect === "string" ? route.query.redirect : undefined;
-    await router.push(redirect ?? { name: "data-import" });
+    await router.push(redirect ?? { name: homeRouteName(auth.user!.role) });
 }
 </script>
 
