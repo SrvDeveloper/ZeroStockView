@@ -17,8 +17,8 @@ class AuthController extends Controller
 
         if (! Auth::attempt($credentials)) {
             return response()->json([
-                'message' => 'ログインIDまたはパスワードが正しくありません。',
-                'errors' => ['login_id' => ['ログインIDまたはパスワードが正しくありません。']],
+                'message' => '認証情報が正しくありません。',
+                'errors' => ['login_id' => ['認証情報が正しくありません。']],
             ], 422);
         }
 
