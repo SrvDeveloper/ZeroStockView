@@ -621,7 +621,7 @@ describe("survey import setting display", () => {
         expect(menuButton.attributes("disabled")).toBeUndefined();
         surveys.surveys[0].files = [];
         await nextTick();
-        expect(wrapper.text()).toContain("取込ファイルが削除されているため、再照合機能は利用できません。");
+        expect(wrapper.text()).toContain("再照合に使える取込ファイルがないため、再照合機能は利用できません。");
         expect(menuButton.attributes("disabled")).toBeDefined();
     });
 

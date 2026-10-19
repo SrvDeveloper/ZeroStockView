@@ -117,7 +117,8 @@ class SurveyAmazonInventorySyncService
             ->where('executed_at', '<', $day->addDay());
     }
 
-    private function latestSuccessfulImport(string $day): ?AmazonInventoryImport
+    /** その日（日本時間の暦日 YYYY-MM-DD）の最新の成功した取込 */
+    public function latestSuccessfulImport(string $day): ?AmazonInventoryImport
     {
         return AmazonInventoryImport::query()
             ->where('status', 'succeeded')

@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\AmazonInventoryImport;
 use App\Models\ImportSetting;
 use App\Models\ImportTarget;
 use App\Models\Survey;
 use Carbon\CarbonInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -35,7 +37,7 @@ class InventoryImportService
 
         $sourceFiles = $source->files->whereIn('file_type', array_values(self::FILE_TYPES));
         if ($sourceFiles->isEmpty()) {
-            throw ValidationException::withMessages(['files' => ['取込ファイルが削除されているため、再照合できません。']]);
+            throw ValidationException::withMessages(['files' => ['再照合に使える取込ファイルがないため、再照合できません。']]);
         }
 
         foreach ($sourceFiles as $file) {
@@ -77,14 +79,7 @@ class InventoryImportService
         }
 
         $this->crossWalker->refresh($targets);
-        $allTargets = ImportTarget::query()->with(['setting', 'product.skus' => fn ($query) => $query->where('status', 'active')])
-            ->orderBy('import_setting_id')->orderBy('sort_order')->get();
-        $targets = $allTargets->unique('product_id')->sortBy('product.product_code')->values();
-        $groupMemberships = $allTargets->groupBy('product_id')->map(fn ($members): array => $members->map(fn ($member): array => [
-            'key' => 'setting:'.$member->import_setting_id,
-            'name' => $member->setting->name,
-            'sortOrder' => $member->sort_order,
-        ])->all());
+        [$targets, $groupMemberships] = $this->loadTargets();
 
         $storedFiles = [];
         $replacedFiles = [];
@@ -166,46 +161,7 @@ class InventoryImportService
                         $this->applyTq($stocks, $tqLookup, $allFiles['free_stock'], '可能在庫数', 'free_stock', false);
                     }
 
-                    $existingProducts = $survey->products()->with('skus')->get();
-                    $productMemos = $existingProducts->pluck('memo', 'product_code');
-                    $skuMemos = $existingProducts->flatMap->skus->pluck('memo', 'sku_code');
-                    $priorProducts = $existingProducts->keyBy('product_code');
-                    $survey->products()->delete();
-
-                    foreach ($targets as $index => $target) {
-                        $product = $target->product;
-                        $priorProduct = $priorProducts->get($product->product_code);
-                        $priorMemberships = collect($priorProduct?->group_memberships ?? []);
-                        if ($priorProduct !== null && $priorMemberships->isEmpty() && $previousSettingName !== null) {
-                            $priorMemberships->push(['key' => 'legacy:'.$previousSettingName, 'name' => $previousSettingName, 'sortOrder' => $priorProduct->sort_order]);
-                        }
-                        $memberships = $priorMemberships->concat($groupMemberships->get($product->id, []))
-                            ->unique('key')->values()->all();
-                        $surveyProduct = $survey->products()->create([
-                            'product_code' => $product->product_code,
-                            'brand' => $product->brand,
-                            'category' => $product->category,
-                            'parent_asin' => $product->parent_asin,
-                            'status' => $product->status,
-                            'source_updated_at' => $product->source_updated_at,
-                            'sort_order' => $index + 1,
-                            'group_memberships' => $memberships,
-                            'memo' => $productMemos->get($product->product_code),
-                        ]);
-
-                        foreach ($product->skus as $sku) {
-                            $surveyProduct->skus()->create(array_merge([
-                                'sku_code' => $sku->sku_code,
-                                'child_asin' => $sku->child_asin,
-                                'status' => $sku->status,
-                                'tq_item_no' => $sku->tq_item_no,
-                                'tq_color_no' => $sku->tq_color_no,
-                                'tq_size' => $sku->tq_size,
-                                'sort_order' => $sku->sort_order,
-                                'memo' => $skuMemos->get($sku->sku_code),
-                            ], $stocks[$sku->sku_code]));
-                        }
-                    }
+                    $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $previousSettingName);
 
                     foreach ($classifiedFiles as $key => $file) {
                         $type = self::FILE_TYPES[$key];
@@ -273,6 +229,149 @@ class InventoryImportService
         }
 
         return $survey->refresh()->load(['products.skus', 'files', 'amazonImport.snapshots']);
+    }
+
+    /**
+     * Amazon在庫の取得だけが成功した日に、ファイルなしの調査を作成する。
+     * 品番・SKUは手元の商品情報を使い、CrossWalkerは呼ばない（Amazon取得の開始時に最新化済み）。
+     * BOSS・フリー在庫・ECストックは取込待ち（null）とし、Amazon数量は同日の最新成功分を反映する。
+     *
+     * @return Survey|null 作成した調査。成功した取込でない、同じ日の調査がすでにある、対象品番がない場合は null
+     */
+    public function createFromAmazonImport(AmazonInventoryImport $import): ?Survey
+    {
+        if ($import->status !== 'succeeded' || $import->snapshot_date === null || $import->basis_at === null) {
+            return null;
+        }
+
+        $date = $import->snapshot_date->toDateString();
+        if ($this->surveyExistsOn($date)) {
+            return null;
+        }
+
+        [$targets, $groupMemberships] = $this->loadTargets();
+        if ($targets->isEmpty()) {
+            return null;
+        }
+
+        $completedAt = $import->completed_at?->copy()->setTimezone('Asia/Tokyo');
+        $executedAt = $completedAt !== null && $completedAt->toDateString() === $date ? $import->completed_at : $import->basis_at;
+
+        try {
+            return DB::transaction(function () use ($targets, $groupMemberships, $date, $executedAt): ?Survey {
+                if ($this->surveyExistsOn($date)) {
+                    return null;
+                }
+
+                $survey = Survey::query()->create([
+                    'executed_at' => $executedAt,
+                    'survey_date' => $date,
+                    'import_setting_name' => null,
+                    'includes_amazon_inventory' => false,
+                    'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
+                    'amazon_inventory_import_id' => null,
+                ]);
+
+                $stocks = $targets->pluck('product.skus')->flatten()->mapWithKeys(fn ($sku): array => [
+                    $sku->sku_code => [
+                        'amazon_own_stock' => null,
+                        'amazon_fba_stock' => null,
+                        'boss_own_stock' => null,
+                        'boss_rfc_stock' => null,
+                        'free_stock' => null,
+                        'ec_stock' => null,
+                    ],
+                ])->all();
+                $this->writeProducts($survey, $targets, $groupMemberships, $stocks, null);
+                $this->amazonSync->syncSurvey($survey->id);
+
+                return $survey;
+            });
+        } catch (UniqueConstraintViolationException $exception) {
+            if (str_contains($exception->getMessage(), 'survey_date')) {
+                // 同じ日の調査をファイル取込が先に作成した。Amazon数量はその調査へ同期される。
+                return null;
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function surveyExistsOn(string $date): bool
+    {
+        return Survey::query()
+            ->where(fn ($query) => $query->where('survey_date', $date)->orWhereDate('executed_at', $date))
+            ->exists();
+    }
+
+    /**
+     * 全品番グループの対象品番を重複なく集め、有効なSKUと各品番のグループ所属を読み込む。
+     *
+     * @return array{0: Collection<int, ImportTarget>, 1: Collection<int, list<array{key: string, name: string, sortOrder: int}>>}
+     */
+    private function loadTargets(): array
+    {
+        $allTargets = ImportTarget::query()->with(['setting', 'product.skus' => fn ($query) => $query->where('status', 'active')])
+            ->orderBy('import_setting_id')->orderBy('sort_order')->get();
+        $targets = $allTargets->unique('product_id')->sortBy('product.product_code')->values();
+        $groupMemberships = $allTargets->groupBy('product_id')->map(fn ($members): array => $members->map(fn ($member): array => [
+            'key' => 'setting:'.$member->import_setting_id,
+            'name' => $member->setting->name,
+            'sortOrder' => $member->sort_order,
+        ])->all());
+
+        return [$targets, $groupMemberships];
+    }
+
+    /**
+     * 調査の品番・SKUを作り直す。既存のメモとグループ所属は引き継ぐ。
+     *
+     * @param  Collection<int, ImportTarget>  $targets
+     * @param  Collection<int, list<array{key: string, name: string, sortOrder: int}>>  $groupMemberships
+     * @param  array<string, array<string, int|null>>  $stocks
+     */
+    private function writeProducts(Survey $survey, Collection $targets, Collection $groupMemberships, array $stocks, ?string $previousSettingName): void
+    {
+        $existingProducts = $survey->products()->with('skus')->get();
+        $productMemos = $existingProducts->pluck('memo', 'product_code');
+        $skuMemos = $existingProducts->flatMap->skus->pluck('memo', 'sku_code');
+        $priorProducts = $existingProducts->keyBy('product_code');
+        $survey->products()->delete();
+
+        foreach ($targets as $index => $target) {
+            $product = $target->product;
+            $priorProduct = $priorProducts->get($product->product_code);
+            $priorMemberships = collect($priorProduct?->group_memberships ?? []);
+            if ($priorProduct !== null && $priorMemberships->isEmpty() && $previousSettingName !== null) {
+                $priorMemberships->push(['key' => 'legacy:'.$previousSettingName, 'name' => $previousSettingName, 'sortOrder' => $priorProduct->sort_order]);
+            }
+            $memberships = $priorMemberships->concat($groupMemberships->get($product->id, []))
+                ->unique('key')->values()->all();
+            $surveyProduct = $survey->products()->create([
+                'product_code' => $product->product_code,
+                'brand' => $product->brand,
+                'category' => $product->category,
+                'parent_asin' => $product->parent_asin,
+                'status' => $product->status,
+                'source_updated_at' => $product->source_updated_at,
+                'sort_order' => $index + 1,
+                'group_memberships' => $memberships,
+                'memo' => $productMemos->get($product->product_code),
+            ]);
+
+            foreach ($product->skus as $sku) {
+                $surveyProduct->skus()->create(array_merge([
+                    'sku_code' => $sku->sku_code,
+                    'child_asin' => $sku->child_asin,
+                    'status' => $sku->status,
+                    'tq_item_no' => $sku->tq_item_no,
+                    'tq_color_no' => $sku->tq_color_no,
+                    'tq_size' => $sku->tq_size,
+                    'sort_order' => $sku->sort_order,
+                    'memo' => $skuMemos->get($sku->sku_code),
+                ], $stocks[$sku->sku_code]));
+            }
+        }
     }
 
     /**

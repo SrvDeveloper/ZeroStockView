@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\InventoryImportService;
 use App\Services\SurveyAmazonInventorySyncService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
@@ -10,11 +11,11 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-#[Signature('survey:amazon-reconcile {date? : 対象日 YYYY-MM-DD。省略時は当日の未反映分のみ}')]
+#[Signature('survey:amazon-reconcile {date? : 対象日 YYYY-MM-DD。省略時は当日の未反映分のみ} {--create-survey : 成功したAmazon在庫取込があって調査がない日は、Amazon在庫だけの調査を作成する}')]
 #[Description('Amazon在庫の取得結果を同日の在庫調査履歴に反映します')]
 class ReconcileSurveyAmazonInventory extends Command
 {
-    public function handle(SurveyAmazonInventorySyncService $service): int
+    public function handle(SurveyAmazonInventorySyncService $service, InventoryImportService $importer): int
     {
         $argument = $this->argument('date');
         if ($argument !== null) {
@@ -30,6 +31,10 @@ class ReconcileSurveyAmazonInventory extends Command
             }
         } else {
             $date = CarbonImmutable::now('Asia/Tokyo')->startOfDay();
+        }
+
+        if ($this->option('create-survey') && ! $this->createSurvey($date, $service, $importer)) {
+            return self::FAILURE;
         }
 
         try {
@@ -49,5 +54,35 @@ class ReconcileSurveyAmazonInventory extends Command
         $this->info("{$date->toDateString()} の調査履歴 {$count} 件を反映しました。");
 
         return self::SUCCESS;
+    }
+
+    /** 自動作成の失敗時の復旧と、機能追加前に取込済みだった日の補完に使う。5分ごとの定期実行には付けない（削除した調査を作り直さないため） */
+    private function createSurvey(CarbonImmutable $date, SurveyAmazonInventorySyncService $service, InventoryImportService $importer): bool
+    {
+        $import = $service->latestSuccessfulImport($date->toDateString());
+        if ($import === null) {
+            $this->info("{$date->toDateString()} は成功したAmazon在庫取込がないため、調査を作成しません。");
+
+            return true;
+        }
+
+        try {
+            $survey = $importer->createFromAmazonImport($import);
+        } catch (Throwable $exception) {
+            Log::error('Amazon在庫取込からの調査の作成に失敗しました。', [
+                'import_id' => $import->id,
+                'snapshot_date' => $date->toDateString(),
+                'exception' => $exception,
+            ]);
+            $this->error('調査の作成に失敗しました。storage/logs/laravel.log を確認してください。');
+
+            return false;
+        }
+
+        $this->info($survey === null
+            ? "{$date->toDateString()} の調査はすでにあるため、作成しませんでした。"
+            : "{$date->toDateString()} のAmazon在庫だけの調査を作成しました。");
+
+        return true;
     }
 }

@@ -8,6 +8,7 @@ use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\InventoryImportService;
 use App\Services\InventoryTrendCsvExporter;
 use App\Services\SurveyAmazonInventorySyncService;
 use Carbon\Carbon;
@@ -183,6 +184,51 @@ class ApiBackendTest extends TestCase
         $this->getJson('/api/surveys/'.$second->json('data.id'))
             ->assertOk()->assertJsonPath('data.products.1.productCode', 'B-2001')
             ->assertJsonPath('data.products.1.groups.0.name', 'Bグループ');
+    }
+
+    public function test_file_import_after_an_amazon_only_survey_updates_the_same_survey(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $this->travelTo(CarbonImmutable::parse('2026-10-19 09:05:00', 'Asia/Tokyo'));
+        $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated();
+        $import = AmazonInventoryImport::query()->create([
+            'status' => 'succeeded',
+            'trigger_source' => 'scheduled',
+            'snapshot_date' => '2026-10-19',
+            'basis_at' => '2026-10-19 09:00:00',
+            'completed_at' => '2026-10-19 09:05:00',
+        ]);
+        $import->snapshots()->create([
+            'product_code' => 'A-1001',
+            'sku_code' => 'A-1001-01-M',
+            'asin' => 'B000000001',
+            'amazon_own_stock' => 4,
+            'amazon_fba_stock' => 6,
+            'basis_at' => $import->basis_at,
+        ]);
+        $amazonOnly = app(InventoryImportService::class)->createFromAmazonImport($import);
+        $this->assertNotNull($amazonOnly);
+        $this->getJson('/api/surveys/'.$amazonOnly->id)
+            ->assertOk()
+            ->assertJsonCount(0, 'data.files')
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 4)
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', null);
+        SurveyProduct::query()->update(['memo' => '再入荷待ち']);
+
+        $this->travelTo(CarbonImmutable::parse('2026-10-19 10:00:00', 'Asia/Tokyo'));
+        $response = $this->post('/api/surveys', [
+            'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,5,1\n")],
+        ])->assertOk();
+
+        $this->assertSame((string) $amazonOnly->id, $response->json('data.id'));
+        $this->assertSame($amazonOnly->executed_at->toISOString(), $response->json('data.executedAt'));
+        $this->assertSame(4, $response->json('data.products.0.skus.0.stock.bossOwn'));
+        $this->assertSame(4, $response->json('data.products.0.skus.0.stock.amazonOwn'));
+        $this->assertSame(6, $response->json('data.products.0.skus.0.stock.amazonFba'));
+        $this->assertNull($response->json('data.products.0.skus.0.stock.ecStock'));
+        $this->assertSame('再入荷待ち', $response->json('data.products.0.memo'));
+        $this->assertDatabaseCount('surveys', 1);
     }
 
     public function test_import_can_refresh_more_than_fifty_distinct_products_across_groups(): void
@@ -380,7 +426,7 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('data.0.id', $rerunResponse->json('data.id'));
         $this->assertSame(1, SurveySku::query()->count());
         $this->deleteJson('/api/surveys/'.$response->json('data.id').'/files')->assertNoContent();
-        $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId])->assertUnprocessable()->assertJsonPath('errors.files.0', '取込ファイルが削除されているため、再照合できません。');
+        $this->postJson('/api/surveys/'.$response->json('data.id').'/rerun', ['import_setting_id' => $rerunSettingId])->assertUnprocessable()->assertJsonPath('errors.files.0', '再照合に使える取込ファイルがないため、再照合できません。');
         $this->deleteJson('/api/import-settings/'.$settingId)->assertNoContent();
         $this->getJson('/api/surveys/'.$response->json('data.id'))
             ->assertOk()

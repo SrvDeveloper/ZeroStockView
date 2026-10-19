@@ -32,4 +32,5 @@ XServer側でジョブの実行時間や負荷による制限を受ける可能�
 - 原因を解消した後は画面の「Amazon 在庫を取得」で手動再実行する。定期実行コマンドは同じ東京日付に2回投入しないため、当日の失敗を自動再試行しない。
 - 古い失敗ジョブが残っていても、そのジョブの `queue:retry` は使わず画面から新しい取込を開始する。失敗した履歴と正常な履歴を区別して保持できる。
 - Amazon取得が `succeeded` なのに同日の3ファイル調査が取込待ちのままなら、`storage/logs/laravel.log` の「調査履歴への反映に失敗」を確認する。Schedulerは当日の未反映分を次の5分間隔で再試行する。日付が変わった後や手動で全件を再照合する場合は、アプリの `src/` で `/usr/bin/php8.3 artisan survey:amazon-reconcile YYYY-MM-DD` を実行する。日付は東京日付で指定し、旧5ファイル履歴は対象外とする。
+- Amazon取得が `succeeded` で、その日にファイル取込がなければ、Amazon在庫だけの調査が自動で作られる。作られていなければ `storage/logs/laravel.log` の「その日の調査の作成に失敗」を確認し、原因を解消してから `/usr/bin/php8.3 artisan survey:amazon-reconcile YYYY-MM-DD --create-survey` を実行する。同じ日の調査があれば作成しない。5分ごとの定期実行では作成しないので、削除した調査が勝手に作り直されることはない。
 - 過去の3ファイル調査でAmazon在庫は保存されているのに子ASINが空の場合も、修正版を配置してから同じ `survey:amazon-reconcile YYYY-MM-DD` を実行する。対応する成功取込のASINが調査履歴へ補完される。
