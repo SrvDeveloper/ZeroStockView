@@ -4,6 +4,7 @@ import ManualScreenshot from "@/components/manual/ManualScreenshot.vue";
 import ManualSection from "@/components/manual/ManualSection.vue";
 import ManualStep from "@/components/manual/ManualStep.vue";
 import ManualTableOfContents from "@/components/manual/ManualTableOfContents.vue";
+import ManualTermTable from "@/components/manual/ManualTermTable.vue";
 
 const sections = [
     { id: "introduction", title: "はじめに" },
@@ -12,25 +13,47 @@ const sections = [
     { id: "basic-operation-free", title: "取込ファイルの準備③：フリー在庫" },
     { id: "data-import", title: "データ取込" },
     { id: "basic-operation-amazon", title: "Amazon在庫の取得" },
+    { id: "survey-history", title: "在庫調査履歴" },
+    { id: "survey-result", title: "在庫調査結果" },
     { id: "notes", title: "注意事項" },
 ];
 
 /** データ取込画面「Amazon 在庫」欄の状態（DataImportPage.vue の表示文言） */
 const amazonImportStatuses = [
-    { label: "受付", meaning: "取得の依頼を受け付け、開始を待っています。" },
-    { label: "処理中", meaning: "Amazonから在庫レポートを取得しています。" },
-    { label: "成功", meaning: "取得が終わり、その日の在庫調査に反映しました。" },
-    { label: "失敗", meaning: "取得できませんでした。結果の欄に理由が表示されます。" },
+    { term: "受付", meaning: "取得の依頼を受け付け、開始を待っています。" },
+    { term: "処理中", meaning: "Amazonから在庫レポートを取得しています。" },
+    { term: "成功", meaning: "取得が終わり、その日の在庫調査に反映しました。" },
+    { term: "失敗", meaning: "取得できませんでした。結果の欄に理由が表示されます。" },
 ];
 
 /** 在庫調査結果画面「Amazon 在庫」の表示（SurveyResultPage.vue の表示文言） */
 const amazonSurveyStatuses = [
-    { label: "取込済み", meaning: "その日のAmazon在庫を反映済みです。" },
-    { label: "取込待ち", meaning: "その日のAmazon在庫がまだ取得できていません。取得に成功すると自動で反映されます。在庫調査結果画面は30秒ごとに自動更新します。" },
+    { term: "取込済み", meaning: "その日のAmazon在庫を反映済みです。" },
+    { term: "取込待ち", meaning: "その日のAmazon在庫がまだ取得できていません。取得に成功すると自動で反映されます。在庫調査結果画面は30秒ごとに自動更新します。" },
     {
-        label: "一部未取得",
-        meaning: "取得は成功しましたが、Amazonの在庫レポートに含まれていないSKUがあります。そのSKUのAmazon在庫は「—」と表示され、在庫総数は未確定になります。",
+        term: "一部未取得",
+        meaning: "取得は成功しましたが、Amazonの在庫レポートに含まれていないSKUがあります。そのSKUのAmazon在庫は「取込待ち」と表示され、在庫総数は未確定になります。",
     },
+];
+
+/** 在庫調査履歴のカレンダーの印（SurveyCalendar.vue・SurveyHistoryPage.vue の凡例） */
+const calendarMarks = [
+    { term: "右上の丸", meaning: "Amazon在庫の反映状況です。緑は「Amazon 取込済み」、黄色は「Amazon 未確定」（取込待ち・一部未取得）を表します。" },
+    { term: "全ゼロ n", meaning: "全倉庫ゼロのSKU数です。前の調査日より増えた日は、色付きで「▲」が付きます。" },
+    { term: "3つの四角", meaning: "取込ファイル数（3種類中）です。塗りつぶしの数が、保存期限内のファイルの種類の数です。" },
+    { term: "調査なし", meaning: "調査がない日です（点線の枠）。" },
+];
+
+/** 在庫調査結果の在庫表の表示（StockCell.vue・SurveyResultPage.vue の表示） */
+const stockDisplays = [
+    { term: "数字", meaning: "在庫数です。Amazon・BOSSは、5以下のときに色を変えて表示します。" },
+    { term: "0（色付き）", meaning: "取込済みで、在庫が0と確定しています。" },
+    { term: "—", meaning: "取込待ちです。その種類のファイルを、その日にまだ取り込んでいません。在庫0ではありません。" },
+    { term: "取込待ち（札）", meaning: "Amazon在庫がまだ反映されていないか、Amazonの在庫レポートに含まれていなかったSKUです。" },
+    { term: "対象外", meaning: "ASINが登録されていないため、Amazon在庫を取得しないSKUです。" },
+    { term: "総数", meaning: "全倉庫の合計です。どれかの倉庫が未確定のときは「—」になり、0としては数えません。" },
+    { term: "色付きの行", meaning: "全倉庫ゼロ（総数が0と確定）のSKUです。行の左端にも印が付きます。" },
+    { term: "倉庫別の構成", meaning: "倉庫ごとの在庫の割合を色の帯で示します。総数が未確定のときは「取込後に表示」「Amazon 取込後に表示」と表示されます。" },
 ];
 
 /** 権限ごとにできること（docs/ユーザー管理実装/README.md の確定要件） */
@@ -239,22 +262,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                             「データ取込」画面の「Amazon
                             在庫」欄で確認します。「最新の実行」に状態と、定期実行（毎朝の自動取得）か手動実行かが表示されます。「在庫基準日時」は、Amazon在庫がいつ時点の数かを示します。下の一覧には、直近5回の取得の開始日時・起動（定期／手動）・結果が表示されます。
                         </p>
-                        <div class="mt-2 overflow-x-auto rounded-card border border-line">
-                            <table class="w-full min-w-100 text-left text-[12.5px]" data-amazon-import-statuses>
-                                <thead class="border-b border-line bg-surface-2 text-[11px] text-muted">
-                                    <tr>
-                                        <th class="w-24 px-3 py-2 font-semibold">状態</th>
-                                        <th class="px-3 py-2 font-semibold">意味</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-line-2 text-ink-2">
-                                    <tr v-for="status in amazonImportStatuses" :key="status.label">
-                                        <td class="px-3 py-1.5 font-semibold text-ink">{{ status.label }}</td>
-                                        <td class="px-3 py-1.5">{{ status.meaning }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                        <ManualTermTable class="mt-2" :rows="amazonImportStatuses" term-label="状態" data-amazon-import-statuses />
                     </div>
 
                     <div>
@@ -271,23 +279,139 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">在庫調査結果での表示</h3>
                         <p class="mt-1 text-[13px] leading-relaxed text-ink-2">在庫調査結果画面の上部の「Amazon 在庫」に、その調査へのAmazon在庫の反映状況が表示されます。</p>
-                        <div class="mt-2 overflow-x-auto rounded-card border border-line">
-                            <table class="w-full min-w-100 text-left text-[12.5px]" data-amazon-survey-statuses>
-                                <thead class="border-b border-line bg-surface-2 text-[11px] text-muted">
-                                    <tr>
-                                        <th class="w-24 px-3 py-2 font-semibold">表示</th>
-                                        <th class="px-3 py-2 font-semibold">意味</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-line-2 text-ink-2">
-                                    <tr v-for="status in amazonSurveyStatuses" :key="status.label">
-                                        <td class="px-3 py-1.5 font-semibold text-ink">{{ status.label }}</td>
-                                        <td class="px-3 py-1.5">{{ status.meaning }}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
+                        <ManualTermTable class="mt-2" :rows="amazonSurveyStatuses" data-amazon-survey-statuses />
                     </div>
+                </ManualSection>
+
+                <ManualSection id="survey-history" title="在庫調査履歴" description="これまでの在庫調査を、日付ごとに確認します。" icon="history">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
+                        メニューの「在庫調査履歴」を押下します。すべての権限で使えます。在庫調査は1日1件で、削除するまで保持されます。右上の「カレンダー」「リスト」で表示を切り替えます。「最新の在庫を再読込」を押下すると、履歴を最新の状態に更新します。
+                    </p>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">カレンダーで見る</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            「＜」「＞」で月を移動します。月の横の「調査 n 日 ／ 経過 n
+                            日」は、その月に調査がある日数と、今日までの日数です。調査のある日のマスには、次の印が表示されます。印の意味は、カレンダーの下の凡例でも確認できます。
+                        </p>
+                        <ManualTermTable class="mt-2" :rows="calendarMarks" term-label="印" data-calendar-marks />
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">日を選んで詳細を見る</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">調査のある日を押下すると、右側に「○月○日（○）の調査」の詳細が表示されます。最初は最新の調査が選ばれています。</p>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                            <li>全倉庫ゼロ・一部の倉庫でゼロのSKU数（前日比）と、品番数・SKU数</li>
+                            <li> 初回取込日時（その日に最初に取り込んだ日時）、結果作成日時、結果更新日時（追加取込やAmazon在庫の反映で更新された日時）、Amazon 在庫の反映状況 </li>
+                            <li>
+                                取込ファイル：BOSS・ECストック・フリー在庫ごとに、ファイル名か「ファイルなし」「保存期限切れ」が表示されます。右端のボタンで1件ずつ、「一括ダウンロード」で保存中のファイルをまとめて（ZIP形式）ダウンロードできます。
+                            </li>
+                            <li>「結果を開く」で在庫調査結果画面を開き、「Excel出力」でその日の調査結果をExcelファイルでダウンロードします。</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">リストで見る</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            調査を新しい順に10件ずつ表示します。「調査期間」に開始日と終了日を指定すると、その期間の調査だけを表示します（「クリア」で解除）。一覧には、初回取込日時・品番数・SKU数・取込ファイル数・Amazon
+                            在庫の反映状況・全倉庫ゼロのSKU数が表示されます。全倉庫ゼロが前の調査日より増えた日は、数字が色付きで表示されます。右端の「結果を開く」と、表のアイコンの「Excel出力」は、カレンダーの詳細欄と同じです。
+                        </p>
+                    </div>
+
+                    <ManualCallout title="調査の削除（特権管理者のみ）" tone="warning"
+                        >詳細欄の「この日の調査を削除」か、リストのごみ箱のアイコンで削除します。削除すると、その日の調査結果に加えて、メモと取込ファイルも削除され、元に戻せません。</ManualCallout
+                    >
+                </ManualSection>
+
+                <ManualSection id="survey-result" title="在庫調査結果" description="1日分の在庫調査を、品番・SKUごとに確認します。" icon="fact_check">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
+                        在庫調査履歴の「結果を開く」を押下するか、データ取込が完了すると開きます。すべての権限で使えます。「調査履歴に戻る」で在庫調査履歴に戻ります。
+                    </p>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">画面上部のまとめ</h3>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                            <li>
+                                見出しの下に、初回取込日時・結果作成日時・結果更新日時と、取込ファイル（保存期限内のファイルの種類の数）が表示されます。「一括ダウンロード」で、保存中の取込ファイルをまとめてダウンロードできます。
+                            </li>
+                            <li>「対象」は調査したSKU数と品番数、「全倉庫ゼロ」「一部の倉庫でゼロ」はそれぞれのSKU数です。「前回比」は、直前の調査との差です。</li>
+                            <li>
+                                「Amazon 在庫」は、Amazon在庫の反映状況です（意味は「Amazon在庫の取得」の表を参照）。下の「基準 hh:mm ・ 照合
+                                n/n」は、Amazon在庫の基準時刻と、Amazon在庫を取得できたSKU数／ASINのあるSKU数です。
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">在庫表の見方</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            品番ごとに、SKUの在庫を倉庫別（Amazon・BOSS・フリー在庫・ECストック）に表示します。Amazonは自社発送とFBA、BOSSは自社倉庫とRFC倉庫の合計です。「全倉庫ゼロ」は総数が0と確定したSKU、「一部の倉庫でゼロ」は総数が1以上で、0の倉庫があるSKUです。
+                        </p>
+                        <ManualTermTable class="mt-2" :rows="stockDisplays" data-stock-displays />
+                    </div>
+                    <ManualCallout title="AmazonとBOSSの内訳を見る" tone="tip"
+                        >キーボードのCtrlキーを押しながら、Amazon・BOSSの数字にマウスを重ねると、内訳（Amazonは自社／FBA、BOSSは自社／RFC）が表示されます。</ManualCallout
+                    >
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">絞り込む</h3>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                            <li>品番グループ・ブランド・カテゴリを選ぶか、品番・SKU・ASINの一部を入力して絞り込みます。SKUやASINで絞り込むと、該当するSKUの行に印が付きます。</li>
+                            <li>
+                                「在庫ゼロ」「在庫あり」のボタン（Amazon・BOSS・フリー・ECストック）を押下すると、在庫の条件で絞り込みます。複数押下したときは、「結合」で「AND」（すべて満たす）か「OR」（どれかを満たす）を選びます。取込待ち（「—」）の倉庫は、在庫ゼロの条件に該当しません。
+                            </li>
+                            <li>該当したSKU数は「該当 n ／ n SKU」に表示されます。「条件をクリア」で、すべての条件を解除します。</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">Excelに出力する</h3>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                            <li>「全件をExcel出力」：調査のすべてのSKUを出力します。品番グループを選んでいるときは、そのグループのSKUを出力します。</li>
+                            <li>「絞込結果をExcel出力」：絞り込みで該当したSKUだけを出力します。</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">メモを書く（特権管理者のみ）</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            品番の見出しの右にある「品番のメモを追加」と、SKUの行の「メモを追加」に入力します。入力欄から離れると自動で保存されます。メモは調査（日）ごとに保存され、同じ日の追加取込や再照合では残りますが、別の日の調査には引き継がれません。特権管理者以外は、メモを読むことだけができます。
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">最新の在庫を再読込</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            「最新の在庫を再読込」を押下すると、この調査を最新の状態に読み込み直します。この画面は30秒ごとに自動で更新されますが、Amazon在庫が反映されたかをすぐ確かめたいときなどに使います。
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">保存ファイルで再照合（編集者・特権管理者）</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            その日に取り込んで保存されているファイルを使い、現在の品番グループの品番で照合し直して、この調査を更新します。ファイルを添付し直す必要はありません。次のようなときに使います。
+                        </p>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                            <li>品番グループに品番を追加・削除したあと、取込済みの日の結果にも反映したいとき</li>
+                            <li>CrossWalkerでSKUの情報（ASIN、ターコイズの品番・カラー・サイズ）を直したあと、結果に反映したいとき</li>
+                        </ul>
+                    </div>
+                    <ManualStep :number="1" title="「保存ファイルで再照合」を押下します。">
+                        <p>「差異照合メニュー」が開きます。</p>
+                    </ManualStep>
+                    <ManualStep :number="2" title="表示する品番グループを選んで、再照合を実行します。">
+                        <p>
+                            「再照合後に表示する品番グループ」を選び、「再照合を実行」を押下します。照合の対象は、選んだグループに関係なく、すべての品番グループの品番です。完了すると「調査結果を再照合しました」と表示され、選んだグループの結果が表示されます。
+                        </p>
+                        <p> 初回取込日時は変わりません。保存期限（30日）を過ぎたファイルの種類は、取込待ちになります。Amazon在庫は、その日に取得した最新の在庫で反映し直します。 </p>
+                    </ManualStep>
+                    <ManualCallout title="再照合できない調査" tone="warning">
+                        次の調査では「保存ファイルで再照合」を押せず、画面上部に理由が表示されます。
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5">
+                            <li>Amazon在庫をファイルで取り込んでいた旧方式（5ファイル）の調査。保存されているAmazon在庫を守るため、再照合できません。</li>
+                            <li>保存期限が過ぎるなどして、再照合に使える取込ファイルが1件もない調査。</li>
+                        </ul>
+                    </ManualCallout>
                 </ManualSection>
 
                 <ManualSection id="notes" title="注意事項" description="操作時の制約や間違えやすい点を記載します。" icon="error">
