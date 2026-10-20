@@ -62,13 +62,13 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
             <div class="min-w-0 space-y-4">
                 <ManualSection id="introduction" title="はじめに" description="このシステムでできることと、1日の作業の流れを説明します。" icon="waving_hand">
-                    <p class="text-[13px] leading-7 text-ink-2">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
                         ZeroStockView（在庫状況調査システム）は、品番グループに登録した品番のSKUごとに、Amazon（自社発送・FBA）、BOSS（自社倉庫・RFC倉庫）、フリー在庫、ECストックの在庫数をまとめて確認するシステムです。在庫数は1日1件の「在庫調査」として保存され、過去の日の在庫を見比べたり、在庫推移として確認したりできます。
                     </p>
 
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">1日の作業の流れ</h3>
-                        <ol class="mt-2 list-decimal space-y-1.5 pl-5 text-[13px] leading-7 text-ink-2">
+                        <ol class="mt-2 list-decimal space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
                             <li>毎朝9:00に、Amazon在庫がSP-APIから自動で取得されます。操作は不要です。</li>
                             <li>
                                 BOSSとターコイズから、取込に使う3種類のファイル（倉庫毎の在庫数レポート、KEEP一覧表、在庫一覧照会表）をダウンロードします。手順は「取込ファイルの準備①〜③」を参照してください。
@@ -81,7 +81,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">権限ごとにできること</h3>
-                        <p class="mt-1 text-[13px] leading-7 text-ink-2">
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
                             ユーザーには「閲覧者」「編集者」「特権管理者」のいずれかの権限が設定されています。使えない操作のボタンやメニューは表示されません。権限の変更は特権管理者に依頼してください。
                         </p>
                         <div class="mt-2 overflow-x-auto rounded-card border border-line">
@@ -170,7 +170,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                 </ManualSection>
 
                 <ManualSection id="data-import" title="データ取込" description="準備したファイルを取り込んで、その日の在庫調査を作成・更新します。" icon="upload">
-                    <p class="text-[13px] leading-7 text-ink-2">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
                         「データ取込」画面は、編集者と特権管理者が使えます。取込の対象は、すべての品番グループに登録した品番です（同じ品番が複数のグループにあっても、1回だけ取り込みます）。Amazon在庫はファイルでは取り込みません。「Amazon在庫の取得」を参照してください。
                     </p>
                     <ManualStep :number="1" title="データ取込画面を開きます。">
@@ -179,7 +179,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </ManualStep>
                     <ManualStep :number="2" title="ファイルを添付します。">
                         <p> 「取込ファイルの準備①〜③」でダウンロードしたCSVを、「ここにCSVをドロップ」の枠にドラッグ＆ドロップします。「ファイルを選択」「フォルダを選択」から選ぶこともできます。 </p>
-                        <ul class="list-disc space-y-1 pl-5">
+                        <ul class="list-disc space-y-0.5 pl-5">
                             <li>1回に添付できるのは1〜3件です。3種類がそろっていなくても取り込めます。</li>
                             <li>ファイルの種類（BOSS・ECストック・フリー在庫）は、CSVの1行目の見出しから自動で判定します。ファイル名を変える必要はありません。</li>
                             <li>間違えて添付したファイルは、ファイル名の右の「×」で外せます。</li>
@@ -199,10 +199,10 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">同じ日に追加で取り込むとき</h3>
-                        <p class="mt-1 text-[13px] leading-7 text-ink-2">
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
                             在庫調査は1日1件です。取込を実行した日の調査がすでにあるときは、新しい調査は作られず、その調査が更新されます（初回取込日時は変わりません）。
                         </p>
-                        <ul class="mt-1 list-disc space-y-1 pl-5 text-[13px] leading-7 text-ink-2">
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
                             <li>添付した種類は、新しいファイルの内容に置き換わります。</li>
                             <li>
                                 添付しなかった種類は、その日に前回取り込んだファイルをそのまま使います。たとえば、午前にBOSSだけを取り込み、午後にECストックとフリー在庫を取り込むと、3種類がそろった調査になります。
@@ -220,10 +220,10 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                 >
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">毎朝9:00の自動取得</h3>
-                        <p class="mt-1 text-[13px] leading-7 text-ink-2">
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
                             毎朝9:00に、品番グループに登録した品番のAmazon在庫を自動で取得します。Amazon側で在庫レポートを作成するため、完了までに時間がかかることがあります。取得が成功すると、その日の在庫調査に反映されます。
                         </p>
-                        <ul class="mt-1 list-disc space-y-1 pl-5 text-[13px] leading-7 text-ink-2">
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
                             <li>その日の在庫調査がすでにあるときは、その調査に反映します。</li>
                             <li>
                                 その日の在庫調査がまだないときは、Amazon在庫だけが入った調査を作成します。BOSS・ECストック・フリー在庫は取込待ちになり、あとでデータ取込を行うと同じ調査に追加されます。
@@ -235,7 +235,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">取得の状態を確認する</h3>
-                        <p class="mt-1 text-[13px] leading-7 text-ink-2">
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
                             「データ取込」画面の「Amazon
                             在庫」欄で確認します。「最新の実行」に状態と、定期実行（毎朝の自動取得）か手動実行かが表示されます。「在庫基準日時」は、Amazon在庫がいつ時点の数かを示します。下の一覧には、直近5回の取得の開始日時・起動（定期／手動）・結果が表示されます。
                         </p>
@@ -259,7 +259,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">手動で取得する（特権管理者のみ）</h3>
-                        <p class="mt-1 text-[13px] leading-7 text-ink-2">
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
                             自動取得が失敗したときや、9:00以降に品番グループへ品番を追加したときは、「Amazon 在庫」欄の「Amazon
                             在庫を取得」を押下して取り直します。完了するまで、画面は自動で更新されます。受付・処理中の取得があるあいだは押せません。同じ日に何回取得しても、調査にはその日に成功した最新の在庫が反映されます。
                         </p>
@@ -270,7 +270,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
                     <div>
                         <h3 class="text-[13.5px] font-semibold text-ink">在庫調査結果での表示</h3>
-                        <p class="mt-1 text-[13px] leading-7 text-ink-2">在庫調査結果画面の上部の「Amazon 在庫」に、その調査へのAmazon在庫の反映状況が表示されます。</p>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">在庫調査結果画面の上部の「Amazon 在庫」に、その調査へのAmazon在庫の反映状況が表示されます。</p>
                         <div class="mt-2 overflow-x-auto rounded-card border border-line">
                             <table class="w-full min-w-100 text-left text-[12.5px]" data-amazon-survey-statuses>
                                 <thead class="border-b border-line bg-surface-2 text-[11px] text-muted">
