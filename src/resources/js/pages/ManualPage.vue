@@ -20,6 +20,8 @@ import SurveyResultSection from "@/components/manual/sections/SurveyResultSectio
 import UserManagementSection from "@/components/manual/sections/UserManagementSection.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import { DEFAULT_MANUAL_SECTION_ID, findManualSection, manualChapterOf } from "@/constants/manual";
+import { canAccess } from "@/constants/roles";
+import { useAuthStore } from "@/stores/auth";
 
 const props = defineProps<{ section?: string }>();
 
@@ -43,6 +45,12 @@ const SECTION_COMPONENTS: Record<string, Component> = {
 /** 存在しない節はルーターで /manual に戻すので、ここでは既定の節を表示するだけにする */
 const current = computed(() => findManualSection(props.section) ?? findManualSection(DEFAULT_MANUAL_SECTION_ID)!);
 const chapter = computed(() => manualChapterOf(current.value.id));
+const auth = useAuthStore();
+/** この節で説明している画面。開けない権限のときは出さない */
+const screen = computed(() => {
+    const target = current.value.screen;
+    return target && canAccess(auth.role, target.roles) ? target : null;
+});
 
 /* ── いま読んでいる小見出し（「このページの内容」で強調する） ── */
 /** 画面上部（ヘッダーの下）を過ぎた最後の小見出しを、いま読んでいる小見出しとする */
@@ -104,11 +112,6 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="flex flex-col gap-4">
-        <div>
-            <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">操作マニュアル</h1>
-            <p class="mt-1 text-[12.5px] text-ink-2">システムの操作方法をご案内します。</p>
-        </div>
-
         <!-- スマホ・タブレット：いまの節を示すバー。押すと目次が開く -->
         <div class="sticky top-12 z-20 lg:hidden" data-mobile-toc>
             <button
@@ -136,10 +139,19 @@ onBeforeUnmount(() => {
             </div>
 
             <article class="flex min-w-0 flex-col gap-5">
-                <ManualSection :id="current.id" :key="current.id" :title="current.title" :description="current.description" :icon="current.icon" :chapter="chapter" :audience="current.audience">
+                <ManualSection :id="current.id" :key="current.id" :title="current.title" :description="current.description" :chapter="chapter" :audience="current.audience" :points="current.points">
                     <component :is="SECTION_COMPONENTS[current.id]" />
                 </ManualSection>
-                <ManualRelatedLinks :ids="current.related" class="rounded-card border border-line bg-surface px-4 py-3 shadow-card 2xl:hidden" />
+                <div class="flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-3.5 shadow-card sm:flex-row sm:items-center sm:justify-between 2xl:hidden">
+                    <ManualRelatedLinks :ids="current.related" />
+                    <RouterLink
+                        v-if="screen"
+                        :to="{ name: screen.routeName }"
+                        class="inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-control bg-ink px-4 text-[13px] font-bold text-white hover:bg-ink-2"
+                        data-open-screen
+                        >{{ screen.label }}<AppIcon name="arrow_forward" :size="16"
+                    /></RouterLink>
+                </div>
                 <ManualPager :current-id="current.id" />
             </article>
 
@@ -157,6 +169,13 @@ onBeforeUnmount(() => {
                         >{{ heading.title }}</a
                     >
                 </nav>
+                <RouterLink
+                    v-if="screen"
+                    :to="{ name: screen.routeName }"
+                    class="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-control bg-ink px-3 text-[13px] font-bold text-white hover:bg-ink-2"
+                    data-open-screen
+                    >{{ screen.label }}<AppIcon name="arrow_forward" :size="16"
+                /></RouterLink>
                 <ManualRelatedLinks :ids="current.related" />
             </aside>
         </div>

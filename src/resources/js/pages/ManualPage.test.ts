@@ -1,9 +1,16 @@
 import { mount, RouterLinkStub } from "@vue/test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
 import ManualScreenshot from "@/components/manual/ManualScreenshot.vue";
 import { MANUAL_SECTIONS, adjacentManualSections } from "@/constants/manual";
+import type { UserRole } from "@/constants/roles";
 import ManualPage from "@/pages/ManualPage.vue";
+import { useAuthStore } from "@/stores/auth";
+
+function signIn(role: UserRole) {
+    useAuthStore().user = { id: "1", loginId: role, role };
+}
 
 function mountManual(section?: string) {
     return mount(ManualPage, { props: { section }, global: { stubs: { RouterLink: RouterLinkStub } }, attachTo: document.body });
@@ -18,6 +25,11 @@ function linkTargets(wrapper: ReturnType<typeof mountManual>, selector: string):
 }
 
 describe("ManualPage", () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+        signIn("admin");
+    });
+
     afterEach(() => {
         document.body.innerHTML = "";
         vi.restoreAllMocks();
@@ -168,6 +180,42 @@ describe("ManualPage", () => {
 
         expect(notes.text()).toContain("取込待ち（—）は在庫0ではありません");
         expect(notes.findAll("[data-integration-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["Amazon SP-API", "CrossWalker", "保存ファイル"]);
+    });
+
+    it("starts each section with its chapter, title, audience and key points", () => {
+        const wrapper = mountManual("data-import");
+
+        expect(wrapper.get("h1").text()).toBe("データ取込");
+        const points = wrapper.findAll("[data-section-points] li").map((point) => point.text());
+        const expected = MANUAL_SECTIONS.find((section) => section.id === "data-import")!.points;
+        expect(points).toHaveLength(expected.length);
+        expected.forEach((point, index) => expect(points[index]).toContain(point));
+        for (const section of MANUAL_SECTIONS) expect(section.points.length, section.id).toBeGreaterThanOrEqual(2);
+    });
+
+    it("shows button and menu names as labels and the outcome of an operation", () => {
+        const wrapper = mountManual("data-import");
+
+        expect(wrapper.findAll('[data-ui-label="menu"]').map((label) => label.text())).toContain("データ取込");
+        expect(wrapper.get('[data-ui-label="primary"]').text()).toContain("取込・調査を実行");
+        expect(wrapper.get("[data-manual-result]").text()).toContain("在庫調査結果画面が開きます");
+        expect(wrapper.findAll("[data-import-errors] tbody td:first-child").map((cell) => cell.text())).toContain("〜のファイルが複数あります。");
+        expect(wrapper.findAll("[data-manual-step]")).toHaveLength(3);
+    });
+
+    it("links to the explained screen only for users who can open it", () => {
+        expect(mountManual("file-management").find("[data-open-screen]").exists()).toBe(true);
+
+        signIn("editor");
+        expect(mountManual("file-management").find("[data-open-screen]").exists()).toBe(false);
+        const dataImport = mountManual("data-import").get("[data-open-screen]");
+        expect(dataImport.text()).toContain("データ取込画面を開く");
+        expect(dataImport.findComponent(RouterLinkStub).props("to")).toEqual({ name: "data-import" });
+
+        signIn("viewer");
+        expect(mountManual("data-import").find("[data-open-screen]").exists()).toBe(false);
+        expect(mountManual("survey-history").find("[data-open-screen]").exists()).toBe(true);
+        expect(mountManual("notes").find("[data-open-screen]").exists()).toBe(false);
     });
 
     it("no longer asks users to rename the downloaded files", () => {

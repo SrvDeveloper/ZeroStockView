@@ -21,7 +21,7 @@ const integrationStatuses = [
 
     <div>
         <ManualHeading id="survey-date">調査の日付とAmazon在庫の反映</ManualHeading>
-        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
+        <ul class="mt-3 list-disc space-y-1 pl-5">
             <li>在庫調査の日付は、取込を実行した日（日本時間）です。0時を過ぎてから取り込むと、翌日の調査になります。</li>
             <li>
                 Amazon在庫は、取得した日の調査にだけ反映されます。毎朝9:00の自動取得が失敗したときは、その日のうちに特権管理者が取り直してください。翌日に取得しても、前の日の調査には反映されません。
@@ -32,7 +32,7 @@ const integrationStatuses = [
 
     <div>
         <ManualHeading id="legacy-surveys">旧方式（5ファイル）の調査</ManualHeading>
-        <p class="mt-2 text-[14px] leading-relaxed text-ink">
+        <p class="mt-3">
             Amazon在庫をSP-APIで自動取得するようになる前は、Amazon在庫もファイル（在庫商品レポート・FBA在庫管理レポート）で取り込んでいました。この方式の調査は、Amazon在庫が取り込んだときの値のまま残り、在庫調査結果の「Amazon
             在庫」に「旧ファイル」と表示されます。保存されているAmazon在庫を守るため、「保存ファイルで再照合」はできません。
         </p>
@@ -40,7 +40,7 @@ const integrationStatuses = [
 
     <div>
         <ManualHeading id="integration-status">連携ステータス（編集者・特権管理者）</ManualHeading>
-        <p class="mt-2 text-[14px] leading-relaxed text-ink">サイドメニューの下に、外部システムとの連携の状態が表示されます。5分ごとに自動で更新されます。</p>
-        <ManualTermTable class="mt-2" :rows="integrationStatuses" term-label="項目" data-integration-statuses />
+        <p class="mt-3">サイドメニューの下に、外部システムとの連携の状態が表示されます。5分ごとに自動で更新されます。</p>
+        <ManualTermTable class="mt-4" :rows="integrationStatuses" term-label="項目" data-integration-statuses />
     </div>
 </template>

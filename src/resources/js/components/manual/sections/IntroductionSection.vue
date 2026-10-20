@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ManualUi from "@/components/manual/ManualUi.vue";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
 import ManualHeading from "@/components/manual/ManualHeading.vue";
 
@@ -18,24 +19,24 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 </script>
 
 <template>
-    <p class="text-[14px] leading-relaxed text-ink">
+    <p>
         ZeroStockView（在庫状況調査システム）は、品番グループに登録した品番のSKUごとに、Amazon（自社発送・FBA）、BOSS（自社倉庫・RFC倉庫）、フリー在庫、ECストックの在庫数をまとめて確認するシステムです。在庫数は1日1件の「在庫調査」として保存され、過去の日の在庫を見比べたり、在庫推移として確認したりできます。
     </p>
 
     <div>
         <ManualHeading id="daily-flow">1日の作業の流れ</ManualHeading>
-        <ol class="mt-2 list-decimal space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
+        <ol class="mt-3 list-decimal space-y-1 pl-5">
             <li>毎朝9:00に、Amazon在庫がSP-APIから自動で取得されます。操作は不要です。</li>
             <li> BOSSとターコイズから、取込に使う3種類のファイルをダウンロードします。</li>
-            <li>「データ取込」画面でファイルを添付して取り込みます。同じ日に2回目以降に取り込んだときは同じ調査が更新されます。</li>
-            <li>「在庫調査履歴」から調査結果を開き、在庫ゼロのSKUなどを確認します。必要に応じてExcelに出力します。</li>
+            <li><ManualUi variant="menu">データ取込</ManualUi>画面でファイルを添付して取り込みます。同じ日に2回目以降に取り込んだときは同じ調査が更新されます。</li>
+            <li><ManualUi variant="menu">在庫調査履歴</ManualUi>から調査結果を開き、在庫ゼロのSKUなどを確認します。必要に応じてExcelに出力します。</li>
         </ol>
     </div>
     <ManualCallout title="取込の順番" tone="tip">Amazon在庫の取得とファイルの取込は、どちらが先でもかまいません。同じ日の在庫調査にまとめて反映されます。</ManualCallout>
 
     <div>
         <ManualHeading id="role-permissions">権限ごとにできること</ManualHeading>
-        <p class="mt-2 text-[14px] leading-relaxed text-ink">
+        <p class="mt-3">
             ユーザーには「閲覧者」「編集者」「特権管理者」のいずれかの権限が設定されています。使えない操作のボタンやメニューは表示されません。権限の変更は特権管理者に依頼してください。
         </p>
         <div class="mt-2 overflow-x-auto rounded-card border border-line">
