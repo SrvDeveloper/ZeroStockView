@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SurveyResultActionsFigure from "@/components/manual/figures/SurveyResultActionsFigure.vue";
 import ManualResult from "@/components/manual/ManualResult.vue";
 import ManualUi from "@/components/manual/ManualUi.vue";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
@@ -27,6 +28,7 @@ const stockDisplays = [
 
     <div>
         <ManualHeading id="summary">画面上部のまとめ</ManualHeading>
+        <SurveyResultActionsFigure class="mt-4" />
         <ul class="mt-3 list-disc space-y-1 pl-5">
             <li>
                 見出しの下に、初回取込日時・結果作成日時・結果更新日時と、取込ファイル（保存期限内のファイルの種類の数）が表示されます。<ManualUi icon="folder_zip">一括ダウンロード</ManualUi

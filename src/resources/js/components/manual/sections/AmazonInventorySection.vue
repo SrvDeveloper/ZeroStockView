@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AmazonInventoryCardFigure from "@/components/manual/figures/AmazonInventoryCardFigure.vue";
 import ManualUi from "@/components/manual/ManualUi.vue";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
 import ManualHeading from "@/components/manual/ManualHeading.vue";
@@ -42,6 +43,7 @@ const amazonSurveyStatuses = [
             <ManualUi variant="menu">データ取込</ManualUi>画面の「Amazon
             在庫」欄で確認します。「最新の実行」に状態と、定期実行（毎朝の自動取得）か手動実行かが表示されます。「在庫基準日時」は、Amazon在庫がいつ時点の数かを示します。下の一覧には、直近5回の取得の開始日時・起動（定期／手動）・結果が表示されます。
         </p>
+        <AmazonInventoryCardFigure class="mt-4" />
         <ManualTermTable class="mt-4" :rows="amazonImportStatuses" term-label="状態" data-amazon-import-statuses />
     </div>
 
