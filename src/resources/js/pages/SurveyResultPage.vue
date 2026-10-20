@@ -22,7 +22,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities } from "@/types";
+import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities, type Survey, type SurveyProductResult, type SurveySkuResult } from "@/types";
 import { formatDateTime } from "@/utils/format";
 import { fileRemainingDays } from "@/utils/files";
 import { amazonStockState as amazonStockStateOf, amazonTotal, bossTotal, previousSurvey, skuTotal, stockState, summarizeSurvey, type StockState } from "@/utils/stock";
@@ -66,15 +66,26 @@ watch(
     (id) => void openSurvey(id),
     { immediate: true },
 );
+/** 画面が見えているか。別のタブに移っている間は取り直さない */
+const pageVisible = ref(document.visibilityState !== "hidden");
+/** Amazon在庫の反映を待っている調査か（取込待ち・一部未取得）。反映済みの調査は取り直さない */
+const waitingForAmazon = computed(() => survey.value?.amazonSource === "sp_api" && (amazonStatus.value === "pending" || amazonStatus.value === "partial"));
 watch(
-    [() => props.id, () => survey.value?.amazonSource],
-    ([, source]) => {
+    [() => props.id, waitingForAmazon, pageVisible],
+    ([, waiting, visible]) => {
         if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
         refreshTimer = undefined;
-        if (source === "sp_api") refreshTimer = window.setInterval(() => void refreshSurvey(), 30000);
+        if (waiting && visible) refreshTimer = window.setInterval(() => void refreshSurvey(), 30000);
     },
     { immediate: true },
 );
+
+/** 画面に戻ったときは、待っている間に反映されていないかをすぐ確かめる */
+function onVisibilityChange() {
+    const visible = document.visibilityState !== "hidden";
+    if (visible && !pageVisible.value && waitingForAmazon.value) void refreshSurvey();
+    pageVisible.value = visible;
+}
 
 async function refreshSurvey() {
     if (refreshingSurvey.value) return;
@@ -157,12 +168,14 @@ onMounted(() => {
     window.addEventListener("keydown", updateControlKeyState);
     window.addEventListener("keyup", updateControlKeyState);
     window.addEventListener("blur", clearControlKeyState);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener("keydown", updateControlKeyState);
     window.removeEventListener("keyup", updateControlKeyState);
     window.removeEventListener("blur", clearControlKeyState);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
     if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
 });
 
@@ -270,83 +283,117 @@ function clearFilters() {
     conditionOperator.value = "and";
 }
 
-const filteredProducts = computed(() => {
-    const s = survey.value;
-    if (!s) return [];
-    const productQ = productCodeQuery.value.trim().toLowerCase();
-    const skuQ = skuQuery.value.trim().toLowerCase();
-    const asinQ = asinQuery.value.trim().toLowerCase();
-    const hasTextQuery = Boolean(skuQ || asinQ);
+const STOCK_KEYS = ["amazonOwn", "amazonFba", "bossOwn", "bossRfc", "freeStock", "ecStock"] as const;
 
-    return groupProducts.value
-        .filter((p) => !brandFilter.value || p.brand === brandFilter.value)
-        .filter((p) => !categoryFilter.value || p.category === categoryFilter.value)
-        .filter((p) => !productQ || p.productCode.toLowerCase().includes(productQ))
-        .map((p) => ({
-            ...p,
-            skus: p.skus
-                .filter((sku) => matchesConditions(sku.stock))
-                .map((sku) => ({
-                    ...sku,
-                    skuMatched: hasTextQuery && (!skuQ || sku.skuCode.toLowerCase().includes(skuQ)) && (!asinQ || sku.asin.toLowerCase().includes(asinQ)),
-                })),
-        }))
-        .filter((p) => p.skus.length > 0 && (!hasTextQuery || p.skus.some((sku) => sku.skuMatched)));
-});
-
-const totalSkuCount = computed(() => groupProducts.value.reduce((sum, p) => sum + p.skus.length, 0));
-const matchedSkuCount = computed(() => {
-    const hasTextQuery = Boolean(skuQuery.value.trim() || asinQuery.value.trim());
-    return filteredProducts.value.reduce((sum, p) => sum + (hasTextQuery ? p.skus.filter((sku) => sku.skuMatched).length : p.skus.length), 0);
-});
-
-function isZero(stock: StockQuantities, asin: string): boolean {
-    return stockTotal(stock, asin) === 0;
+/** 在庫表の1行。状態・合計・構成は行ごとに一度だけ計算し、テンプレートは読むだけにする */
+interface SkuRowView {
+    sku: SurveySkuResult;
+    matched: boolean;
+    rowState: "matched" | "all-zero" | undefined;
+    amazonTotal: number | null;
+    amazonState: StockState;
+    bossTotal: number | null;
+    bossState: StockState;
+    freeState: StockState;
+    ecState: StockState;
+    total: number | null;
+    totalState: StockState;
+    composition: { key: string; width: number }[] | null;
+    /** 画面に出る値を並べた文字列。メモの保存など、同じオブジェクトの書き換えも見分けるために値で持つ */
+    snapshot: string;
 }
 
-function amazonStockTotal(stock: StockQuantities): number | null {
-    return amazonTotal(stock);
+interface ProductView {
+    product: SurveyProductResult;
+    rows: SkuRowView[];
+    snapshot: string;
 }
 
-function bossStockTotal(stock: StockQuantities): number | null {
-    return bossTotal(stock);
-}
-
-function stockTotal(stock: StockQuantities, asin: string): number | null {
-    return survey.value ? skuTotal(stock, asin, survey.value) : null;
-}
-
-function groupedStockState(quantity: number | null): StockState {
-    return stockState(quantity, { low: true });
-}
-
-function amazonStockState(stock: StockQuantities, asin: string): StockState {
-    return survey.value ? amazonStockStateOf(stock, asin, survey.value) : "pending";
-}
-
-function plainStockState(quantity: number | null): StockState {
-    return stockState(quantity);
-}
-
-function skuRowState(matched: boolean | undefined, stock: StockQuantities, asin: string): "matched" | "all-zero" | undefined {
-    if (matched) return "matched";
-    return isZero(stock, asin) ? "all-zero" : undefined;
+function buildRow(sku: SurveySkuResult, matched: boolean, current: Survey): SkuRowView {
+    const stock = sku.stock;
+    const amazon = amazonTotal(stock);
+    const boss = bossTotal(stock);
+    const total = skuTotal(stock, sku.asin, current);
+    return {
+        sku,
+        matched,
+        rowState: matched ? "matched" : total === 0 ? "all-zero" : undefined,
+        amazonTotal: amazon,
+        amazonState: amazonStockStateOf(stock, sku.asin, current),
+        bossTotal: boss,
+        bossState: stockState(boss, { low: true }),
+        freeState: stockState(stock.freeStock),
+        ecState: stockState(stock.ecStock),
+        total,
+        totalState: stockState(total),
+        composition: compositionOf(stock, total),
+        snapshot: JSON.stringify([sku.id, sku.skuCode, sku.asin, sku.memo, matched, ...STOCK_KEYS.map((key) => stock[key])]),
+    };
 }
 
 /** 倉庫別の構成バーの区間。総数が未確定なら null */
-function compositionOf(stock: StockQuantities, asin: string): { key: string; width: number }[] | null {
-    const total = stockTotal(stock, asin);
+function compositionOf(stock: StockQuantities, total: number | null): { key: string; width: number }[] | null {
     if (total === null) return null;
     if (total === 0) return [];
     return [
-        { key: "bg-wh-amazon", value: hasAmazonStock.value ? (amazonStockTotal(stock) ?? 0) : 0 },
-        { key: "bg-wh-boss", value: bossStockTotal(stock) ?? 0 },
+        { key: "bg-wh-amazon", value: hasAmazonStock.value ? (amazonTotal(stock) ?? 0) : 0 },
+        { key: "bg-wh-boss", value: bossTotal(stock) ?? 0 },
         { key: "bg-wh-free", value: stock.freeStock ?? 0 },
         { key: "bg-wh-ec", value: stock.ecStock ?? 0 },
     ]
         .filter((segment) => segment.value > 0)
         .map((segment) => ({ key: segment.key, width: (segment.value / total) * 100 }));
 }
+
+/** 品番の表示が前回と同じか（再取得で別のオブジェクトになっても、中身が同じなら描き直さない） */
+function productSnapshot(product: SurveyProductResult, rows: SkuRowView[]): string {
+    return JSON.stringify([product.productCode, product.brand, product.category, product.parentAsin, product.memo, ...rows.map((row) => row.snapshot)]);
+}
+
+/**
+ * 前回の計算で作った品番の表示。中身が変わっていない品番は同じオブジェクトを返し、品番カードの v-memo を効かせる
+ * （30秒ごとの再取得やメモの保存で、表全体を描き直さないため）。Amazon在庫の扱いが変わったときは作り直す。
+ */
+let previousViews = new Map<string, ProductView>();
+let previousViewMode = "";
+
+const filteredProducts = computed<ProductView[]>(() => {
+    const current = survey.value;
+    if (!current) return [];
+    const mode = `${current.id}|${current.amazonSource}|${current.includesAmazonInventory}`;
+    if (mode !== previousViewMode) previousViews = new Map();
+    const productQ = productCodeQuery.value.trim().toLowerCase();
+    const skuQ = skuQuery.value.trim().toLowerCase();
+    const asinQ = asinQuery.value.trim().toLowerCase();
+    const hasTextQuery = Boolean(skuQ || asinQ);
+
+    const views: ProductView[] = [];
+    const nextViews = new Map<string, ProductView>();
+    for (const product of groupProducts.value) {
+        if (brandFilter.value && product.brand !== brandFilter.value) continue;
+        if (categoryFilter.value && product.category !== categoryFilter.value) continue;
+        if (productQ && !product.productCode.toLowerCase().includes(productQ)) continue;
+        const rows = product.skus
+            .filter((sku) => matchesConditions(sku.stock))
+            .map((sku) => buildRow(sku, hasTextQuery && (!skuQ || sku.skuCode.toLowerCase().includes(skuQ)) && (!asinQ || sku.asin.toLowerCase().includes(asinQ)), current));
+        if (rows.length === 0 || (hasTextQuery && !rows.some((row) => row.matched))) continue;
+
+        const snapshot = productSnapshot(product, rows);
+        const previous = previousViews.get(product.productCode);
+        const view = previous?.snapshot === snapshot ? previous : { product, rows, snapshot };
+        views.push(view);
+        nextViews.set(product.productCode, view);
+    }
+    previousViews = nextViews;
+    previousViewMode = mode;
+    return views;
+});
+
+const totalSkuCount = computed(() => groupProducts.value.reduce((sum, p) => sum + p.skus.length, 0));
+const matchedSkuCount = computed(() => {
+    const hasTextQuery = Boolean(skuQuery.value.trim() || asinQuery.value.trim());
+    return filteredProducts.value.reduce((sum, view) => sum + (hasTextQuery ? view.rows.filter((row) => row.matched).length : view.rows.length), 0);
+});
 
 const conditionOperatorOptions = [
     { value: "and" as const, label: "AND" },
@@ -393,7 +440,7 @@ async function exportExcel(scope: "all" | "filtered") {
     const hasTextQuery = Boolean(skuQuery.value.trim() || asinQuery.value.trim());
     const skuIds =
         scope === "filtered"
-            ? filteredProducts.value.flatMap((product) => product.skus.filter((sku) => !hasTextQuery || sku.skuMatched).map((sku) => Number(sku.id)))
+            ? filteredProducts.value.flatMap((view) => view.rows.filter((row) => !hasTextQuery || row.matched).map((row) => Number(row.sku.id)))
             : selectedGroupKey.value
               ? groupProducts.value.flatMap((product) => product.skus.map((sku) => Number(sku.id)))
               : undefined;
@@ -579,17 +626,31 @@ async function exportExcel(scope: "all" | "filtered") {
             <BaseEmpty icon="filter_alt_off" title="条件に一致するSKUがありません" description="0件です。絞込条件を見直してください。" />
         </BaseCard>
 
-        <BaseCard v-for="product in filteredProducts" :key="product.productCode" v-memo="[product, canEditMemo]" :padded="false" class="survey-product-card">
+        <!-- 品番の表示（view）は中身が変わらない限り同じオブジェクトなので、v-memo でカードの描き直しを省く -->
+        <BaseCard
+            v-for="view in filteredProducts"
+            :key="view.product.productCode"
+            :data-product-code="view.product.productCode"
+            v-memo="[view, canEditMemo, hasAmazonStock]"
+            :padded="false"
+            class="survey-product-card"
+        >
             <div class="flex flex-col gap-2 border-b border-line-2 px-4 py-2.5 lg:flex-row lg:items-center lg:gap-3">
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <p class="font-mono text-[15px] leading-relaxed font-semibold uppercase">{{ product.productCode }}</p>
-                    <span class="font-mono text-[11px] text-muted">{{ product.parentAsin || "—" }}</span>
-                    <BaseBadge>{{ product.brand }}</BaseBadge>
-                    <BaseBadge>{{ product.category }}</BaseBadge>
+                    <p class="font-mono text-[15px] leading-relaxed font-semibold uppercase">{{ view.product.productCode }}</p>
+                    <span class="font-mono text-[11px] text-muted">{{ view.product.parentAsin || "—" }}</span>
+                    <BaseBadge>{{ view.product.brand }}</BaseBadge>
+                    <BaseBadge>{{ view.product.category }}</BaseBadge>
                 </div>
                 <div class="w-full lg:ml-auto lg:w-[300px]">
-                    <MemoField v-if="canEditMemo" :model-value="product.memo" framed placeholder="品番のメモを追加" @save="(v) => surveysStore.updateProductMemo(survey!.id, product.productCode, v)" />
-                    <p v-else data-readonly-memo class="min-h-6 rounded-control bg-surface-2 px-2 py-1 text-[11.5px] text-ink-2">{{ product.memo || "メモなし" }}</p>
+                    <MemoField
+                        v-if="canEditMemo"
+                        :model-value="view.product.memo"
+                        framed
+                        placeholder="品番のメモを追加"
+                        @save="(v) => surveysStore.updateProductMemo(survey!.id, view.product.productCode, v)"
+                    />
+                    <p v-else data-readonly-memo class="min-h-6 rounded-control bg-surface-2 px-2 py-1 text-[11.5px] text-ink-2">{{ view.product.memo || "メモなし" }}</p>
                 </div>
             </div>
 
@@ -619,95 +680,68 @@ async function exportExcel(scope: "all" | "filtered") {
                     </thead>
                     <tbody>
                         <tr
-                            v-for="sku in product.skus"
-                            :key="sku.skuCode"
-                            :data-row-state="skuRowState(sku.skuMatched, sku.stock, sku.asin)"
+                            v-for="row in view.rows"
+                            :key="row.sku.skuCode"
+                            :data-row-state="row.rowState"
                             class="border-t border-line-2 first:border-t-0"
                             :class="{
-                                'bg-signal-row': skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero',
-                                'bg-match': skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'matched',
-                                'hover:bg-surface-2': !skuRowState(sku.skuMatched, sku.stock, sku.asin),
+                                'bg-signal-row': row.rowState === 'all-zero',
+                                'bg-match': row.rowState === 'matched',
+                                'hover:bg-surface-2': !row.rowState,
                             }"
                         >
                             <td data-sku-cell class="relative py-1.5 pr-3 pl-[18px] text-left">
-                                <span
-                                    v-if="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
-                                    class="absolute top-[7px] bottom-[7px] left-1.5 w-[5px] rounded-[3px] bg-hazard"
-                                    aria-hidden="true"
-                                ></span>
-                                <span v-else-if="sku.skuMatched" class="absolute top-[9px] bottom-[9px] left-[7px] w-[3px] rounded-xs bg-ink" aria-hidden="true"></span>
-                                <span class="font-mono text-sm font-medium uppercase">{{ sku.skuCode }}</span>
-                                <span class="block font-mono text-[10.5px] text-muted">{{ sku.asin || "ASIN未登録" }}</span>
+                                <span v-if="row.rowState === 'all-zero'" class="absolute top-[7px] bottom-[7px] left-1.5 w-[5px] rounded-[3px] bg-hazard" aria-hidden="true"></span>
+                                <span v-else-if="row.matched" class="absolute top-[9px] bottom-[9px] left-[7px] w-[3px] rounded-xs bg-ink" aria-hidden="true"></span>
+                                <span class="font-mono text-sm font-medium uppercase">{{ row.sku.skuCode }}</span>
+                                <span class="block font-mono text-[10.5px] text-muted">{{ row.sku.asin || "ASIN未登録" }}</span>
                             </td>
-                            <td
-                                v-if="hasAmazonStock"
-                                data-stock-field="amazon"
-                                :data-stock-state="amazonStockState(sku.stock, sku.asin)"
-                                tabindex="0"
-                                aria-label="Amazon在庫合計"
-                                class="stock-total-cell px-3 py-1.5"
-                            >
-                                <StockCell
-                                    :quantity="amazonStockTotal(sku.stock)"
-                                    :state="amazonStockState(sku.stock, sku.asin)"
-                                    pending-label="取込待ち"
-                                    :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
-                                />
-                                <span v-if="amazonStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
+                            <td v-if="hasAmazonStock" data-stock-field="amazon" :data-stock-state="row.amazonState" tabindex="0" aria-label="Amazon在庫合計" class="stock-total-cell px-3 py-1.5">
+                                <StockCell :quantity="row.amazonTotal" :state="row.amazonState" pending-label="取込待ち" :strong="row.rowState === 'all-zero'" />
+                                <span v-if="row.amazonTotal !== null" class="stock-breakdown-tooltip" role="tooltip">
                                     <span
-                                        >自社 <b>{{ sku.stock.amazonOwn }}</b></span
+                                        >自社 <b>{{ row.sku.stock.amazonOwn }}</b></span
                                     ><span aria-hidden="true">／</span
                                     ><span
-                                        >FBA <b>{{ sku.stock.amazonFba }}</b></span
+                                        >FBA <b>{{ row.sku.stock.amazonFba }}</b></span
                                     >
                                 </span>
                             </td>
-                            <td data-stock-field="boss" :data-stock-state="groupedStockState(bossStockTotal(sku.stock))" tabindex="0" aria-label="BOSS在庫合計" class="stock-total-cell px-3 py-1.5">
-                                <StockCell
-                                    :quantity="bossStockTotal(sku.stock)"
-                                    :state="groupedStockState(bossStockTotal(sku.stock))"
-                                    :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
-                                />
-                                <span v-if="bossStockTotal(sku.stock) !== null" class="stock-breakdown-tooltip" role="tooltip">
+                            <td data-stock-field="boss" :data-stock-state="row.bossState" tabindex="0" aria-label="BOSS在庫合計" class="stock-total-cell px-3 py-1.5">
+                                <StockCell :quantity="row.bossTotal" :state="row.bossState" :strong="row.rowState === 'all-zero'" />
+                                <span v-if="row.bossTotal !== null" class="stock-breakdown-tooltip" role="tooltip">
                                     <span
-                                        >自社 <b>{{ sku.stock.bossOwn }}</b></span
+                                        >自社 <b>{{ row.sku.stock.bossOwn }}</b></span
                                     ><span aria-hidden="true">／</span
                                     ><span
-                                        >RFC <b>{{ sku.stock.bossRfc }}</b></span
+                                        >RFC <b>{{ row.sku.stock.bossRfc }}</b></span
                                     >
                                 </span>
                             </td>
-                            <td data-stock-field="freeStock" :data-stock-state="plainStockState(sku.stock.freeStock)" class="px-3 py-1.5">
-                                <StockCell :quantity="sku.stock.freeStock" :state="plainStockState(sku.stock.freeStock)" :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'" />
+                            <td data-stock-field="freeStock" :data-stock-state="row.freeState" class="px-3 py-1.5">
+                                <StockCell :quantity="row.sku.stock.freeStock" :state="row.freeState" :strong="row.rowState === 'all-zero'" />
                             </td>
-                            <td data-stock-field="ecStock" :data-stock-state="plainStockState(sku.stock.ecStock)" class="px-3 py-1.5">
-                                <StockCell :quantity="sku.stock.ecStock" :state="plainStockState(sku.stock.ecStock)" :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'" />
+                            <td data-stock-field="ecStock" :data-stock-state="row.ecState" class="px-3 py-1.5">
+                                <StockCell :quantity="row.sku.stock.ecStock" :state="row.ecState" :strong="row.rowState === 'all-zero'" />
                             </td>
                             <td
                                 v-if="hasAmazonStock"
                                 data-stock-field="total"
-                                :data-stock-state="plainStockState(stockTotal(sku.stock, sku.asin))"
+                                :data-stock-state="row.totalState"
                                 class="px-3 py-1.5"
-                                :class="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero' ? 'bg-signal-row-strong' : 'bg-ink/[0.025]'"
+                                :class="row.rowState === 'all-zero' ? 'bg-signal-row-strong' : 'bg-ink/[0.025]'"
                             >
-                                <StockCell
-                                    :quantity="stockTotal(sku.stock, sku.asin)"
-                                    :state="plainStockState(stockTotal(sku.stock, sku.asin))"
-                                    total
-                                    :strong="skuRowState(sku.skuMatched, sku.stock, sku.asin) === 'all-zero'"
-                                />
+                                <StockCell :quantity="row.total" :state="row.totalState" total :strong="row.rowState === 'all-zero'" />
                             </td>
                             <td class="px-3 py-1.5 text-left" data-composition>
-                                <span v-if="compositionOf(sku.stock, sku.asin) === null" class="text-[10.5px] font-semibold text-muted">{{
-                                    amazonStockState(sku.stock, sku.asin) === "pending" ? "Amazon 取込後に表示" : "取込後に表示"
-                                }}</span>
-                                <span v-else class="flex h-[7px] w-28 gap-0.5 overflow-hidden rounded-xs" :class="compositionOf(sku.stock, sku.asin)!.length === 0 ? 'bg-ink/[0.07]' : ''">
-                                    <i v-for="segment in compositionOf(sku.stock, sku.asin)" :key="segment.key" class="block h-full" :class="segment.key" :style="{ width: `${segment.width}%` }"></i>
+                                <span v-if="row.composition === null" class="text-[10.5px] font-semibold text-muted">{{ row.amazonState === "pending" ? "Amazon 取込後に表示" : "取込後に表示" }}</span>
+                                <span v-else class="flex h-[7px] w-28 gap-0.5 overflow-hidden rounded-xs" :class="row.composition.length === 0 ? 'bg-ink/[0.07]' : ''">
+                                    <i v-for="segment in row.composition" :key="segment.key" class="block h-full" :class="segment.key" :style="{ width: `${segment.width}%` }"></i>
                                 </span>
                             </td>
                             <td class="px-3 py-1.5 text-left text-[11.5px]">
-                                <MemoField v-if="canEditMemo" :model-value="sku.memo" placeholder="メモを追加" @save="(v) => surveysStore.updateSkuMemo(survey!.id, sku.skuCode, v)" />
-                                <span v-else data-readonly-memo>{{ sku.memo || "メモなし" }}</span>
+                                <MemoField v-if="canEditMemo" :model-value="row.sku.memo" placeholder="メモを追加" @save="(v) => surveysStore.updateSkuMemo(survey!.id, row.sku.skuCode, v)" />
+                                <span v-else data-readonly-memo>{{ row.sku.memo || "メモなし" }}</span>
                             </td>
                         </tr>
                     </tbody>
