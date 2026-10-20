@@ -17,9 +17,8 @@ import { ADMIN_ROLES, canAccess } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
-import type { Survey } from "@/types";
+import type { SurveySummary } from "@/types";
 import { formatDateTime } from "@/utils/format";
-import { summarizeSurvey } from "@/utils/stock";
 import { amazonLampOf, buildCalendar, dailySurveys, localDateKey, previousDailySurvey, uploadedFileCount } from "@/utils/surveyCalendar";
 
 const router = useRouter();
@@ -50,10 +49,10 @@ const VIEW_OPTIONS: { value: HistoryView; label: string }[] = [
     { value: "list", label: "リスト" },
 ];
 
-const allList = computed(() => surveys.sortedSurveys);
-const latestId = computed(() => surveys.latestSurvey?.id);
+const allList = computed(() => surveys.sortedSummaries);
+const latestId = computed(() => surveys.latestSummary?.id);
 
-const AMAZON_STATUS_LABEL: Record<NonNullable<Survey["amazonInventoryStatus"]>, string> = {
+const AMAZON_STATUS_LABEL: Record<NonNullable<SurveySummary["amazonInventoryStatus"]>, string> = {
     pending: "Amazon取込待ち",
     partial: "Amazon一部未取得",
     complete: "Amazon取込済み",
@@ -61,14 +60,14 @@ const AMAZON_STATUS_LABEL: Record<NonNullable<Survey["amazonInventoryStatus"]>, 
     unclassified: "Amazon判定不能",
 };
 
-function amazonStatusOf(survey: Survey): { state: LampState; label: string } | null {
+function amazonStatusOf(survey: SurveySummary): { state: LampState; label: string } | null {
     const lamp = amazonLampOf(survey);
     if (!lamp || !survey.amazonInventoryStatus) return null;
     return { state: lamp, label: AMAZON_STATUS_LABEL[survey.amazonInventoryStatus] };
 }
 
 /* ── カレンダー ── */
-const initialMonth = latestId.value ? new Date(surveys.latestSurvey!.executedAt) : new Date();
+const initialMonth = latestId.value ? new Date(surveys.latestSummary!.executedAt) : new Date();
 const calendarYear = ref(initialMonth.getFullYear());
 const calendarMonth = ref(initialMonth.getMonth());
 const selectedId = ref<string | null>(latestId.value ?? null);
@@ -76,7 +75,7 @@ const selectedId = ref<string | null>(latestId.value ?? null);
 /** 履歴が後から読み込まれたときは、最新の調査がある月と日を選ぶ */
 watch(latestId, (id) => {
     if (selectedId.value !== null || !id) return;
-    const latest = new Date(surveys.latestSurvey!.executedAt);
+    const latest = new Date(surveys.latestSummary!.executedAt);
     calendarYear.value = latest.getFullYear();
     calendarMonth.value = latest.getMonth();
     selectedId.value = id;
@@ -97,10 +96,11 @@ const selectedSurvey = computed(() => {
     const survey = allList.value.find((item) => item.id === selectedId.value);
     return survey && dailySurveys(allList.value).get(localDateKey(survey.executedAt))?.id === survey.id ? survey : null;
 });
-const selectedSummary = computed(() => (selectedSurvey.value ? summarizeSurvey(selectedSurvey.value) : null));
+/** 一覧の概要に集計値が入っている（SKU別の明細は取得しない） */
+const selectedSummary = computed(() => selectedSurvey.value);
 const selectedPreviousSummary = computed(() => {
     const previous = selectedSurvey.value ? previousDailySurvey(allList.value, selectedSurvey.value) : null;
-    return previous ? summarizeSurvey(previous) : null;
+    return previous ?? null;
 });
 const selectedTitle = computed(() => {
     if (!selectedSurvey.value) return "";
@@ -139,7 +139,7 @@ const increasedIds = computed(() => {
     const ids = new Set<string>();
     for (const day of dailySurveys(allList.value).values()) {
         const previous = previousDailySurvey(allList.value, day);
-        if (previous && summarizeSurvey(day).allZeroCount > summarizeSurvey(previous).allZeroCount) ids.add(day.id);
+        if (previous && day.allZeroCount > previous.allZeroCount) ids.add(day.id);
     }
     return ids;
 });
@@ -155,10 +155,6 @@ watch(totalPages, (tp) => {
 function resetFilters() {
     startDate.value = "";
     endDate.value = "";
-}
-
-function skuCount(survey: Survey): number {
-    return survey.products.reduce((sum, product) => sum + product.skus.length, 0);
 }
 
 /* ── 削除 ── */
@@ -186,7 +182,7 @@ function openResult(id: string) {
     router.push({ name: "survey-result", params: { id } });
 }
 
-async function exportExcel(survey: Survey) {
+async function exportExcel(survey: SurveySummary) {
     try {
         const { data } = await axios.get<Blob>(`/api/surveys/${survey.id}/export`, { responseType: "blob" });
         const url = URL.createObjectURL(data);
@@ -385,8 +381,8 @@ async function exportExcel(survey: Survey) {
                                         >最終更新: {{ formatDateTime(survey.updatedAt) }}</span
                                     >
                                 </td>
-                                <td class="px-4 py-2 text-right font-num text-xl font-semibold">{{ survey.products.length }}</td>
-                                <td class="px-4 py-2 text-right font-num text-xl font-semibold">{{ skuCount(survey) }}</td>
+                                <td class="px-4 py-2 text-right font-num text-xl font-semibold">{{ survey.productCount }}</td>
+                                <td class="px-4 py-2 text-right font-num text-xl font-semibold">{{ survey.skuCount }}</td>
                                 <td class="px-4 py-2">
                                     <span class="inline-flex items-center gap-2">
                                         <span class="inline-flex gap-[3px]" aria-hidden="true">
@@ -408,7 +404,7 @@ async function exportExcel(survey: Survey) {
                                     <span
                                         class="inline-block min-w-[30px] rounded-chip px-1.5 text-center font-num text-base font-bold"
                                         :class="increasedIds.has(survey.id) ? 'bg-signal' : 'bg-tint text-ink-2'"
-                                        >{{ summarizeSurvey(survey).allZeroCount }}</span
+                                        >{{ survey.allZeroCount }}</span
                                     >
                                 </td>
                                 <td class="px-4 py-2 text-right">

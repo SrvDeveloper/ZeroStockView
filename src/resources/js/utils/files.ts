@@ -15,6 +15,6 @@ export function isFileExpiringSoon(uploadedAt: string, now: Date = new Date()): 
 }
 
 /** 期限まで {@link FILE_EXPIRY_WARNING_DAYS} 日以内の保存ファイル数 */
-export function countExpiringFiles(surveys: Survey[], now: Date = new Date()): number {
+export function countExpiringFiles(surveys: Pick<Survey, "files">[], now: Date = new Date()): number {
     return surveys.reduce((count, survey) => count + survey.files.filter((file) => isFileExpiringSoon(file.uploadedAt, now)).length, 0);
 }

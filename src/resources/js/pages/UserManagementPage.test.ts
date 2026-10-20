@@ -5,6 +5,7 @@ import UserManagementPage from "@/pages/UserManagementPage.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
+import { toSurveySummary } from "@/utils/stock";
 
 const { fetchUsers, createUser, updateUser, deleteUser, replace } = vi.hoisted(() => ({
     fetchUsers: vi.fn(),
@@ -218,7 +219,7 @@ describe("UserManagementPage", () => {
     it("ends the local session and opens login after changing its own role", async () => {
         fetchUsers.mockResolvedValueOnce([admin, { id: "3", loginId: "other", role: "admin" }]);
         updateUser.mockResolvedValue({ ...admin, role: "editor" });
-        useSurveysStore().surveys = [{ id: "survey", executedAt: "2026-10-16T00:00:00Z", importSettingName: null, products: [], files: [] }];
+        useSurveysStore().summaries = [toSurveySummary({ id: "survey", executedAt: "2026-10-16T00:00:00Z", importSettingName: null, products: [], files: [] })];
         useImportSettingsStore().settings = [{ id: "setting", name: "test", productCodes: [], products: [], lastSyncedAt: null }];
         const wrapper = mountPage();
         await flushPromises();
@@ -229,7 +230,7 @@ describe("UserManagementPage", () => {
 
         expect(updateUser).toHaveBeenCalledWith("1", { loginId: "admin", password: "", passwordConfirmation: "", role: "editor" });
         expect(useAuthStore().user).toBeNull();
-        expect(useSurveysStore().surveys).toHaveLength(0);
+        expect(useSurveysStore().summaries).toHaveLength(0);
         expect(useImportSettingsStore().settings).toHaveLength(0);
         expect(replace).toHaveBeenCalledWith({ name: "login" });
     });

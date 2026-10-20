@@ -48,6 +48,30 @@ class Survey extends Model
 
     public function hasSavedAmazonInventory(): bool
     {
+        return $this->resolveHasSavedAmazonInventory(fn (): bool => $this->products->contains(fn ($product): bool => $product->skus->contains(
+            fn ($sku): bool => $sku->amazon_own_stock > 0 || $sku->amazon_fba_stock > 0,
+        )));
+    }
+
+    public function amazonInventoryStatus(): string
+    {
+        return $this->resolveAmazonInventoryStatus(
+            fn (): bool => $this->products->contains(fn ($product): bool => $product->skus->contains(
+                fn ($sku): bool => ($sku->hasAmazonAsin() || $sku->amazon_own_stock !== null || $sku->amazon_fba_stock !== null)
+                    && ($sku->amazon_own_stock === null || $sku->amazon_fba_stock === null),
+            )),
+            fn (): bool => $this->hasSavedAmazonInventory(),
+        );
+    }
+
+    /**
+     * Amazon在庫を調査に保存しているか（旧方式）。SKUを読み込まずに判定したいとき（一覧の集計）は、
+     * 「Amazon在庫が1以上のSKUがあるか」を集計値で渡す。
+     *
+     * @param  callable(): bool  $hasPositiveAmazonStock
+     */
+    public function resolveHasSavedAmazonInventory(callable $hasPositiveAmazonStock): bool
+    {
         if ($this->amazon_source === self::AMAZON_SOURCE_SP_API) {
             return false;
         }
@@ -58,25 +82,27 @@ class Survey extends Model
             return true;
         }
 
-        return $this->products->contains(fn ($product): bool => $product->skus->contains(
-            fn ($sku): bool => $sku->amazon_own_stock > 0 || $sku->amazon_fba_stock > 0,
-        ));
+        return $hasPositiveAmazonStock();
     }
 
-    public function amazonInventoryStatus(): string
+    /**
+     * Amazon在庫の反映状況。SP-API調査で「ASINがある（または値がある）のにAmazon在庫が揃っていないSKUがあるか」と、
+     * 旧方式の判定を渡す。
+     *
+     * @param  callable(): bool  $hasIncompleteAmazonStock
+     * @param  callable(): bool  $hasSavedAmazonInventory
+     */
+    public function resolveAmazonInventoryStatus(callable $hasIncompleteAmazonStock, callable $hasSavedAmazonInventory): string
     {
         if ($this->amazon_source === self::AMAZON_SOURCE_SP_API) {
             if ($this->amazon_inventory_import_id === null) {
                 return 'pending';
             }
 
-            return $this->products->contains(fn ($product): bool => $product->skus->contains(
-                fn ($sku): bool => ($sku->hasAmazonAsin() || $sku->amazon_own_stock !== null || $sku->amazon_fba_stock !== null)
-                    && ($sku->amazon_own_stock === null || $sku->amazon_fba_stock === null),
-            )) ? 'partial' : 'complete';
+            return $hasIncompleteAmazonStock() ? 'partial' : 'complete';
         }
 
-        return $this->hasSavedAmazonInventory() ? 'legacy_file' : 'unclassified';
+        return $hasSavedAmazonInventory() ? 'legacy_file' : 'unclassified';
     }
 
     /** @return array<string, string> */

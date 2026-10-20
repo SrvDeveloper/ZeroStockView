@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SurveyHistoryPage from "@/pages/SurveyHistoryPage.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
-import type { Survey } from "@/types";
+import type { SurveySummary } from "@/types";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
 vi.mock("vue-router", () => ({ useRouter: () => ({ push }) }));
 
-function survey(id: string, day: number, fileName = "boss.csv"): Survey {
+function survey(id: string, day: number, fileName = "boss.csv"): SurveySummary {
     return {
         id,
         executedAt: new Date(2026, 9, day, 9).toISOString(),
@@ -20,7 +20,10 @@ function survey(id: string, day: number, fileName = "boss.csv"): Survey {
         amazonSource: "sp_api",
         amazonInventoryStatus: "complete",
         files: [{ id: `${id}-f`, type: "倉庫毎の在庫数レポート", fileName, uploadedAt: new Date().toISOString(), sizeKb: 1 }],
-        products: [],
+        productCount: 0,
+        skuCount: 0,
+        allZeroCount: 0,
+        partialZeroCount: 0,
     };
 }
 
@@ -29,7 +32,7 @@ describe("SurveyHistoryPage", () => {
         setActivePinia(createPinia());
         useAuthStore().user = { id: "1", loginId: "admin", role: "admin" };
         push.mockReset();
-        useSurveysStore().surveys = [survey("older", 14, "boss_1014.csv"), survey("latest", 16, "boss_1016.csv")];
+        useSurveysStore().summaries = [survey("older", 14, "boss_1014.csv"), survey("latest", 16, "boss_1016.csv")];
     });
 
     it("opens on the month of the latest survey with that day selected", () => {
@@ -71,7 +74,7 @@ describe("SurveyHistoryPage", () => {
     it("deletes the selected day after confirmation and selects the latest remaining survey", async () => {
         const surveys = useSurveysStore();
         const removeSurvey = vi.spyOn(surveys, "removeSurvey").mockImplementation(async (id: string) => {
-            surveys.surveys = surveys.surveys.filter((item) => item.id !== id);
+            surveys.summaries = surveys.summaries.filter((item) => item.id !== id);
         });
         const wrapper = mount(SurveyHistoryPage, { attachTo: document.body });
 

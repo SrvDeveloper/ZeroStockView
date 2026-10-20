@@ -3,12 +3,12 @@ import axios from "axios";
 import { computed, ref, watch } from "vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import { useUiStore } from "@/stores/ui";
-import type { Survey } from "@/types";
+import type { SurveyBase } from "@/types";
 import { downloadFromApi } from "@/utils/download";
 import { fileRemainingDays } from "@/utils/files";
 import { formatDateTime } from "@/utils/format";
 
-const props = defineProps<{ survey: Survey }>();
+const props = defineProps<{ survey: SurveyBase }>();
 
 const toast = useUiStore();
 const downloading = ref(false);

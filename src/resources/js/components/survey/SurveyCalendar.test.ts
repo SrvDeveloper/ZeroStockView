@@ -1,8 +1,9 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import SurveyCalendar from "@/components/survey/SurveyCalendar.vue";
-import type { Survey, SurveySkuResult } from "@/types";
+import type { SurveySkuResult, SurveySummary } from "@/types";
 import { buildCalendar, dailySurveys } from "@/utils/surveyCalendar";
+import { toSurveySummary } from "@/utils/stock";
 
 const ZERO = { amazonOwn: 0, amazonFba: 0, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 };
 const STOCKED = { amazonOwn: 1, amazonFba: 1, bossOwn: 1, bossRfc: 1, freeStock: 1, ecStock: 1 };
@@ -12,9 +13,9 @@ function sku(id: string, stock: SurveySkuResult["stock"]): SurveySkuResult {
 }
 
 /** 現地時刻の 2026 年 month 月 day 日 hour 時の調査（month は 1〜12） */
-function survey(id: string, month: number, day: number, allZero = 0, hour = 9): Survey {
+function survey(id: string, month: number, day: number, allZero = 0, hour = 9): SurveySummary {
     const skus = [...Array.from({ length: allZero }, (_, index) => sku(`${id}-z${index}`, ZERO)), sku(`${id}-s`, STOCKED)];
-    return {
+    return toSurveySummary({
         id,
         executedAt: new Date(2026, month - 1, day, hour).toISOString(),
         importSettingName: null,
@@ -25,7 +26,7 @@ function survey(id: string, month: number, day: number, allZero = 0, hour = 9): 
             { id: `${id}-f2`, type: "KEEP一覧表", fileName: "keep.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
         ],
         products: [{ id: `${id}-p`, productCode: "A", brand: "", category: "", parentAsin: "", memo: "", skus }],
-    };
+    });
 }
 
 const TODAY = new Date(2026, 9, 16, 12);

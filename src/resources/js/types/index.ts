@@ -86,20 +86,33 @@ export interface SurveyFile {
     sizeKb: number;
 }
 
-export interface Survey {
+/** 一覧（GET /api/surveys）と明細（GET /api/surveys/{id}）で共通の項目 */
+export interface SurveyBase {
     id: string;
     executedAt: string;
     createdAt?: string;
     updatedAt?: string;
-    products: SurveyProductResult[];
     importSettingName: string | null;
-    groups?: SurveyGroup[];
     includesAmazonInventory?: boolean;
     amazonSource?: "survey" | "sp_api" | null;
     amazonInventoryStatus?: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";
     amazonInventoryImportId?: string | null;
     amazonBasisAt?: string | null;
     files: SurveyFile[];
+}
+
+/** 調査の明細。SKU別の在庫とメモを含む */
+export interface Survey extends SurveyBase {
+    products: SurveyProductResult[];
+    groups?: SurveyGroup[];
+}
+
+/** 調査履歴の一覧に出す概要。集計値はサーバーで utils/stock.ts の summarizeSurvey と同じ規則で求める */
+export interface SurveySummary extends SurveyBase {
+    productCount: number;
+    skuCount: number;
+    allZeroCount: number;
+    partialZeroCount: number;
 }
 
 export type ZeroStockFilterKey = "amazonZero" | "bossZero" | "freeZero" | "ecZero";

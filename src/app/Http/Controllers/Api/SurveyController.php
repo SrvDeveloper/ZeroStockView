@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\RunSurveyRequest;
 use App\Http\Requests\UpdateMemoRequest;
 use App\Http\Resources\SurveyResource;
+use App\Http\Resources\SurveySummaryResource;
 use App\Models\ImportSetting;
 use App\Models\Survey;
 use App\Models\SurveyFile;
@@ -13,26 +14,30 @@ use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Services\InventoryImportService;
 use App\Services\SurveyExcelExporter;
+use App\Services\SurveySummaryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class SurveyController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    /** 調査履歴の一覧。SKU別の在庫とメモは含めず、集計値だけを返す（明細は show） */
+    public function index(Request $request, SurveySummaryService $summaries): JsonResponse
     {
         $this->pruneExpiredFiles();
 
-        return SurveyResource::collection(
-            Survey::query()
-                ->with(['products.skus', 'files', 'amazonImport'])
-                ->orderByDesc('executed_at')
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->get(),
-        );
+        $surveys = Survey::query()
+            ->with(['files', 'amazonImport'])
+            ->orderByDesc('executed_at')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
+        $summaryBySurvey = $summaries->summarize($surveys);
+
+        return response()->json([
+            'data' => $surveys->map(fn (Survey $survey): array => (new SurveySummaryResource($survey, $summaryBySurvey[$survey->getKey()]))->resolve($request))->values(),
+        ]);
     }
 
     public function store(RunSurveyRequest $request, InventoryImportService $importer): SurveyResource

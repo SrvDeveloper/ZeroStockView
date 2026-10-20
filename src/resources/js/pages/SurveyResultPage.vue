@@ -38,6 +38,23 @@ const canEditMemo = computed(() => canAccess(auth.role, ADMIN_ROLES));
 const canRerunSurvey = computed(() => canAccess(auth.role, EDITOR_ROLES));
 
 const survey = computed(() => surveysStore.getSurvey(props.id));
+/** 明細の取得状況。一覧から開いても URL を直接開いても、ここで明細を取得する */
+const detailState = ref<"loading" | "ready" | "missing" | "error">("loading");
+
+/** 明細を取得する。取得済みならそれを先に表示し、裏で最新に取り直す */
+async function openSurvey(id: string) {
+    const cached = surveysStore.getSurvey(id);
+    detailState.value = cached ? "ready" : "loading";
+    try {
+        await surveysStore.loadSurvey(id, { force: cached !== undefined });
+        if (props.id === id) detailState.value = "ready";
+    } catch (error) {
+        if (props.id !== id) return;
+        if (axios.isAxiosError(error) && error.response?.status === 404) detailState.value = "missing";
+        else if (cached) refreshError.value = "調査結果を更新できませんでした。再読み込みしてください。";
+        else detailState.value = "error";
+    }
+}
 const includesAmazonInventory = computed(() => survey.value?.includesAmazonInventory !== false);
 const hasAmazonStock = computed(() => includesAmazonInventory.value || survey.value?.amazonSource === "sp_api");
 const amazonStatus = computed(() => survey.value?.amazonInventoryStatus ?? (survey.value?.amazonSource === "sp_api" ? (survey.value.amazonBasisAt ? "complete" : "pending") : "legacy_file"));
@@ -45,14 +62,16 @@ const refreshingSurvey = ref(false);
 const refreshError = ref("");
 let refreshTimer: number | undefined;
 watch(
+    () => props.id,
+    (id) => void openSurvey(id),
+    { immediate: true },
+);
+watch(
     [() => props.id, () => survey.value?.amazonSource],
     ([, source]) => {
         if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
         refreshTimer = undefined;
-        if (source === "sp_api") {
-            if (surveysStore.loaded) void refreshSurvey();
-            refreshTimer = window.setInterval(() => void refreshSurvey(), 30000);
-        }
+        if (source === "sp_api") refreshTimer = window.setInterval(() => void refreshSurvey(), 30000);
     },
     { immediate: true },
 );
@@ -69,7 +88,7 @@ async function refreshSurvey() {
         refreshingSurvey.value = false;
     }
 }
-const isLatest = computed(() => surveysStore.latestSurvey?.id === props.id);
+const isLatest = computed(() => surveysStore.latestSummary?.id === props.id);
 const rerunSettingId = ref<string | null>(null);
 const rerunMenuOpen = ref(false);
 const rerunRunning = ref(false);
@@ -148,10 +167,8 @@ onBeforeUnmount(() => {
 });
 
 const summary = computed(() => (survey.value ? summarizeSurvey(survey.value) : null));
-const previousSummary = computed(() => {
-    const previous = survey.value ? previousSurvey(surveysStore.surveys, survey.value) : null;
-    return previous ? summarizeSurvey(previous) : null;
-});
+/** 前回比は、直前の調査の明細を取らずに一覧の集計値で比べる */
+const previousSummary = computed(() => (survey.value ? previousSurvey(surveysStore.summaries, survey.value) : null));
 
 /** 前回比。直前の調査がなければ空 */
 function compareWithPrevious(key: "skuCount" | "allZeroCount" | "partialZeroCount"): string {
@@ -400,7 +417,16 @@ async function exportExcel(scope: "all" | "filtered") {
 </script>
 
 <template>
-    <BaseCard v-if="!survey" :padded="false">
+    <div v-if="!survey && detailState === 'loading'" class="flex min-h-80 items-center justify-center gap-2 text-[12.5px] text-muted" role="status" data-survey-loading>
+        <AppIcon name="progress_activity" :size="22" class="animate-spin text-ink-2" />
+        調査結果を読み込んでいます...
+    </div>
+    <BaseCard v-else-if="!survey && detailState === 'error'" :padded="false">
+        <BaseEmpty icon="error" title="調査結果を読み込めませんでした" description="時間をおいて再度お試しください。">
+            <BaseButton variant="primary" icon="refresh" @click="openSurvey(props.id)">再試行</BaseButton>
+        </BaseEmpty>
+    </BaseCard>
+    <BaseCard v-else-if="!survey" :padded="false">
         <BaseEmpty icon="search_off" title="指定された調査結果が見つかりません" description="削除された可能性があります。">
             <BaseButton variant="primary" @click="router.push({ name: 'survey-history' })">調査履歴に戻る</BaseButton>
         </BaseEmpty>

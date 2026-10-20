@@ -5,6 +5,7 @@ import FileManagementPage from "@/pages/FileManagementPage.vue";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import type { SurveyFile } from "@/types";
+import { toSurveySummary } from "@/utils/stock";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -15,9 +16,9 @@ function file(id: string, daysAgo: number, sizeKb = 100): SurveyFile {
 describe("FileManagementPage", () => {
     beforeEach(() => {
         setActivePinia(createPinia());
-        useSurveysStore().surveys = [
-            { id: "recent", executedAt: "2026-10-16T00:00:00Z", importSettingName: null, products: [], files: [file("fresh", 0, 1024), file("week", 23, 512)] },
-            { id: "old", executedAt: "2026-09-01T00:00:00Z", importSettingName: null, products: [], files: [file("expired", 31)] },
+        useSurveysStore().summaries = [
+            toSurveySummary({ id: "recent", executedAt: "2026-10-16T00:00:00Z", importSettingName: null, products: [], files: [file("fresh", 0, 1024), file("week", 23, 512)] }),
+            toSurveySummary({ id: "old", executedAt: "2026-09-01T00:00:00Z", importSettingName: null, products: [], files: [file("expired", 31)] }),
         ];
     });
 

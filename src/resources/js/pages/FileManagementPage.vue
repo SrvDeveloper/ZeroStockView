@@ -16,7 +16,7 @@ const surveysStore = useSurveysStore();
 const toast = useUiStore();
 
 const groups = computed(() =>
-    surveysStore.sortedSurveys.map((survey) => ({
+    surveysStore.sortedSummaries.map((survey) => ({
         survey,
         files: survey.files.filter((f) => fileRemainingDays(f.uploadedAt) > 0),
     })),
