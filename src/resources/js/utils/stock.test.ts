@@ -29,7 +29,7 @@ function survey(id: string, executedAt: string, skus: Pick<SurveySkuResult, "sto
                 category: "C",
                 parentAsin: "",
                 memo: "",
-                skus: skus.map((item, index) => ({ ...item, id: `${id}-${index}`, skuCode: `S-${index}`, colorName: "", size: "", tqCode: "", tqColorNo: "", tqSize: "", memo: "" })),
+                skus: skus.map((item, index) => ({ ...item, id: `${id}-${index}`, skuCode: `S-${index}`, size: "", memo: "" })),
             },
         ],
     };

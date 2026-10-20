@@ -44,39 +44,22 @@ class SurveyResource extends JsonResource
                 'parentAsin' => $product->parent_asin ?? '',
                 'memo' => $product->memo ?? '',
                 'groups' => $this->memberships($product),
-                'skus' => $product->skus->map(function ($sku): array {
-                    $amazonTotal = $sku->amazon_own_stock === null || $sku->amazon_fba_stock === null
-                        ? null
-                        : $sku->amazon_own_stock + $sku->amazon_fba_stock;
-                    $amazonContribution = $amazonTotal ?? ($this->amazon_source === Survey::AMAZON_SOURCE_SP_API && ! $sku->hasAmazonAsin() ? 0 : null);
-                    $bossTotal = $sku->boss_own_stock === null || $sku->boss_rfc_stock === null
-                        ? null : $sku->boss_own_stock + $sku->boss_rfc_stock;
-                    $mallTotal = $amazonContribution === null || $bossTotal === null ? null : $amazonContribution + $bossTotal;
-
-                    return [
-                        'id' => (string) $sku->getKey(),
-                        'skuCode' => $sku->sku_code,
-                        'colorName' => '',
-                        'size' => $sku->tq_size,
-                        'asin' => $sku->child_asin ?? '',
-                        'tqCode' => $sku->tq_item_no,
-                        'tqColorNo' => $sku->tq_color_no,
-                        'tqSize' => $sku->tq_size,
-                        'stock' => [
-                            'amazonOwn' => $sku->amazon_own_stock,
-                            'amazonFba' => $sku->amazon_fba_stock,
-                            'amazonTotal' => $amazonTotal,
-                            'bossOwn' => $sku->boss_own_stock,
-                            'bossRfc' => $sku->boss_rfc_stock,
-                            'freeStock' => $sku->free_stock,
-                            'ecStock' => $sku->ec_stock,
-                            'mallTotal' => $mallTotal,
-                            'grandTotal' => $mallTotal === null || $sku->free_stock === null || $sku->ec_stock === null
-                                ? null : $mallTotal + $sku->free_stock + $sku->ec_stock,
-                        ],
-                        'memo' => $sku->memo ?? '',
-                    ];
-                })->values(),
+                'skus' => $product->skus->map(fn ($sku): array => [
+                    'id' => (string) $sku->getKey(),
+                    'skuCode' => $sku->sku_code,
+                    'size' => $sku->tq_size,
+                    'asin' => $sku->child_asin ?? '',
+                    // 合計（Amazon・モール全体・総数）は画面側で計算する（utils/stock.ts）。未確定の null をそのまま返す
+                    'stock' => [
+                        'amazonOwn' => $sku->amazon_own_stock,
+                        'amazonFba' => $sku->amazon_fba_stock,
+                        'bossOwn' => $sku->boss_own_stock,
+                        'bossRfc' => $sku->boss_rfc_stock,
+                        'freeStock' => $sku->free_stock,
+                        'ecStock' => $sku->ec_stock,
+                    ],
+                    'memo' => $sku->memo ?? '',
+                ])->values(),
             ])->values(),
             'files' => $this->files->map(fn ($file): array => [
                 'id' => (string) $file->getKey(),
