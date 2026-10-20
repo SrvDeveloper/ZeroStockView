@@ -1,4 +1,4 @@
-import { ADMIN_ROLES, ALL_ROLES, EDITOR_ROLES, type UserRole } from "@/constants/roles";
+import { ADMIN_ROLES, ALL_ROLES, EDITOR_ROLES, canAccess, type UserRole } from "@/constants/roles";
 
 /** 操作マニュアルの章・節。目次、前後の節、上部バーの現在地、検索で共有する（節の ID は URL になるので変えない） */
 export interface ManualHeadingMeta {
@@ -15,6 +15,8 @@ export interface ManualSectionMeta {
     shortTitle: string;
     description: string;
     icon: string;
+    /** この節を見られる権限。見られない節は目次・入口ページ・検索・前後の節に出さず、開いても本文を出さない */
+    roles: readonly UserRole[];
     /** 使える権限が限られる画面のとき、その権限 */
     audience?: string;
     /** 本文の小見出し。節のコンポーネントの ManualHeading と同じ順・同じ文言にする */
@@ -47,6 +49,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "はじめに",
                 description: "このシステムでできることと、1日の作業の流れを説明します。",
                 icon: "waving_hand",
+                roles: ALL_ROLES,
                 headings: [
                     { id: "daily-flow", title: "1日の作業の流れ" },
                     { id: "role-permissions", title: "権限ごとにできること" },
@@ -71,6 +74,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "① BOSS",
                 description: "BOSSの取込に使用するデータは下記の手順で取得します。",
                 icon: "touch_app",
+                roles: EDITOR_ROLES,
                 headings: [],
                 points: ["BOSSの在庫・商品一覧から、「倉庫毎の在庫数」のCSVを出力します。", "倉庫はすべて選択した状態で実行します。"],
                 keywords: ["BOSS", "倉庫毎の在庫数レポート", "自社倉庫", "RFC倉庫", "CSV出力", "ダウンロード"],
@@ -82,6 +86,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "② ECストック",
                 description: "ECストック在庫の取込に使用するデータは下記の手順で取得します。",
                 icon: "touch_app",
+                roles: EDITOR_ROLES,
                 headings: [],
                 points: ["ターコイズのKEEP一覧表で、得意先「59」のCSVを出力します。", "ダウンロードしたファイルは、名前を変えずにそのまま取り込めます。"],
                 keywords: ["ターコイズ", "KEEP一覧表", "ECストック", "得意先59", "CSV出力", "ダウンロード"],
@@ -93,6 +98,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "③ フリー在庫",
                 description: "フリー在庫の取込に使用するデータは下記の手順で取得します。",
                 icon: "touch_app",
+                roles: EDITOR_ROLES,
                 headings: [],
                 points: ["ターコイズの在庫一覧照会で、倉庫「01」のCSVを出力します。", "ゼロ在庫出力のチェックを外してから検索します。"],
                 keywords: ["ターコイズ", "在庫一覧照会表", "フリー在庫", "01番倉庫", "ゼロ在庫出力", "ダウンロード"],
@@ -109,6 +115,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "データ取込",
                 description: "準備したファイルを取り込んで、その日の在庫調査を作成・更新します。",
                 icon: "upload",
+                roles: EDITOR_ROLES,
                 audience: "編集者・特権管理者",
                 headings: [
                     { id: "steps", title: "手順" },
@@ -130,6 +137,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "Amazon在庫の取得",
                 description: "Amazon在庫（自社発送・FBA）は、AmazonのSP-APIから自動で取得します。ファイルの準備は不要です。",
                 icon: "cloud_download",
+                roles: ALL_ROLES,
                 headings: [
                     { id: "scheduled-fetch", title: "毎朝9:00の自動取得" },
                     { id: "import-status", title: "取得の状態を確認する" },
@@ -152,6 +160,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "在庫調査履歴",
                 description: "これまでの在庫調査を、日付ごとに確認します。",
                 icon: "history",
+                roles: ALL_ROLES,
                 headings: [
                     { id: "calendar", title: "カレンダーで見る" },
                     { id: "day-detail", title: "日を選んで詳細を見る" },
@@ -168,6 +177,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "在庫調査結果",
                 description: "1日分の在庫調査を、品番・SKUごとに確認します。",
                 icon: "fact_check",
+                roles: ALL_ROLES,
                 headings: [
                     { id: "summary", title: "画面上部のまとめ" },
                     { id: "stock-table", title: "在庫表の見方" },
@@ -188,6 +198,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "在庫推移",
                 description: "品番ごとに、日々の在庫数の移り変わりをグラフで確認します。",
                 icon: "show_chart",
+                roles: ALL_ROLES,
                 headings: [
                     { id: "options", title: "表示する内容を選ぶ" },
                     { id: "product-chart", title: "品番全体のグラフ" },
@@ -211,6 +222,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "品番グループ",
                 description: "取込の対象にする品番を、用途ごとのグループにまとめます。",
                 icon: "category",
+                roles: EDITOR_ROLES,
                 audience: "編集者・特権管理者",
                 headings: [
                     { id: "list-view", title: "一覧の見方" },
@@ -227,6 +239,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "ファイル管理",
                 description: "保存されている取込ファイルを、調査ごとに確認・ダウンロード・削除します。",
                 icon: "folder_open",
+                roles: ADMIN_ROLES,
                 audience: "特権管理者のみ",
                 headings: [],
                 points: ["取込ファイルは、アップロードから30日間保存されます。", "ファイルを削除しても、調査結果とメモは残ります。"],
@@ -240,6 +253,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "API連携設定",
                 description: "外部システムが日次在庫データを取得するためのAPIを設定します。",
                 icon: "api",
+                roles: ADMIN_ROLES,
                 audience: "特権管理者のみ",
                 headings: [],
                 points: ["外部システムが日次在庫を取得するAPIを設定します。", "APIキーは、発行した直後に1回だけ表示されます。"],
@@ -253,6 +267,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "ユーザー管理",
                 description: "ログインできるユーザーと、その権限を管理します。",
                 icon: "manage_accounts",
+                roles: ADMIN_ROLES,
                 audience: "特権管理者のみ",
                 headings: [],
                 points: ["ユーザーの追加・権限の変更・パスワードの再設定・削除を行います。", "権限を変えると、そのユーザーはすぐにログアウトされます。"],
@@ -271,6 +286,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 shortTitle: "注意事項",
                 description: "操作時に間違えやすい点をまとめます。",
                 icon: "error",
+                roles: ALL_ROLES,
                 headings: [
                     { id: "survey-date", title: "調査の日付とAmazon在庫の反映" },
                     { id: "legacy-surveys", title: "旧方式（5ファイル）の調査" },
@@ -303,9 +319,21 @@ export function manualChapterOf(id: string): string {
     return MANUAL_CHAPTERS.find((chapter) => chapter.sections.some((section) => section.id === id))?.title ?? "";
 }
 
-/** 目次の並びで前後にある節 */
-export function adjacentManualSections(id: string): { previous: ManualSectionMeta | null; next: ManualSectionMeta | null } {
-    const index = MANUAL_SECTIONS.findIndex((section) => section.id === id);
+/** その権限で見られる節か */
+export function canViewManualSection(section: ManualSectionMeta | string | undefined, role: UserRole | null | undefined): boolean {
+    const meta = typeof section === "string" ? findManualSection(section) : section;
+    return meta !== undefined && canAccess(role, meta.roles);
+}
+
+/** その権限で見られる節だけの章。節がひとつも残らない章は除く */
+export function visibleManualChapters(role: UserRole | null | undefined): ManualChapterMeta[] {
+    return MANUAL_CHAPTERS.map((chapter) => ({ ...chapter, sections: chapter.sections.filter((section) => canAccess(role, section.roles)) })).filter((chapter) => chapter.sections.length > 0);
+}
+
+/** その権限で見られる節の並びで、前後にある節 */
+export function adjacentManualSections(id: string, role: UserRole | null | undefined): { previous: ManualSectionMeta | null; next: ManualSectionMeta | null } {
+    const sections = MANUAL_SECTIONS.filter((section) => canAccess(role, section.roles));
+    const index = sections.findIndex((section) => section.id === id);
     if (index < 0) return { previous: null, next: null };
-    return { previous: MANUAL_SECTIONS[index - 1] ?? null, next: MANUAL_SECTIONS[index + 1] ?? null };
+    return { previous: sections[index - 1] ?? null, next: sections[index + 1] ?? null };
 }

@@ -1,4 +1,5 @@
-import { MANUAL_CHAPTERS, type ManualSectionMeta } from "@/constants/manual";
+import { MANUAL_CHAPTERS, canViewManualSection, findManualSection, type ManualSectionMeta } from "@/constants/manual";
+import type { UserRole } from "@/constants/roles";
 
 /** 検索結果の 1 件。anchorId があれば、その小見出し・囲みの位置で開く */
 export interface ManualSearchResult {
@@ -75,8 +76,9 @@ const ENTRIES = buildEntries();
 /**
  * 節名・小見出し・要点・キーワードから探す。空白で区切った語は、すべてを含むものだけを返す。
  * 一致した場所の重み（節名・小見出し ＞ キーワード ＞ 要点 ＞ 説明）の合計が大きい順、同点ならマニュアルの並び順。
+ * その権限で見られない節（と、その中の小見出し）は返さない。
  */
-export function searchManual(query: string, limit = 8): ManualSearchResult[] {
+export function searchManual(query: string, role: UserRole | null | undefined, limit = 8): ManualSearchResult[] {
     const terms = query
         .normalize("NFKC")
         .split(/\s+/)
@@ -86,6 +88,7 @@ export function searchManual(query: string, limit = 8): ManualSearchResult[] {
 
     const scored: { entry: SearchEntry; score: number; snippet: string }[] = [];
     for (const entry of ENTRIES) {
+        if (!canViewManualSection(findManualSection(entry.result.sectionId), role)) continue;
         let score = 0;
         let snippet = "";
         let matchedAll = true;

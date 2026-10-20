@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
 import ManualScreenshot from "@/components/manual/ManualScreenshot.vue";
-import { MANUAL_SECTIONS, adjacentManualSections } from "@/constants/manual";
+import { MANUAL_SECTIONS, adjacentManualSections, canViewManualSection } from "@/constants/manual";
 import type { UserRole } from "@/constants/roles";
 import ManualPage from "@/pages/ManualPage.vue";
 import { useAuthStore } from "@/stores/auth";
@@ -130,8 +130,8 @@ describe("ManualPage", () => {
 
         expect(linkTargets(wrapper, 'nav[aria-label="前後の節"]')).toEqual(["basic-operation-free", "basic-operation-amazon"]);
         expect(linkTargets(wrapper, "[data-related-links]")).toEqual(["basic-operation-amazon", "survey-result", "notes"]);
-        expect(adjacentManualSections("introduction").previous).toBeNull();
-        expect(adjacentManualSections("notes").next).toBeNull();
+        expect(adjacentManualSections("introduction", "admin").previous).toBeNull();
+        expect(adjacentManualSections("notes", "admin").next).toBeNull();
     });
 
     it("opens the table of contents from the current-section bar on small screens", async () => {
@@ -336,6 +336,56 @@ describe("ManualPage", () => {
             .map((marker) => Number(marker.text()));
         const legend = figure.findAll("[data-figure-legend] li");
         expect(markers).toEqual(legend.map((_, index) => index + 1));
+    });
+
+    it.each([
+        ["viewer", ["introduction", "basic-operation-amazon", "survey-history", "survey-result", "inventory-trend", "notes"], ["毎日の作業", "結果を確認する"]],
+        [
+            "editor",
+            MANUAL_SECTIONS.map((section) => section.id).filter((id) => !["file-management", "api-settings", "user-management"].includes(id)),
+            ["取込ファイルの準備", "毎日の作業", "結果を確認する", "設定"],
+        ],
+    ] as const)("shows %s only the sections the role can view in the table of contents", (role, sections, chapters) => {
+        signIn(role);
+        const wrapper = mountManual("survey-result");
+
+        expect(linkTargets(wrapper, 'nav[aria-label="操作マニュアルの目次"]')).toEqual([undefined, ...sections]);
+        expect(wrapper.findAll("[data-toc-chapter]").map((chapter) => chapter.text())).toEqual(chapters);
+    });
+
+    it("explains instead of showing a section the role cannot view", () => {
+        signIn("viewer");
+        const wrapper = mountManual("data-import");
+
+        expect(wrapper.find("section#data-import").exists()).toBe(false);
+        const notice = wrapper.get("[data-manual-restricted]");
+        expect(notice.text()).toContain("この節は、あなたの権限では表示できません。");
+        expect(notice.text()).toContain("「データ取込」は、編集者・特権管理者向けの説明です。");
+        expect(notice.getComponent<typeof RouterLinkStub>(RouterLinkStub).props("to")).toEqual({ name: "manual" });
+        expect(wrapper.find('nav[aria-label="前後の節"]').exists()).toBe(false);
+        expect(wrapper.find("[data-toc-headings]").exists()).toBe(false);
+
+        signIn("editor");
+        expect(mountManual("user-management").get("[data-manual-restricted]").text()).toContain("「ユーザー管理」は、特権管理者向けの説明です。");
+    });
+
+    it("skips sections the role cannot view in the pager and related links", () => {
+        signIn("viewer");
+        const wrapper = mountManual("basic-operation-amazon");
+
+        expect(linkTargets(wrapper, 'nav[aria-label="前後の節"]')).toEqual(["introduction", "survey-history"]);
+        expect(linkTargets(wrapper, "[data-related-links]")).toEqual(["survey-result"]);
+    });
+
+    it("keeps the daily flow on the entry page but links only to viewable sections", () => {
+        signIn("viewer");
+        const wrapper = mountManual();
+
+        expect(wrapper.findAll("[data-home-tasks] h3").map((title) => title.text())).toEqual(["毎日の作業をする", "結果を確認する", "困ったとき・注意事項", "はじめに"]);
+        expect(wrapper.get("[data-home-tasks]").text()).not.toContain("データ取込");
+        expect(wrapper.findAll("[data-home-flow] > li")).toHaveLength(4);
+        expect(linkTargets(wrapper, "[data-home-flow]")).toEqual(["basic-operation-amazon", "survey-result"]);
+        for (const section of linkTargets(wrapper, "[data-manual-home]")) expect(canViewManualSection(section, "viewer"), section).toBe(true);
     });
 
     it("no longer asks users to rename the downloaded files", () => {

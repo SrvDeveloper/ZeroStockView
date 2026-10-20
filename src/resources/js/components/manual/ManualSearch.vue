@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import { useAuthStore } from "@/stores/auth";
 import { searchManual, type ManualSearchResult } from "@/utils/manualSearch";
 
 /** large は入口ページの見出し用、compact は節のページの目次の上に置く */
@@ -15,7 +16,8 @@ const activeIndex = ref(0);
 const rootRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
 
-const results = computed(() => searchManual(query.value));
+const auth = useAuthStore();
+const results = computed(() => searchManual(query.value, auth.role));
 const hasQuery = computed(() => query.value.trim() !== "");
 const showPanel = computed(() => open.value && hasQuery.value);
 

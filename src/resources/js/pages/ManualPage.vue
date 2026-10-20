@@ -21,8 +21,8 @@ import SurveyHistorySection from "@/components/manual/sections/SurveyHistorySect
 import SurveyResultSection from "@/components/manual/sections/SurveyResultSection.vue";
 import UserManagementSection from "@/components/manual/sections/UserManagementSection.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
-import { MANUAL_SECTIONS, findManualSection, manualChapterOf } from "@/constants/manual";
-import { canAccess } from "@/constants/roles";
+import { MANUAL_SECTIONS, canViewManualSection, findManualSection, manualChapterOf } from "@/constants/manual";
+import { ALL_ROLES, ROLE_LABELS, canAccess } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 
 const props = defineProps<{ section?: string }>();
@@ -49,6 +49,17 @@ const isHome = computed(() => findManualSection(props.section) === undefined);
 const current = computed(() => findManualSection(props.section) ?? MANUAL_SECTIONS[0]!);
 const chapter = computed(() => manualChapterOf(current.value.id));
 const auth = useAuthStore();
+/** 権限で見られない節は、本文の代わりに案内を出す */
+const canViewCurrent = computed(() => canViewManualSection(current.value, auth.role));
+const headings = computed(() => (canViewCurrent.value ? current.value.headings : []));
+/** 案内に出す「この節を見られる権限」（閲覧者・編集者・特権管理者の順） */
+const allowedRoleLabels = computed(() =>
+    [...ALL_ROLES]
+        .reverse()
+        .filter((role) => current.value.roles.includes(role))
+        .map((role) => ROLE_LABELS[role])
+        .join("・"),
+);
 /** この節で説明している画面。開けない権限のときは出さない */
 const screen = computed(() => {
     const target = current.value.screen;
@@ -64,15 +75,14 @@ let frame = 0;
 function updateActiveHeading() {
     frame = 0;
     if (isHome.value) return;
-    const headings = current.value.headings;
-    let active = headings[0]?.id ?? "";
-    for (const heading of headings) {
+    let active = headings.value[0]?.id ?? "";
+    for (const heading of headings.value) {
         const element = document.getElementById(heading.id);
         if (element && element.getBoundingClientRect().top <= ACTIVE_OFFSET_PX) active = heading.id;
     }
     // 最後の小見出しは画面の上まで届かないことがあるので、ページの下端まで来たら最後の小見出しとする
     const scrolledToBottom = window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
-    if (scrolledToBottom && headings.length > 0) active = headings[headings.length - 1]!.id;
+    if (scrolledToBottom && headings.value.length > 0) active = headings.value[headings.value.length - 1]!.id;
     activeHeadingId.value = active;
 }
 
@@ -147,21 +157,38 @@ onBeforeUnmount(() => {
                 /></span>
             </button>
             <div v-if="mobileTocOpen" id="manual-mobile-toc" class="mt-2 max-h-[70vh] overflow-y-auto rounded-card shadow-float">
-                <ManualTableOfContents :current-id="current.id" :headings="current.headings" :active-heading-id="activeHeadingId" @navigate="mobileTocOpen = false" @jump="jumpFromMobileToc" />
+                <ManualTableOfContents :current-id="current.id" :headings="headings" :active-heading-id="activeHeadingId" @navigate="mobileTocOpen = false" @jump="jumpFromMobileToc" />
             </div>
         </div>
 
         <div class="grid items-start gap-5 lg:grid-cols-[14rem_minmax(0,760px)] 2xl:grid-cols-[14rem_minmax(0,760px)_13rem]">
             <div class="hidden lg:sticky lg:top-16 lg:flex lg:flex-col lg:gap-3">
                 <ManualSearch />
-                <ManualTableOfContents :current-id="current.id" :headings="current.headings" :active-heading-id="activeHeadingId" @jump="jumpToHeading" />
+                <ManualTableOfContents :current-id="current.id" :headings="headings" :active-heading-id="activeHeadingId" @jump="jumpToHeading" />
             </div>
 
             <article class="flex min-w-0 flex-col gap-5">
-                <ManualSection :id="current.id" :key="current.id" :title="current.title" :description="current.description" :chapter="chapter" :audience="current.audience" :points="current.points">
+                <section v-if="!canViewCurrent" class="flex flex-col items-start gap-3 rounded-panel border border-line bg-surface px-6 py-9 shadow-card sm:px-10" data-manual-restricted>
+                    <span class="flex h-10 w-10 items-center justify-center rounded-card bg-tint text-ink-2"><AppIcon name="lock" :size="22" /></span>
+                    <h1 class="text-[20px] font-extrabold">この節は、あなたの権限では表示できません。</h1>
+                    <p class="text-[14px] leading-[1.8] text-ink-2">「{{ current.title }}」は、{{ allowedRoleLabels }}向けの説明です。権限の変更は特権管理者に依頼してください。</p>
+                    <RouterLink :to="{ name: 'manual' }" class="inline-flex min-h-10 items-center gap-1.5 rounded-control bg-ink px-4 text-[13px] font-bold text-white hover:bg-ink-2"
+                        >マニュアルのホームへ<AppIcon name="arrow_forward" :size="16"
+                    /></RouterLink>
+                </section>
+                <ManualSection
+                    v-else
+                    :id="current.id"
+                    :key="current.id"
+                    :title="current.title"
+                    :description="current.description"
+                    :chapter="chapter"
+                    :audience="current.audience"
+                    :points="current.points"
+                >
                     <component :is="SECTION_COMPONENTS[current.id]" />
                 </ManualSection>
-                <div class="flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-3.5 shadow-card sm:flex-row sm:items-center sm:justify-between 2xl:hidden">
+                <div v-if="canViewCurrent" class="flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-3.5 shadow-card sm:flex-row sm:items-center sm:justify-between 2xl:hidden">
                     <ManualRelatedLinks :ids="current.related" />
                     <RouterLink
                         v-if="screen"
@@ -171,14 +198,14 @@ onBeforeUnmount(() => {
                         >{{ screen.label }}<AppIcon name="arrow_forward" :size="16"
                     /></RouterLink>
                 </div>
-                <ManualPager :current-id="current.id" />
+                <ManualPager v-if="canViewCurrent" :current-id="current.id" />
             </article>
 
-            <aside class="hidden 2xl:sticky 2xl:top-16 2xl:flex 2xl:flex-col 2xl:gap-5" aria-label="このページの内容と関連する節">
-                <nav v-if="current.headings.length > 0" aria-label="このページの内容" class="flex flex-col" data-page-outline>
+            <aside v-if="canViewCurrent" class="hidden 2xl:sticky 2xl:top-16 2xl:flex 2xl:flex-col 2xl:gap-5" aria-label="このページの内容と関連する節">
+                <nav v-if="headings.length > 0" aria-label="このページの内容" class="flex flex-col" data-page-outline>
                     <p class="pb-1.5 text-[11px] font-semibold text-muted">このページの内容</p>
                     <a
-                        v-for="heading in current.headings"
+                        v-for="heading in headings"
                         :key="heading.id"
                         :href="`#${heading.id}`"
                         class="border-l-2 py-1 pl-3 text-[12.5px] leading-snug transition-colors"
