@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Exceptions\CrossWalkerException;
 use App\Models\ImportTarget;
 use App\Models\Product;
+use App\Models\Sku;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
@@ -54,38 +56,106 @@ class CrossWalkerClient
             throw new CrossWalkerException('CrossWalkerから取込対象の品番を取得できませんでした: '.$missingCodes->implode(', '));
         }
 
-        DB::transaction(function () use ($targets, $items): void {
-            foreach ($targets as $target) {
-                $this->syncProduct($target->product, $items->get($target->product->product_code));
-            }
-        });
+        DB::transaction(fn () => $this->syncProducts(
+            $targets->mapWithKeys(fn (ImportTarget $target): array => [$target->product->product_code => $target->product]),
+            $items,
+        ));
     }
 
-    /** @param array<string, mixed> $item */
-    public function syncProduct(Product $product, array $item): void
+    /**
+     * CrossWalker の品番・SKUを品番マスタ（products・skus）へ反映する。中身が変わった品番・SKUだけを書き込む。
+     * SKUは対象の全品番をまとめて、「なくなった・変わったSKUを消す」→「新しい・変わったSKUを入れる」の順に処理する。
+     * 一意制約のある値（SKUコード・ASIN・TQの品番/カラー/サイズ・品番内の並び順）が、品番をまたいで入れ替わっても途中で重ならない。
+     * SKUのIDはほかの表から参照されていないので、変わったSKUは入れ直す。
+     *
+     * @param  SupportCollection<string, Product>  $products  品番コード => 品番（まだ保存していない新しい品番を含む）
+     * @param  SupportCollection<string, array<string, mixed>>  $items  品番コード => CrossWalker の品番
+     */
+    public function syncProducts(SupportCollection $products, SupportCollection $items): void
     {
-        $product->fill([
-            'product_code' => $item['item_no'],
-            'brand' => $item['brand'],
-            'category' => $item['category'],
-            'parent_asin' => $item['parent_asin'] ?: null,
-            'status' => $item['status'],
-            'source_updated_at' => $item['updated_at'] ?: null,
-            'synced_at' => now(),
-        ])->save();
-
-        $product->skus()->delete();
-        foreach ($item['skus'] as $index => $sku) {
-            $product->skus()->create([
-                'sku_code' => $sku['sku_code'],
-                'child_asin' => $sku['child_asin'] ?: null,
-                'status' => $sku['status'],
-                'tq_item_no' => $sku['tq_item_no'],
-                'tq_color_no' => $sku['tq_color_no'],
-                'tq_size' => $sku['tq_size'] ?? '',
-                'sort_order' => $index + 1,
+        $now = now();
+        $unchangedProductIds = [];
+        foreach ($products as $productCode => $product) {
+            $item = $items->get($productCode);
+            $product->fill([
+                'product_code' => $item['item_no'],
+                'brand' => $item['brand'],
+                'category' => $item['category'],
+                'parent_asin' => $item['parent_asin'] ?: null,
+                'status' => $item['status'],
+                'source_updated_at' => $item['updated_at'] ?: null,
             ]);
+            if ($product->exists && ! $product->isDirty()) {
+                $unchangedProductIds[] = $product->getKey();
+
+                continue;
+            }
+            $product->synced_at = $now;
+            $product->save();
         }
+        // 中身が変わらない品番も、同期した日時（品番グループの「最終同期」）はまとめて更新する
+        if ($unchangedProductIds !== []) {
+            Product::query()->whereKey($unchangedProductIds)->update(['synced_at' => $now]);
+            $products->each(fn (Product $product) => in_array($product->getKey(), $unchangedProductIds, true)
+                ? $product->forceFill(['synced_at' => $now])->syncOriginalAttribute('synced_at') : null);
+        }
+
+        $desired = [];
+        foreach ($products as $productCode => $product) {
+            foreach ($items->get($productCode)['skus'] as $index => $sku) {
+                $desired[] = [
+                    'product_id' => $product->getKey(),
+                    'sku_code' => $sku['sku_code'],
+                    'child_asin' => $sku['child_asin'] ?: null,
+                    'status' => $sku['status'],
+                    'tq_item_no' => $sku['tq_item_no'],
+                    'tq_color_no' => $sku['tq_color_no'],
+                    'tq_size' => $sku['tq_size'] ?? '',
+                    'sort_order' => $index + 1,
+                ];
+            }
+        }
+
+        $existing = Sku::query()->whereIn('product_id', $products->map(fn (Product $product): int => $product->getKey())->values())->get();
+        $existingBySignature = $existing->keyBy(fn (Sku $sku): string => $this->skuSignature($sku->only(array_keys($desired[0] ?? ['product_id' => 0]))));
+        $keptIds = [];
+        $inserts = [];
+        foreach ($desired as $row) {
+            $kept = $existingBySignature->get($this->skuSignature($row));
+            if ($kept !== null && ! isset($keptIds[$kept->getKey()])) {
+                $keptIds[$kept->getKey()] = true;
+
+                continue;
+            }
+            $inserts[] = $row + ['created_at' => $now, 'updated_at' => $now];
+        }
+
+        $deletedIds = $existing->reject(fn (Sku $sku): bool => isset($keptIds[$sku->getKey()]))->modelKeys();
+        foreach (array_chunk($deletedIds, 500) as $chunk) {
+            Sku::query()->whereKey($chunk)->delete();
+        }
+        foreach (array_chunk($inserts, 500) as $chunk) {
+            Sku::query()->insert($chunk);
+        }
+    }
+
+    /**
+     * SKUの中身を比べるための文字列。DBから読んだ値（数値が文字列になる場合がある）と、CrossWalker の値を同じ形にそろえる。
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function skuSignature(array $row): string
+    {
+        return json_encode([
+            (int) $row['product_id'],
+            (string) $row['sku_code'],
+            $row['child_asin'] === null || $row['child_asin'] === '' ? null : (string) $row['child_asin'],
+            (string) $row['status'],
+            (string) $row['tq_item_no'],
+            (string) $row['tq_color_no'],
+            (string) $row['tq_size'],
+            (int) $row['sort_order'],
+        ], JSON_THROW_ON_ERROR);
     }
 
     /**

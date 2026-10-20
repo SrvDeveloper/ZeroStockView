@@ -72,12 +72,16 @@ class ImportSettingController extends Controller
             $setting->fill(['name' => $data['name']])->save();
             $setting->targets()->delete();
 
-            foreach ($data['product_codes'] as $productIndex => $productCode) {
-                $product = Product::query()->firstOrNew(['product_code' => $productCode]);
-                $crossWalker->syncProduct($product, $items->get($productCode));
+            // 品番マスタは、CrossWalker と中身が変わった品番・SKUだけを書き込む
+            $existing = Product::query()->whereIn('product_code', $data['product_codes'])->get()->keyBy('product_code');
+            $products = collect($data['product_codes'])->mapWithKeys(fn (string $productCode): array => [
+                $productCode => $existing->get($productCode) ?? new Product(['product_code' => $productCode]),
+            ]);
+            $crossWalker->syncProducts($products, $items);
 
+            foreach ($data['product_codes'] as $productIndex => $productCode) {
                 $setting->targets()->create([
-                    'product_id' => $product->getKey(),
+                    'product_id' => $products->get($productCode)->getKey(),
                     'sort_order' => $productIndex + 1,
                 ]);
             }
