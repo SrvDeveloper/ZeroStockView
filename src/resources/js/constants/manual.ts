@@ -266,9 +266,6 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
 
 export const MANUAL_SECTIONS: ManualSectionMeta[] = MANUAL_CHAPTERS.flatMap((chapter) => chapter.sections);
 
-/** `/manual` で最初に開く節（入口ページができるまで） */
-export const DEFAULT_MANUAL_SECTION_ID = "introduction";
-
 export function findManualSection(id: string | undefined): ManualSectionMeta | undefined {
     return MANUAL_SECTIONS.find((section) => section.id === id);
 }

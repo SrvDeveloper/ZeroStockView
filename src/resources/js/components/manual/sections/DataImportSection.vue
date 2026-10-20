@@ -42,7 +42,7 @@ const importErrors = [
         </ManualStep>
     </div>
 
-    <ManualCallout title="取込に失敗したとき" note="在庫調査は作成も更新もされません" tone="warning">
+    <ManualCallout id="import-errors" class="scroll-mt-32 lg:scroll-mt-20" title="取込に失敗したとき" note="在庫調査は作成も更新もされません" tone="warning">
         <p>「取込に失敗しました」と、原因が表示されます。原因を直してから、もう一度実行してください。</p>
         <ManualTermTable class="mt-3" :rows="importErrors" term-label="表示されるメッセージ" meaning-label="どうするか" mono-term data-import-errors />
     </ManualCallout>

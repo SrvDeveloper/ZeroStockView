@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import ManualHome from "@/components/manual/ManualHome.vue";
 import ManualPager from "@/components/manual/ManualPager.vue";
 import ManualRelatedLinks from "@/components/manual/ManualRelatedLinks.vue";
 import ManualSection from "@/components/manual/ManualSection.vue";
@@ -19,7 +20,7 @@ import SurveyHistorySection from "@/components/manual/sections/SurveyHistorySect
 import SurveyResultSection from "@/components/manual/sections/SurveyResultSection.vue";
 import UserManagementSection from "@/components/manual/sections/UserManagementSection.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
-import { DEFAULT_MANUAL_SECTION_ID, findManualSection, manualChapterOf } from "@/constants/manual";
+import { MANUAL_SECTIONS, findManualSection, manualChapterOf } from "@/constants/manual";
 import { canAccess } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 
@@ -42,8 +43,9 @@ const SECTION_COMPONENTS: Record<string, Component> = {
     notes: NotesSection,
 };
 
-/** 存在しない節はルーターで /manual に戻すので、ここでは既定の節を表示するだけにする */
-const current = computed(() => findManualSection(props.section) ?? findManualSection(DEFAULT_MANUAL_SECTION_ID)!);
+/** 節を指定しない /manual は入口ページ。存在しない節はルーターで /manual に戻すので、ここでも入口ページにする */
+const isHome = computed(() => findManualSection(props.section) === undefined);
+const current = computed(() => findManualSection(props.section) ?? MANUAL_SECTIONS[0]!);
 const chapter = computed(() => manualChapterOf(current.value.id));
 const auth = useAuthStore();
 /** この節で説明している画面。開けない権限のときは出さない */
@@ -60,6 +62,7 @@ let frame = 0;
 
 function updateActiveHeading() {
     frame = 0;
+    if (isHome.value) return;
     const headings = current.value.headings;
     let active = headings[0]?.id ?? "";
     for (const heading of headings) {
@@ -90,14 +93,11 @@ function jumpFromMobileToc(id: string) {
     jumpToHeading(id);
 }
 
-watch(
-    () => current.value.id,
-    async () => {
-        mobileTocOpen.value = false;
-        await nextTick();
-        updateActiveHeading();
-    },
-);
+watch([() => current.value.id, isHome], async () => {
+    mobileTocOpen.value = false;
+    await nextTick();
+    updateActiveHeading();
+});
 
 onMounted(() => {
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -111,7 +111,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="flex flex-col gap-4">
+    <ManualHome v-if="isHome" />
+    <div v-else class="flex flex-col gap-4">
         <!-- スマホ・タブレット：いまの節を示すバー。押すと目次が開く -->
         <div class="sticky top-12 z-20 lg:hidden" data-mobile-toc>
             <button

@@ -12,10 +12,10 @@ const integrationStatuses = [
 </script>
 
 <template>
-    <ManualCallout title="取込待ち（—）は在庫0ではありません" tone="warning"
+    <ManualCallout id="pending-vs-zero" class="scroll-mt-32 lg:scroll-mt-20" title="取込待ち（—）は在庫0ではありません" tone="warning"
         >「—」や「取込待ち」は、まだ数がわからない状態です。在庫が0と確定したときは「0」と表示されます。取込待ちの倉庫があるSKUは、在庫総数が未確定になり、全倉庫ゼロ・一部の倉庫でゼロにも数えません。日次在庫CSVやExcelで集計するときも、空欄を0として扱わないでください。</ManualCallout
     >
-    <ManualCallout title="取込ファイルの保存期限は30日です" tone="warning"
+    <ManualCallout id="file-retention" class="scroll-mt-32 lg:scroll-mt-20" title="取込ファイルの保存期限は30日です" tone="warning"
         >アップロードから30日を過ぎたファイルは自動で削除され、ダウンロードと「保存ファイルで再照合」ができなくなります。調査結果・メモ・Excel出力は引き続き使えます。必要なファイルは、期限までにダウンロードしておいてください。</ManualCallout
     >
 

@@ -39,13 +39,56 @@ describe("ManualPage", () => {
         const wrapper = mountManual("data-import");
 
         expect(wrapper.findAll("section").map((section) => section.attributes("id"))).toEqual(["data-import"]);
-        expect(linkTargets(wrapper, 'nav[aria-label="操作マニュアルの目次"]')).toEqual(MANUAL_SECTIONS.map((section) => section.id));
+        // 先頭はマニュアルのホーム（節の指定なし）
+        expect(linkTargets(wrapper, 'nav[aria-label="操作マニュアルの目次"]')).toEqual([undefined, ...MANUAL_SECTIONS.map((section) => section.id)]);
         expect(wrapper.get('[data-toc-section="data-import"]').attributes("aria-current")).toBe("page");
     });
 
-    it("shows the introduction on the manual top and for an unknown section", () => {
-        expect(mountManual().find("section").attributes("id")).toBe("introduction");
-        expect(mountManual("no-such-section").find("section").attributes("id")).toBe("introduction");
+    it("shows the entry page on the manual top and for an unknown section", () => {
+        for (const section of [undefined, "no-such-section"]) {
+            const wrapper = mountManual(section);
+            expect(wrapper.find("[data-manual-home]").exists()).toBe(true);
+            expect(wrapper.find("section[id]").exists()).toBe(false);
+        }
+    });
+
+    it("lays out the entry page with the daily flow, tasks and the display legend", () => {
+        signIn("editor");
+        const wrapper = mountManual();
+
+        expect(wrapper.get("h1").text()).toBe("操作マニュアル");
+        expect(wrapper.get("#manual-search").attributes("type")).toBe("search");
+        expect(wrapper.get("[data-home-role]").text()).toContain("編集者");
+        expect(wrapper.findAll("[data-home-flow] > li")).toHaveLength(4);
+        expect(wrapper.findAll("[data-home-tasks] h3").map((title) => title.text())).toEqual([
+            "取込ファイルを準備する",
+            "毎日の作業をする",
+            "結果を確認する",
+            "設定を変える",
+            "困ったとき・注意事項",
+            "はじめに",
+        ]);
+        expect(wrapper.get("[data-home-legend]").text()).toContain("在庫0（確定）");
+    });
+
+    it("points every entry-page link at an existing section and anchor", () => {
+        const links = mountManual()
+            .findAllComponents(RouterLinkStub)
+            .map((link) => link.props("to") as { params: { section: string }; hash?: string });
+
+        expect(links.length).toBeGreaterThan(20);
+        for (const { params, hash } of links) {
+            const page = mountManual(params.section);
+            expect(page.find(`section#${params.section}`).exists(), params.section).toBe(true);
+            if (hash) expect(page.find(hash).exists(), `${params.section}${hash}`).toBe(true);
+        }
+    });
+
+    it("links back to the entry page from the table of contents", () => {
+        const home = mountManual("data-import").get("[data-toc-home]");
+
+        expect(home.text()).toContain("マニュアルのホーム");
+        expect(mountManual("data-import").getComponent<typeof RouterLinkStub>("[data-toc-home]").props("to")).toEqual({ name: "manual" });
     });
 
     it("groups the table of contents into chapters and marks restricted screens", () => {
