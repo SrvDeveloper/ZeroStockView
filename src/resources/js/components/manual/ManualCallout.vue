@@ -25,9 +25,9 @@ const style = computed(() => styles[props.tone]);
 </script>
 
 <template>
-    <aside class="flex gap-2.5 rounded-card border px-3.5 py-3 text-ink" :class="style.container" :role="tone === 'warning' ? 'alert' : 'note'">
+    <aside class="flex gap-3 rounded-card border px-4 py-3.5 text-ink" :class="style.container" :role="tone === 'warning' ? 'alert' : 'note'">
         <AppIcon :name="style.icon" :size="18" :class="['mt-0.5', style.iconColor]" />
-        <div class="min-w-0 text-[12.5px] leading-relaxed">
+        <div class="min-w-0 text-[13.5px] leading-relaxed">
             <p v-if="title" class="font-semibold">{{ title }}</p>
             <div :class="title ? 'mt-1' : ''"><slot /></div>
         </div>

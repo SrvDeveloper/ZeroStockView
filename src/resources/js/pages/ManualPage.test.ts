@@ -129,6 +129,18 @@ describe("ManualPage", () => {
         expect(notes.findAll("[data-integration-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["Amazon SP-API", "CrossWalker", "保存ファイル"]);
     });
 
+    it("groups the table of contents into chapters and marks restricted screens", () => {
+        const wrapper = mount(ManualPage, { attachTo: document.body });
+        const nav = wrapper.get('nav[aria-label="操作マニュアルの目次"]');
+
+        expect(nav.findAll("[data-toc-chapter]").map((chapter) => chapter.text())).toEqual(["取込ファイルの準備", "毎日の作業", "結果を確認する", "設定"]);
+        expect(nav.get('[aria-current="location"]').attributes("href")).toBe("#introduction");
+        expect(wrapper.get("#data-import [data-section-chapter]").text()).toBe("毎日の作業");
+        expect(wrapper.get("#user-management [data-section-audience]").text()).toBe("特権管理者のみ");
+        expect(wrapper.find("#introduction [data-section-audience]").exists()).toBe(false);
+        wrapper.unmount();
+    });
+
     it("no longer asks users to rename the downloaded files", () => {
         const wrapper = mount(ManualPage);
 
