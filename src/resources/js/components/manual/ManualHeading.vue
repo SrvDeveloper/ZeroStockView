@@ -4,8 +4,7 @@ defineProps<{ id: string }>();
 </script>
 
 <template>
-    <h3 :id="id" class="flex scroll-mt-20 items-center gap-2 text-[15.5px] leading-snug font-bold text-ink" data-manual-heading>
-        <span class="h-[1.05em] w-1 shrink-0 rounded-full bg-ink" aria-hidden="true"></span>
+    <h2 :id="id" class="scroll-mt-32 border-b-2 lg:scroll-mt-20 border-ink pb-2.5 text-[21px] leading-snug font-extrabold text-ink" data-manual-heading>
         <slot />
-    </h3>
+    </h2>
 </template>
