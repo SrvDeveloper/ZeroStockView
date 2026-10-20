@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import { computed } from "vue";
 
-const props = withDefaults(defineProps<{ name: string; size?: number | string; filled?: boolean }>(), { size: 20, filled: false });
+const props = withDefaults(defineProps<{ name: IconName; size?: number | string; filled?: boolean }>(), { size: 20, filled: false });
 
 const iconSize = computed(() => (typeof props.size === "number" ? `${props.size}px` : props.size));
 </script>

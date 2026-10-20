@@ -9,10 +9,9 @@
         <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
         <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
         @fonts
-        <link
-            rel="stylesheet"
-            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block"
-        >
+        {{-- アイコン用フォント（Material Symbols）は、使うアイコンだけを app.ts から読み込む。接続だけ先に始めておく --}}
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         @vite(['resources/css/app.css', 'resources/js/app.ts'])
     </head>
     <body class="antialiased">

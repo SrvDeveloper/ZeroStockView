@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import AppIcon from "@/components/ui/AppIcon.vue";
 
-withDefaults(defineProps<{ icon?: string; title: string; description?: string }>(), { icon: "inventory_2", description: "" });
+withDefaults(defineProps<{ icon?: IconName; title: string; description?: string }>(), { icon: "inventory_2", description: "" });
 </script>
 
 <template>

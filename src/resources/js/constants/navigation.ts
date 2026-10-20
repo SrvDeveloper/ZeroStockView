@@ -1,9 +1,10 @@
 import { ADMIN_ROLES, ALL_ROLES, EDITOR_ROLES, canAccess, type UserRole } from "@/constants/roles";
+import type { IconName } from "@/constants/icons";
 
 export interface NavItem {
     name: string;
     label: string;
-    icon: string;
+    icon: IconName;
     roles: readonly UserRole[];
     /** この項目を選択中として扱う子画面のルート名 */
     children?: string[];

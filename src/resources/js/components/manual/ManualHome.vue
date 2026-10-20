@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import { computed } from "vue";
 import ManualSearch from "@/components/manual/ManualSearch.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
@@ -57,7 +58,7 @@ const dailyFlow = [
 interface ManualTask {
     title: string;
     caption: string;
-    icon: string;
+    icon: IconName;
     /** 注意を促すカードは黄色のアイコンにする */
     tone?: "signal";
     items: { label: string; to: ReturnType<typeof manualLink>; badge?: string }[];

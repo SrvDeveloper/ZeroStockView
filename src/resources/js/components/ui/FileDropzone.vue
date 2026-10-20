@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import { computed, ref } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import { formatSizeKb } from "@/utils/format";
@@ -9,7 +10,7 @@ const props = withDefaults(
         modelValue: File | null;
         title?: string;
         description?: string;
-        icon?: string;
+        icon?: IconName;
     }>(),
     { title: "", description: "", icon: "description" },
 );

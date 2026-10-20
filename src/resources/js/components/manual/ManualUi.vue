@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import AppIcon from "@/components/ui/AppIcon.vue";
 
 /**
@@ -8,9 +9,9 @@ import AppIcon from "@/components/ui/AppIcon.vue";
 withDefaults(
     defineProps<{
         variant?: "menu" | "primary" | "button";
-        icon?: string;
+        icon?: IconName;
     }>(),
-    { variant: "button", icon: "" },
+    { variant: "button", icon: undefined },
 );
 </script>
 

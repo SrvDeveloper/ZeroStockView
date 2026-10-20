@@ -1,3 +1,4 @@
+import type { IconName } from "@/constants/icons";
 export interface Sku {
     skuCode: string;
     colorName: string;
@@ -77,7 +78,7 @@ export interface SurveyGroup {
 export type ImportFileType = "在庫商品レポート" | "FBA在庫管理レポート" | "倉庫毎の在庫数レポート" | "KEEP一覧表" | "在庫一覧照会表";
 export type UploadFileType = Exclude<ImportFileType, "在庫商品レポート" | "FBA在庫管理レポート">;
 
-export const IMPORT_FILE_TYPES: { type: UploadFileType; format: string; stockScope: string; extension: string; icon: string }[] = [
+export const IMPORT_FILE_TYPES: { type: UploadFileType; format: string; stockScope: string; extension: string; icon: IconName }[] = [
     { type: "倉庫毎の在庫数レポート", format: "CSV", stockScope: "BOSS:自社／BOSS:RFC", extension: "csv", icon: "warehouse" },
     { type: "KEEP一覧表", format: "CSV", stockScope: "ECストック", extension: "csv", icon: "description" },
     { type: "在庫一覧照会表", format: "CSV", stockScope: "フリー在庫", extension: "csv", icon: "fact_check" },

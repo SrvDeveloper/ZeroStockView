@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import { computed } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 
@@ -10,12 +11,12 @@ const props = withDefaults(
         variant?: Variant;
         size?: Size;
         type?: "button" | "submit";
-        icon?: string;
+        icon?: IconName;
         disabled?: boolean;
         loading?: boolean;
         block?: boolean;
     }>(),
-    { variant: "secondary", size: "md", type: "button", icon: "", disabled: false, loading: false, block: false },
+    { variant: "secondary", size: "md", type: "button", icon: undefined, disabled: false, loading: false, block: false },
 );
 
 const variantClass: Record<Variant, string> = {

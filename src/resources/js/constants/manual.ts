@@ -1,4 +1,5 @@
 import { ADMIN_ROLES, ALL_ROLES, EDITOR_ROLES, canAccess, type UserRole } from "@/constants/roles";
+import type { IconName } from "@/constants/icons";
 
 /** 操作マニュアルの章・節。目次、前後の節、上部バーの現在地、検索で共有する（節の ID は URL になるので変えない） */
 export interface ManualHeadingMeta {
@@ -14,7 +15,7 @@ export interface ManualSectionMeta {
     /** 目次に出す短い名前 */
     shortTitle: string;
     description: string;
-    icon: string;
+    icon: IconName;
     /** この節を見られる権限。見られない節は目次・入口ページ・検索・前後の節に出さず、開いても本文を出さない */
     roles: readonly UserRole[];
     /** 使える権限が限られる画面のとき、その権限 */
