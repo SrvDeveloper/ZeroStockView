@@ -3,15 +3,19 @@
 namespace App\Services;
 
 use App\Models\AmazonInventoryImport;
+use App\Models\AmazonInventorySnapshot;
 use App\Models\Survey;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class SurveyAmazonInventorySyncService
 {
+    public function __construct(private BulkRowWriter $writer) {}
+
     /**
      * Apply the latest successful import for the survey's Tokyo calendar day.
      * Historical surveys without an explicit source are handled by the audited backfill.
@@ -26,29 +30,20 @@ class SurveyAmazonInventorySyncService
                 return null;
             }
 
-            $day = $survey->executed_at->setTimezone('Asia/Tokyo')->toDateString();
-            $import = $this->latestSuccessfulImport($day);
-            if ($import !== null && ($import->basis_at === null || $import->completed_at === null)) {
-                throw new RuntimeException('成功したAmazon在庫取込の基準日時または完了日時がありません。');
-            }
-            $snapshots = $import?->snapshots()->get()->keyBy('sku_code') ?? collect();
-            if ($import !== null && $snapshots->isEmpty()) {
-                throw new RuntimeException('成功したAmazon在庫取込にSKU別スナップショットがありません。');
-            }
+            $import = $this->importFor($survey);
+            $snapshots = $this->snapshotsOf($import);
 
+            $changes = [];
             foreach ($survey->products()->with('skus')->get() as $product) {
                 foreach ($product->skus as $sku) {
-                    $snapshot = $snapshots->get($sku->sku_code);
-                    if ($snapshot !== null && ! $sku->hasAmazonAsin() && trim($snapshot->asin) !== '') {
-                        $sku->child_asin = $snapshot->asin;
-                    }
-                    $sku->amazon_own_stock = $snapshot?->amazon_own_stock;
-                    $sku->amazon_fba_stock = $snapshot?->amazon_fba_stock;
-                    if ($sku->isDirty(['child_asin', 'amazon_own_stock', 'amazon_fba_stock'])) {
-                        $sku->save();
+                    $values = $this->amazonValues($sku->child_asin, $snapshots->get($sku->sku_code));
+                    $sku->fill($values);
+                    if ($sku->isDirty(array_keys($values))) {
+                        $changes[$sku->getKey()] = $values;
                     }
                 }
             }
+            $this->writer->updateById('survey_skus', $changes);
 
             $survey->amazon_inventory_import_id = $import?->id;
             if ($survey->isDirty('amazon_inventory_import_id')) {
@@ -57,6 +52,64 @@ class SurveyAmazonInventorySyncService
 
             return $import?->id;
         });
+    }
+
+    /**
+     * 調査を保存したあと、反映済みの取込より新しい成功した取込があるときだけ反映し直す。
+     * 調査の作成中に Amazon 在庫の取込が終わった場合に備える。
+     *
+     * @return int|null The applied import ID, or null when pending or ineligible.
+     */
+    public function syncSurveyIfNewerImport(int $surveyId): ?int
+    {
+        $survey = Survey::query()->findOrFail($surveyId);
+        if (! $survey->usesSpApiAmazonInventory()) {
+            return null;
+        }
+        if ($this->importFor($survey)?->id === $survey->amazon_inventory_import_id) {
+            return $survey->amazon_inventory_import_id;
+        }
+
+        return $this->syncSurvey($surveyId);
+    }
+
+    /** 調査の日（日本時間の暦日）に反映する取込。まだ成功した取込がなければ null */
+    public function importFor(Survey $survey): ?AmazonInventoryImport
+    {
+        $import = $this->latestSuccessfulImport($survey->executed_at->setTimezone('Asia/Tokyo')->toDateString());
+        if ($import !== null && ($import->basis_at === null || $import->completed_at === null)) {
+            throw new RuntimeException('成功したAmazon在庫取込の基準日時または完了日時がありません。');
+        }
+
+        return $import;
+    }
+
+    /** @return Collection<string, AmazonInventorySnapshot> SKUコード => スナップショット */
+    public function snapshotsOf(?AmazonInventoryImport $import): Collection
+    {
+        $snapshots = $import?->snapshots()->get()->keyBy('sku_code') ?? new Collection;
+        if ($import !== null && $snapshots->isEmpty()) {
+            throw new RuntimeException('成功したAmazon在庫取込にSKU別スナップショットがありません。');
+        }
+
+        return $snapshots;
+    }
+
+    /**
+     * 調査のSKU 1 行に書く Amazon の値。スナップショットがなければ在庫は null（未取得／対象外）。
+     * 品番マスタに ASIN がないSKUは、スナップショットの ASIN で補う。
+     *
+     * @return array{child_asin: string|null, amazon_own_stock: int|null, amazon_fba_stock: int|null}
+     */
+    public function amazonValues(?string $childAsin, ?AmazonInventorySnapshot $snapshot): array
+    {
+        $hasAsin = is_string($childAsin) && trim($childAsin) !== '';
+
+        return [
+            'child_asin' => $snapshot !== null && ! $hasAsin && trim($snapshot->asin) !== '' ? $snapshot->asin : $childAsin,
+            'amazon_own_stock' => $snapshot?->amazon_own_stock,
+            'amazon_fba_stock' => $snapshot?->amazon_fba_stock,
+        ];
     }
 
     /** @return int Number of three-file surveys synchronized. */

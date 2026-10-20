@@ -7,6 +7,7 @@ use App\Models\Survey;
 use App\Models\SurveyFile;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
+use App\Services\BulkRowWriter;
 use App\Services\SurveyAmazonInventorySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -112,7 +113,7 @@ class BackfillSurveyAmazonInventoryTest extends TestCase
     {
         $survey = $this->survey('2026-10-15 08:00:00', false, null);
         $sku = $this->sku($survey, 'SKU-M', 0, 0);
-        app()->instance(SurveyAmazonInventorySyncService::class, new class extends SurveyAmazonInventorySyncService
+        app()->instance(SurveyAmazonInventorySyncService::class, new class(new BulkRowWriter) extends SurveyAmazonInventorySyncService
         {
             public function syncSurvey(int $surveyId): ?int
             {
