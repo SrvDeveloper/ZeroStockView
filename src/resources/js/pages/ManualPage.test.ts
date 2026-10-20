@@ -20,6 +20,7 @@ describe("ManualPage", () => {
             "basic-operation-amazon",
             "survey-history",
             "survey-result",
+            "inventory-trend",
             "notes",
         ]);
         expect(links.map((link) => link.attributes("href"))).toEqual(sectionIds.map((id) => `#${id}`));
@@ -28,7 +29,7 @@ describe("ManualPage", () => {
     it("shows callouts and screenshots for the import instructions", () => {
         const wrapper = mount(ManualPage);
 
-        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(10);
+        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(11);
         expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
         expect(wrapper.get("#basic-operation-amazon").text()).toContain("SP-API");
         expect(wrapper.get("#basic-operation-free").find('[role="alert"]').text()).toContain("ゼロ在庫出力のチェックを外さない");
@@ -91,6 +92,17 @@ describe("ManualPage", () => {
         expect(result.text()).toContain("Ctrlキー");
         expect(result.text()).toContain("保存ファイルで再照合（編集者・特権管理者）");
         expect(result.find('[role="alert"]').text()).toContain("旧方式（5ファイル）");
+    });
+
+    it("explains the inventory trend views, summary and CSV export", () => {
+        const wrapper = mount(ManualPage);
+        const trend = wrapper.get("#inventory-trend");
+
+        expect(trend.findAll("[data-inventory-scopes] tbody td:first-child").map((cell) => cell.text())).toEqual(["モール全体", "Amazon", "BOSS", "フリー", "ストック", "総数"]);
+        expect(trend.text()).toContain("品番全体のグラフ");
+        expect(trend.text()).toContain("SKU別サマリー");
+        expect(trend.text()).toContain("全品番の日次CSV");
+        expect(trend.findAll("[data-trend-csv-columns] tbody td:first-child").map((cell) => cell.text())).toContain("ecStock");
     });
 
     it("no longer asks users to rename the downloaded files", () => {
