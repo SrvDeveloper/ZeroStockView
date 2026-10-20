@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import type { IconName } from "@/constants/icons";
 
 type CalloutTone = "info" | "tip" | "warning";
 
@@ -18,7 +19,7 @@ const props = withDefaults(
     },
 );
 
-const styles: Record<CalloutTone, { container: string; header: string; icon: string; iconColor: string; note: string }> = {
+const styles: Record<CalloutTone, { container: string; header: string; icon: IconName; iconColor: string; note: string }> = {
     info: { container: "border-line-strong bg-surface-2", header: "border-line", icon: "info", iconColor: "text-ink-2", note: "text-muted" },
     tip: { container: "border-lamp-ok/35 bg-ok-soft", header: "border-lamp-ok/20", icon: "lightbulb", iconColor: "text-lamp-ok", note: "text-ok-ink" },
     warning: { container: "border-signal-border/60 bg-warn-soft", header: "border-caution/20", icon: "warning", iconColor: "text-caution", note: "text-caution" },

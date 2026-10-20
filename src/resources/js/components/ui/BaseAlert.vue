@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { IconName } from "@/constants/icons";
 import { computed } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 
@@ -6,7 +7,7 @@ type Tone = "info" | "success" | "warning" | "danger";
 
 const props = withDefaults(defineProps<{ tone?: Tone; title?: string }>(), { tone: "info", title: "" });
 
-const toneClass: Record<Tone, { box: string; icon: string; title: string; name: string }> = {
+const toneClass: Record<Tone, { box: string; icon: string; title: string; name: IconName }> = {
     info: { box: "border-line bg-surface-2", icon: "text-ink-2", title: "text-ink", name: "info" },
     success: { box: "border-lamp-ok/25 bg-ok-soft", icon: "text-lamp-ok", title: "text-ok-ink", name: "check_circle" },
     warning: { box: "border-lamp-warn/35 bg-warn-soft", icon: "text-caution", title: "text-caution", name: "warning" },
