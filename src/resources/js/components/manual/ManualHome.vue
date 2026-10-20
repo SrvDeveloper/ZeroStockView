@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import ManualSearch from "@/components/manual/ManualSearch.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/constants/roles";
@@ -138,17 +139,7 @@ const tasks: ManualTask[] = [
                     <h1 id="manual-home-title" class="text-[30px] leading-tight font-extrabold tracking-[0.02em] sm:text-[34px]">操作マニュアル</h1>
                     <p class="text-[15px] leading-[1.7] text-primary-200">毎日の取込から結果の確認まで、やりたいことや画面の名前から探せます。</p>
                 </div>
-                <div class="flex h-[52px] max-w-[620px] items-center gap-2.5 rounded-card bg-surface px-4 text-muted focus-within:ring-3 focus-within:ring-signal" data-manual-search>
-                    <AppIcon name="search" :size="20" />
-                    <label for="manual-search" class="sr-only">マニュアルを検索</label>
-                    <input
-                        id="manual-search"
-                        type="search"
-                        placeholder="例：取込待ち、再照合、APIキー"
-                        class="h-full min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-muted"
-                        autocomplete="off"
-                    />
-                </div>
+                <ManualSearch size="large" class="max-w-[620px]" />
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
                     <span class="text-faint">よく見られている：</span>
                     <RouterLink

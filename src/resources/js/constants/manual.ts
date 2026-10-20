@@ -21,6 +21,10 @@ export interface ManualSectionMeta {
     headings: ManualHeadingMeta[];
     /** この節の要点（節の頭に ✓ 付きで出す。検索の対象にもなる） */
     points: string[];
+    /** 検索で拾いたい言葉のうち、節名・小見出し・要点に出てこないもの（画面の用語、言い換え） */
+    keywords: string[];
+    /** 小見出しのほかに、検索や入口ページから直接開ける場所（注意の囲みなど）。本文の要素の id と合わせる */
+    anchors?: ManualHeadingMeta[];
     /** 関連する節の ID */
     related: string[];
     /** この節で説明している画面。開ける権限のユーザーにだけ「画面を開く」ボタンを出す */
@@ -52,6 +56,8 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     "Amazon在庫は毎朝9:00に自動で取得し、ほかの3種類はファイルを取り込みます。",
                     "使える操作は、権限（閲覧者・編集者・特権管理者）で決まります。",
                 ],
+                keywords: ["概要", "権限", "閲覧者", "編集者", "特権管理者", "CrossWalker", "品番の登録", "1日の流れ"],
+                anchors: [{ id: "crosswalker", title: "品番は先にCrossWalkerへ登録してください" }],
                 related: ["data-import", "notes"],
             },
         ],
@@ -67,6 +73,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 icon: "touch_app",
                 headings: [],
                 points: ["BOSSの在庫・商品一覧から、「倉庫毎の在庫数」のCSVを出力します。", "倉庫はすべて選択した状態で実行します。"],
+                keywords: ["BOSS", "倉庫毎の在庫数レポート", "自社倉庫", "RFC倉庫", "CSV出力", "ダウンロード"],
                 related: ["data-import"],
             },
             {
@@ -77,6 +84,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 icon: "touch_app",
                 headings: [],
                 points: ["ターコイズのKEEP一覧表で、得意先「59」のCSVを出力します。", "ダウンロードしたファイルは、名前を変えずにそのまま取り込めます。"],
+                keywords: ["ターコイズ", "KEEP一覧表", "ECストック", "得意先59", "CSV出力", "ダウンロード"],
                 related: ["data-import"],
             },
             {
@@ -87,6 +95,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 icon: "touch_app",
                 headings: [],
                 points: ["ターコイズの在庫一覧照会で、倉庫「01」のCSVを出力します。", "ゼロ在庫出力のチェックを外してから検索します。"],
+                keywords: ["ターコイズ", "在庫一覧照会表", "フリー在庫", "01番倉庫", "ゼロ在庫出力", "ダウンロード"],
                 related: ["data-import"],
             },
         ],
@@ -110,6 +119,8 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     "種類は中身で自動判定します。ファイル名を変える必要はありません。",
                     "同じ日にもう一度取り込むと、同じ調査が更新されます。",
                 ],
+                keywords: ["取込", "アップロード", "CSV", "添付", "ファイルを選択", "取込待ち", "追加取込", "エラー", "失敗", "判定できません"],
+                anchors: [{ id: "import-errors", title: "取込に失敗したとき" }],
                 related: ["basic-operation-amazon", "survey-result", "notes"],
                 screen: { routeName: "data-import", label: "データ取込画面を開く", roles: EDITOR_ROLES },
             },
@@ -126,6 +137,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "survey-display", title: "在庫調査結果での表示" },
                 ],
                 points: ["毎朝9:00に自動で取得し、その日の在庫調査に反映します。", "失敗したときは、その日のうちに特権管理者が取り直します。", "ASINのないSKUは、取得の対象外です。"],
+                keywords: ["Amazon", "SP-API", "FBA", "自社発送", "自動取得", "手動取得", "取り直し", "取込待ち", "一部未取得", "対象外", "ASIN", "在庫基準日時"],
                 related: ["data-import", "survey-result"],
                 screen: { routeName: "data-import", label: "データ取込画面を開く", roles: EDITOR_ROLES },
             },
@@ -146,6 +158,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "list", title: "リストで見る" },
                 ],
                 points: ["カレンダーとリストの2つの表示で、日ごとの調査を確認します。", "日を選ぶと、取込ファイルのダウンロードやExcel出力ができます。"],
+                keywords: ["履歴", "カレンダー", "リスト", "前日比", "一括ダウンロード", "ZIP", "Excel出力", "削除"],
                 related: ["survey-result", "file-management"],
                 screen: { routeName: "survey-history", label: "在庫調査履歴を開く", roles: ALL_ROLES },
             },
@@ -165,6 +178,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "rerun", title: "保存ファイルで再照合（編集者・特権管理者）" },
                 ],
                 points: ["「—」は取込待ち、色付きの「0」は在庫0の確定です。", "品番グループや在庫の条件で絞り込み、Excelに出力できます。", "ファイルを添付し直さずに、保存ファイルで再照合できます。"],
+                keywords: ["全倉庫ゼロ", "一部の倉庫でゼロ", "在庫ゼロ", "絞込", "Excel出力", "メモ", "再照合", "差異照合メニュー", "内訳", "Ctrl", "取込待ち", "対象外", "総数"],
                 related: ["survey-history", "inventory-trend", "notes"],
                 screen: { routeName: "survey-history", label: "在庫調査履歴を開く", roles: ALL_ROLES },
             },
@@ -182,6 +196,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "csv-export", title: "日次在庫をCSV出力" },
                 ],
                 points: ["品番ごとに、倉庫別の在庫の移り変わりをグラフで確認します。", "SKU別サマリーで、期間中の最小・最大と欠品日数を確認します。", "日次在庫はCSVで出力できます。"],
+                keywords: ["グラフ", "推移", "欠品", "欠品日数", "日次在庫", "CSV出力", "在庫区分", "モール全体", "期間", "サマリー"],
                 related: ["survey-result", "api-settings"],
                 screen: { routeName: "inventory-trends", label: "在庫推移を開く", roles: ALL_ROLES },
             },
@@ -202,6 +217,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "edit", title: "グループを作成・編集する" },
                 ],
                 points: ["すべてのグループの品番が取込の対象です。", "1グループ50件までです。並び順は、在庫調査結果の表示順になります。"],
+                keywords: ["品番", "グループ", "品番の追加", "並び順", "50件", "CrossWalker", "削除"],
                 related: ["data-import", "introduction"],
                 screen: { routeName: "import-settings", label: "品番グループを開く", roles: EDITOR_ROLES },
             },
@@ -214,6 +230,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 audience: "特権管理者のみ",
                 headings: [],
                 points: ["取込ファイルは、アップロードから30日間保存されます。", "ファイルを削除しても、調査結果とメモは残ります。"],
+                keywords: ["ファイル", "保存期限", "30日", "ダウンロード", "一括削除", "削除"],
                 related: ["survey-history", "notes"],
                 screen: { routeName: "file-management", label: "ファイル管理を開く", roles: ADMIN_ROLES },
             },
@@ -226,6 +243,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 audience: "特権管理者のみ",
                 headings: [],
                 points: ["外部システムが日次在庫を取得するAPIを設定します。", "APIキーは、発行した直後に1回だけ表示されます。"],
+                keywords: ["API", "APIキー", "再発行", "IPアドレス", "CIDR", "外部システム", "APIリファレンス"],
                 related: ["inventory-trend"],
                 screen: { routeName: "api-connection-settings", label: "API連携設定を開く", roles: ADMIN_ROLES },
             },
@@ -238,6 +256,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                 audience: "特権管理者のみ",
                 headings: [],
                 points: ["ユーザーの追加・権限の変更・パスワードの再設定・削除を行います。", "権限を変えると、そのユーザーはすぐにログアウトされます。"],
+                keywords: ["ユーザー", "権限", "パスワード", "パスワード変更", "ログアウト", "ログインID", "降格"],
                 related: ["introduction"],
                 screen: { routeName: "user-management", label: "ユーザー管理を開く", roles: ADMIN_ROLES },
             },
@@ -258,6 +277,11 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "integration-status", title: "連携ステータス（編集者・特権管理者）" },
                 ],
                 points: ["「—」（取込待ち）は、在庫0ではありません。", "取込ファイルの保存期限は30日です。", "Amazon在庫の取り直しは、その日のうちに行います。"],
+                keywords: ["注意", "取込待ち", "0との違い", "保存期限", "30日", "旧方式", "5ファイル", "連携ステータス", "調査の日付", "日本時間"],
+                anchors: [
+                    { id: "pending-vs-zero", title: "取込待ち（—）は在庫0ではありません" },
+                    { id: "file-retention", title: "取込ファイルの保存期限は30日です" },
+                ],
                 related: ["data-import", "basic-operation-amazon"],
             },
         ],

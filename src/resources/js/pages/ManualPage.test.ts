@@ -57,7 +57,7 @@ describe("ManualPage", () => {
         const wrapper = mountManual();
 
         expect(wrapper.get("h1").text()).toBe("操作マニュアル");
-        expect(wrapper.get("#manual-search").attributes("type")).toBe("search");
+        expect(wrapper.get("[data-manual-search-input]").attributes("type")).toBe("search");
         expect(wrapper.get("[data-home-role]").text()).toContain("編集者");
         expect(wrapper.findAll("[data-home-flow] > li")).toHaveLength(4);
         expect(wrapper.findAll("[data-home-tasks] h3").map((title) => title.text())).toEqual([
@@ -259,6 +259,65 @@ describe("ManualPage", () => {
         expect(mountManual("data-import").find("[data-open-screen]").exists()).toBe(false);
         expect(mountManual("survey-history").find("[data-open-screen]").exists()).toBe(true);
         expect(mountManual("notes").find("[data-open-screen]").exists()).toBe(false);
+    });
+
+    it.each(MANUAL_SECTIONS.filter((section) => section.anchors).map((section) => [section.id, section] as const))("has the searchable anchors of %s in its body", (id, section) => {
+        const wrapper = mountManual(id);
+
+        for (const anchor of section.anchors!) expect(wrapper.find(`#${anchor.id}`).text(), anchor.id).toContain(anchor.title);
+    });
+
+    it("suggests matching sections and subheadings while typing", async () => {
+        const wrapper = mountManual();
+        const input = wrapper.get("[data-manual-search-input]");
+
+        await input.setValue("再照合");
+        const options = wrapper.findAll('[data-manual-search-results] [role="option"]');
+        expect(options.length).toBeGreaterThan(0);
+        expect(options.map((option) => option.text())).toEqual(expect.arrayContaining([expect.stringContaining("保存ファイルで再照合")]));
+        expect(input.attributes("aria-expanded")).toBe("true");
+        expect(input.attributes("aria-activedescendant")).toBe(options[0]!.attributes("id"));
+    });
+
+    it("moves through suggestions with the arrow keys and opens one with Enter", async () => {
+        const wrapper = mountManual("data-import");
+        const input = wrapper.get("[data-manual-search-input]");
+        await input.setValue("保存期限");
+        const options = wrapper.findAll('[data-manual-search-results] [role="option"]');
+
+        await input.trigger("keydown", { key: "ArrowDown" });
+        expect(options[1]!.attributes("aria-selected")).toBe("true");
+        await input.trigger("keydown", { key: "ArrowUp" });
+        await input.trigger("keydown", { key: "ArrowUp" });
+        expect(options[options.length - 1]!.attributes("aria-selected")).toBe("true");
+
+        await input.trigger("keydown", { key: "Enter" });
+        expect((input.element as HTMLInputElement).value).toBe("");
+        expect(wrapper.find("[data-manual-search-results]").exists()).toBe(false);
+    });
+
+    it("says nothing was found and links to the entry page", async () => {
+        const wrapper = mountManual("notes");
+        await wrapper.get("[data-manual-search-input]").setValue("存在しないことば");
+
+        const empty = wrapper.get("[data-manual-search-empty]");
+        expect(empty.text()).toContain("見つかりませんでした");
+        expect(empty.getComponent<typeof RouterLinkStub>(RouterLinkStub).props("to")).toEqual({ name: "manual" });
+    });
+
+    it("focuses the search box with the slash key unless typing elsewhere", async () => {
+        const wrapper = mountManual();
+        const input = wrapper.get("[data-manual-search-input]").element;
+
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "/" }));
+        expect(document.activeElement).toBe(input);
+
+        (input as HTMLInputElement).blur();
+        const other = document.createElement("textarea");
+        document.body.appendChild(other);
+        other.focus();
+        other.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
+        expect(document.activeElement).toBe(other);
     });
 
     it("no longer asks users to rename the downloaded files", () => {
