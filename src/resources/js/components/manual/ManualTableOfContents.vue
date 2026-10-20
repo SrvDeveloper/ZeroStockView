@@ -13,7 +13,7 @@ const emit = defineEmits<{ navigate: []; jump: [headingId: string] }>();
 </script>
 
 <template>
-    <nav aria-label="操作マニュアルの目次" class="rounded-card border border-line bg-surface p-3 shadow-card lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto">
+    <nav aria-label="操作マニュアルの目次" class="rounded-card border border-line bg-surface p-3 shadow-card lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto">
         <RouterLink
             :to="{ name: 'manual' }"
             class="mb-2 flex items-center gap-1 rounded-control px-2 py-1.5 text-[12.5px] font-bold text-ink-2 hover:bg-tint hover:text-ink"

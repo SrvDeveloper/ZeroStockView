@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Compon
 import ManualHome from "@/components/manual/ManualHome.vue";
 import ManualPager from "@/components/manual/ManualPager.vue";
 import ManualRelatedLinks from "@/components/manual/ManualRelatedLinks.vue";
+import ManualSearch from "@/components/manual/ManualSearch.vue";
 import ManualSection from "@/components/manual/ManualSection.vue";
 import ManualTableOfContents from "@/components/manual/ManualTableOfContents.vue";
 import AmazonInventorySection from "@/components/manual/sections/AmazonInventorySection.vue";
@@ -75,6 +76,19 @@ function updateActiveHeading() {
     activeHeadingId.value = active;
 }
 
+/** 「/」で検索欄に移る（入力欄で文字を打っているときは除く） */
+function onKeydown(event: KeyboardEvent) {
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    const target = event.target as HTMLElement | null;
+    if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+    // 画面幅によって検索欄が 2 つあるので、見えているほうに移る
+    const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("[data-manual-search-input]"));
+    const input = inputs.find((element) => element.getClientRects().length > 0) ?? inputs[0];
+    if (!input) return;
+    event.preventDefault();
+    input.focus();
+}
+
 function onScroll() {
     if (frame === 0) frame = window.requestAnimationFrame(updateActiveHeading);
 }
@@ -101,11 +115,13 @@ watch([() => current.value.id, isHome], async () => {
 
 onMounted(() => {
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("keydown", onKeydown);
     updateActiveHeading();
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener("scroll", onScroll);
+    window.removeEventListener("keydown", onKeydown);
     if (frame !== 0) window.cancelAnimationFrame(frame);
 });
 </script>
@@ -114,6 +130,7 @@ onBeforeUnmount(() => {
     <ManualHome v-if="isHome" />
     <div v-else class="flex flex-col gap-4">
         <!-- スマホ・タブレット：いまの節を示すバー。押すと目次が開く -->
+        <ManualSearch class="lg:hidden" />
         <div class="sticky top-12 z-20 lg:hidden" data-mobile-toc>
             <button
                 type="button"
@@ -135,7 +152,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="grid items-start gap-5 lg:grid-cols-[14rem_minmax(0,760px)] 2xl:grid-cols-[14rem_minmax(0,760px)_13rem]">
-            <div class="hidden lg:sticky lg:top-16 lg:block">
+            <div class="hidden lg:sticky lg:top-16 lg:flex lg:flex-col lg:gap-3">
+                <ManualSearch />
                 <ManualTableOfContents :current-id="current.id" :headings="current.headings" :active-heading-id="activeHeadingId" @jump="jumpToHeading" />
             </div>
 
