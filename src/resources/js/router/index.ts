@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { isManualSection } from "@/constants/manual";
 import { ADMIN_ROLES, ALL_ROLES, EDITOR_ROLES, canAccess, homeRouteName, type UserRole } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 import { setRouteLoading } from "./loading";
@@ -14,6 +15,13 @@ declare module "vue-router" {
 
 const router = createRouter({
     history: createWebHistory(),
+    /** 操作マニュアルは節を移ったらページの先頭から、小見出しへのリンク（#id）はその位置から表示する */
+    scrollBehavior(to, from, savedPosition) {
+        if (savedPosition) return savedPosition;
+        if (to.name !== "manual") return false;
+        if (to.hash) return { el: to.hash, top: 72 };
+        return to.path !== from.path ? { top: 0 } : false;
+    },
     routes: [
         { path: "/", redirect: { name: "data-import" } },
         {
@@ -73,9 +81,10 @@ const router = createRouter({
             meta: { roles: ADMIN_ROLES, breadcrumb: ["設定", "ファイル管理"] },
         },
         {
-            path: "/manual",
+            path: "/manual/:section?",
             name: "manual",
             component: () => import("@/pages/ManualPage.vue"),
+            props: true,
             meta: { roles: ALL_ROLES, breadcrumb: ["ヘルプ", "操作マニュアル"] },
         },
         {
@@ -117,6 +126,13 @@ router.beforeEach(async (to) => {
     }
     if (auth.isLoggedIn && to.meta.roles && !canAccess(auth.role, to.meta.roles)) {
         return { name: homeRouteName(auth.user!.role) };
+    }
+    if (to.name === "manual") {
+        const section = typeof to.params.section === "string" ? to.params.section : "";
+        const hashSection = to.hash.slice(1);
+        // 1 ページだったころのリンク（/manual#data-import）は、節のページに移す
+        if (!section && isManualSection(hashSection)) return { name: "manual", params: { section: hashSection }, replace: true };
+        if (section && !isManualSection(section)) return { name: "manual", replace: true };
     }
     return true;
 });
