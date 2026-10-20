@@ -11,16 +11,40 @@ describe("ManualPage", () => {
 
         const sectionIds = wrapper.findAll("section").map((section) => section.attributes("id"));
 
-        expect(sectionIds).toEqual(["introduction", "basic-operation-amazon", "basic-operation-boss", "basic-operation-ec", "basic-operation-free", "notes", "faq"]);
+        expect(sectionIds).toEqual(["introduction", "basic-operation-boss", "basic-operation-ec", "basic-operation-free", "basic-operation-amazon", "notes"]);
         expect(links.map((link) => link.attributes("href"))).toEqual(sectionIds.map((id) => `#${id}`));
     });
 
     it("shows callouts and screenshots for the import instructions", () => {
         const wrapper = mount(ManualPage);
 
-        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(7);
+        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(6);
         expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
         expect(wrapper.get("#basic-operation-amazon").text()).toContain("SP-API");
-        expect(wrapper.find('[role="alert"]').text()).toContain("注意");
+        expect(wrapper.get("#basic-operation-free").find('[role="alert"]').text()).toContain("ゼロ在庫出力のチェックを外さない");
+    });
+
+    it("introduces the daily workflow and what each role can do", () => {
+        const wrapper = mount(ManualPage);
+        const introduction = wrapper.get("#introduction");
+
+        expect(introduction.text()).toContain("1日の作業の流れ");
+        expect(introduction.text()).toContain("CrossWalker");
+        const rows = introduction.findAll("[data-role-permissions] tbody tr");
+        expect(rows.map((row) => row.find("td").text())).toContain("データ取込、保存ファイルでの再照合");
+        const importRow = rows.find((row) => row.text().startsWith("データ取込"))!;
+        expect(
+            importRow
+                .findAll("td")
+                .slice(1)
+                .map((cell) => cell.text()),
+        ).toEqual(["－", "○", "○"]);
+    });
+
+    it("no longer asks users to rename the downloaded files", () => {
+        const wrapper = mount(ManualPage);
+
+        expect(wrapper.text()).not.toContain("リネーム");
+        expect(wrapper.find("#faq").exists()).toBe(false);
     });
 });
