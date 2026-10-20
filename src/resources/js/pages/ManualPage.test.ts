@@ -21,6 +21,10 @@ describe("ManualPage", () => {
             "survey-history",
             "survey-result",
             "inventory-trend",
+            "import-settings",
+            "file-management",
+            "api-settings",
+            "user-management",
             "notes",
         ]);
         expect(links.map((link) => link.attributes("href"))).toEqual(sectionIds.map((id) => `#${id}`));
@@ -29,7 +33,7 @@ describe("ManualPage", () => {
     it("shows callouts and screenshots for the import instructions", () => {
         const wrapper = mount(ManualPage);
 
-        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(11);
+        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(15);
         expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
         expect(wrapper.get("#basic-operation-amazon").text()).toContain("SP-API");
         expect(wrapper.get("#basic-operation-free").find('[role="alert"]').text()).toContain("ゼロ在庫出力のチェックを外さない");
@@ -103,6 +107,26 @@ describe("ManualPage", () => {
         expect(trend.text()).toContain("SKU別サマリー");
         expect(trend.text()).toContain("全品番の日次CSV");
         expect(trend.findAll("[data-trend-csv-columns] tbody td:first-child").map((cell) => cell.text())).toContain("ecStock");
+    });
+
+    it("explains the settings screens with their admin-only operations", () => {
+        const wrapper = mount(ManualPage);
+
+        expect(wrapper.get("#import-settings").text()).toContain("このグループを保存");
+        expect(wrapper.get("#import-settings").find('[role="alert"]').text()).toContain("グループの削除（特権管理者のみ）");
+        expect(wrapper.get("#file-management").text()).toContain("特権管理者だけが使えます");
+        expect(wrapper.get("#api-settings").find('[role="alert"]').text()).toContain("1回だけ表示");
+        expect(wrapper.get("#user-management").find('[role="alert"]').text()).toContain("特権管理者が1人だけ");
+    });
+
+    it("replaces the note placeholders with the points that are easy to get wrong", () => {
+        const wrapper = mount(ManualPage);
+        const notes = wrapper.get("#notes");
+
+        expect(notes.text()).not.toContain("記載してください");
+        expect(notes.text()).toContain("取込待ち（—）は在庫0ではありません");
+        expect(notes.text()).toContain("旧方式（5ファイル）の調査");
+        expect(notes.findAll("[data-integration-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["Amazon SP-API", "CrossWalker", "保存ファイル"]);
     });
 
     it("no longer asks users to rename the downloaded files", () => {

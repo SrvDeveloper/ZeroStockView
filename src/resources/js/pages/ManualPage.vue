@@ -16,6 +16,10 @@ const sections = [
     { id: "survey-history", title: "在庫調査履歴" },
     { id: "survey-result", title: "在庫調査結果" },
     { id: "inventory-trend", title: "在庫推移" },
+    { id: "import-settings", title: "品番グループ" },
+    { id: "file-management", title: "ファイル管理" },
+    { id: "api-settings", title: "API連携設定" },
+    { id: "user-management", title: "ユーザー管理" },
     { id: "notes", title: "注意事項" },
 ];
 
@@ -77,6 +81,13 @@ const trendCsvColumns = [
     { term: "bossOwn / bossRfc", meaning: "BOSSの自社倉庫／RFC倉庫の在庫数" },
     { term: "freeStock", meaning: "フリー在庫の在庫数" },
     { term: "ecStock", meaning: "ECストックの在庫数" },
+];
+
+/** サイドメニュー下の連携ステータス（IntegrationStatus.vue の表示） */
+const integrationStatuses = [
+    { term: "Amazon SP-API", meaning: "Amazon在庫の最新の取得結果です。成功は緑で在庫の基準時刻、失敗は赤、取得中・未取得は黄色で表示します。" },
+    { term: "CrossWalker", meaning: "CrossWalkerへの最新の接続結果です。成功は緑、失敗は赤で、確認した時刻を表示します。記録がないときは黄色です。失敗の理由は、マウスを重ねると表示されます。" },
+    { term: "保存ファイル", meaning: "保存期限まで7日以内の取込ファイルがあると、黄色で「n件 期限間近」と表示します。" },
 ];
 
 /** 権限ごとにできること（docs/ユーザー管理実装/README.md の確定要件） */
@@ -508,9 +519,125 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="notes" title="注意事項" description="操作時の制約や間違えやすい点を記載します。" icon="error">
-                    <ManualCallout title="注意" tone="warning">ここに、操作前に確認が必要な注意事項を記載してください。</ManualCallout>
-                    <ManualCallout title="操作のヒント" tone="tip">ここに、作業を進めやすくするヒントを記載してください。</ManualCallout>
+                <ManualSection id="import-settings" title="品番グループ" description="取込の対象にする品番を、用途ごとのグループにまとめます。" icon="category">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
+                        メニューの「品番グループ」を押下します。編集者と特権管理者が使えます。すべてのグループに登録した品番が取込の対象になり、同じ品番が複数のグループにあっても1回だけ取り込みます。グループは、在庫調査結果で品番を絞り込むときにも使います。
+                    </p>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">一覧の見方</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            見出しの下に、グループ数、取込対象の品番数（重複を除く）、取込対象のSKU数が表示されます。一覧には、グループ名、対象品番数（1グループ50件まで）、対象品番（先頭の5件）、最終同期（品番の情報を最後にCrossWalkerから取り込んだ日時）が表示されます。
+                        </p>
+                    </div>
+
+                    <ManualStep :number="1" title="グループを作成・編集します。">
+                        <p>「新しいグループを作成」を押下するか、一覧のグループ名か「編集」を押下します。「グループ名」を入力します。</p>
+                    </ManualStep>
+                    <ManualStep :number="2" title="品番を追加します。">
+                        <p>
+                            「品番を追加」の検索欄に、品番・SKU・ASIN・ターコイズの情報を入力して「検索」を押下します。CrossWalkerに登録されている品番が候補に表示されるので、「追加」を押下します。追加した品番は「追加済み」になり、「取込対象品番」に並びます。
+                        </p>
+                    </ManualStep>
+                    <ManualStep :number="3" title="並び順を整えて保存します。">
+                        <p>
+                            「取込対象品番」の行をドラッグすると、並び順を変えられます。この順番は、在庫調査結果でグループを選んだときの表示順になります。対象から外すときは、行の右端のごみ箱のアイコンを押下します。
+                        </p>
+                        <p> 最後に「このグループを保存」を押下します。保存していない変更があるあいだは「未保存の変更があります」と表示され、「変更を取り消す」で元に戻せます。 </p>
+                    </ManualStep>
+
+                    <ManualCallout title="グループの削除（特権管理者のみ）" tone="warning"
+                        >一覧のごみ箱のアイコンで削除します。削除したグループの品番は、ほかのグループに登録されていなければ、次の取込から対象外になります。過去の在庫調査に保存されたグループの情報は残ります。</ManualCallout
+                    >
+                </ManualSection>
+
+                <ManualSection id="file-management" title="ファイル管理" description="保存されている取込ファイルを、調査ごとに確認・ダウンロード・削除します。" icon="folder_open">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
+                        メニューの「ファイル管理」を押下します。特権管理者だけが使えます。取り込んだファイルは、アップロードから30日間保存され、過ぎると自動で削除されます。ファイルが削除されても、調査結果とメモは残ります。
+                    </p>
+                    <ul class="list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <li>見出しの下に、保存中のファイル数、合計サイズ、保存期限まで7日以内のファイル数が表示されます。</li>
+                        <li>
+                            調査（初回取込日時）ごとに、ファイルの種類・ファイル名・アップロード日時・サイズ・保存期限までの残り日数が表示されます。残りが7日以内のファイルは、黄色で表示されます。
+                        </li>
+                        <li>「調査結果を見る」で、その日の在庫調査結果を開きます。</li>
+                        <li>ファイルの右端のボタンで1件ずつダウンロード・削除できます。「一括ダウンロード」「一括削除」は、その調査のファイルをまとめて扱います。</li>
+                    </ul>
+                    <ManualCallout title="ファイルを削除すると" tone="warning"
+                        >削除したファイルは元に戻せません。その日の調査で、ダウンロードと「保存ファイルで再照合」ができなくなります。</ManualCallout
+                    >
+                </ManualSection>
+
+                <ManualSection id="api-settings" title="API連携設定" description="外部システムが日次在庫データを取得するためのAPIを設定します。" icon="api">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
+                        メニューの「API連携設定」を押下します。特権管理者だけが使えます。外部システムは、このAPIで、在庫推移の日次在庫CSVと同じ項目をJSON形式で取得します。設定を変えたら、右上の「保存」を押下してください。
+                    </p>
+                    <ul class="list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <li> API有効状態：「外部APIを有効にする」で、APIを使えるかどうかを切り替えます。有効にするには、APIキーの発行と、許可IPアドレスまたはCIDRの登録（1件以上）が必要です。 </li>
+                        <li>APIキー：「発行」（2回目以降は「再発行」）を押下すると、新しいキーが表示されます。再発行すると、それまでのキーは使えなくなります。</li>
+                        <li>
+                            許可IPアドレス / CIDR：APIに接続できる接続元を登録します。「IP /
+                            CIDR」とメモを入力して「追加」を押下し、「保存」で反映します。接続元のIPアドレスが登録に一致し、APIキーが正しいときだけ接続できます。
+                        </li>
+                        <li>接続情報：外部システムの担当者に伝える、パスや認証の方法、回数制限です。「APIリファレンス」で、指定できるパラメータを確認できます。</li>
+                    </ul>
+                    <ManualCallout title="APIキーは発行直後に1回だけ表示されます" tone="warning"
+                        >画面を離れると、キーの値は二度と表示されません。表示されたらすぐに安全な場所へ控え、外部システムの担当者に伝えてください。控え忘れたときは、再発行して新しいキーを伝え直します。</ManualCallout
+                    >
+                </ManualSection>
+
+                <ManualSection id="user-management" title="ユーザー管理" description="ログインできるユーザーと、その権限を管理します。" icon="manage_accounts">
+                    <p class="text-[13px] leading-relaxed text-ink-2">
+                        メニューの「ユーザー管理」を押下します。特権管理者だけが使えます。権限ごとにできることは、「はじめに」の表を参照してください。
+                    </p>
+                    <ul class="list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <li>追加：「ユーザーを追加」を押下し、ログインID・権限・初期パスワードを入力して「ユーザーを作成」を押下します。</li>
+                        <li>編集：一覧の鉛筆のアイコンを押下します。ログインIDと権限を変えて「変更を保存」を押下します。</li>
+                        <li> パスワードの再設定：編集の画面で「パスワードを再設定する」を押下し、新しいパスワードを入力します。パスワードは半角英数字記号のみで12文字以上です。 </li>
+                        <li>削除：一覧のごみ箱のアイコンを押下し、「削除する」を押下します。削除したユーザーは、すぐにログアウトされます。</li>
+                    </ul>
+                    <ManualCallout title="権限の変更と削除の注意" tone="warning">
+                        <ul class="list-disc space-y-0.5 pl-5">
+                            <li>権限を変更すると、そのユーザーはすぐにログアウトされ、再ログインが必要になります。自分の権限を変更したときは、ログイン画面に戻ります。</li>
+                            <li>特権管理者が1人だけのときは、その人を降格・削除できません。先に別の特権管理者を作成してください。</li>
+                            <li>自分自身は削除できません。</li>
+                        </ul>
+                    </ManualCallout>
+                    <p class="text-[13px] leading-relaxed text-ink-2"> 自分のパスワードは、権限に関係なく、画面右上のログインIDを押下して「パスワード変更」から変更できます。 </p>
+                </ManualSection>
+
+                <ManualSection id="notes" title="注意事項" description="操作時に間違えやすい点をまとめます。" icon="error">
+                    <ManualCallout title="取込待ち（—）は在庫0ではありません" tone="warning"
+                        >「—」や「取込待ち」は、まだ数がわからない状態です。在庫が0と確定したときは「0」と表示されます。取込待ちの倉庫があるSKUは、在庫総数が未確定になり、全倉庫ゼロ・一部の倉庫でゼロにも数えません。日次在庫CSVやExcelで集計するときも、空欄を0として扱わないでください。</ManualCallout
+                    >
+                    <ManualCallout title="取込ファイルの保存期限は30日です" tone="warning"
+                        >アップロードから30日を過ぎたファイルは自動で削除され、ダウンロードと「保存ファイルで再照合」ができなくなります。調査結果・メモ・Excel出力は引き続き使えます。必要なファイルは、期限までにダウンロードしておいてください。</ManualCallout
+                    >
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">調査の日付とAmazon在庫の反映</h3>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                            <li>在庫調査の日付は、取込を実行した日（日本時間）です。0時を過ぎてから取り込むと、翌日の調査になります。</li>
+                            <li>
+                                Amazon在庫は、取得した日の調査にだけ反映されます。毎朝9:00の自動取得が失敗したときは、その日のうちに特権管理者が取り直してください。翌日に取得しても、前の日の調査には反映されません。
+                            </li>
+                            <li>9:00以降に品番グループへ追加した品番は、次にAmazon在庫を取得するまで、Amazon在庫が「取込待ち」になります。</li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">旧方式（5ファイル）の調査</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                            Amazon在庫をSP-APIで自動取得するようになる前は、Amazon在庫もファイル（在庫商品レポート・FBA在庫管理レポート）で取り込んでいました。この方式の調査は、Amazon在庫が取り込んだときの値のまま残り、在庫調査結果の「Amazon
+                            在庫」に「旧ファイル」と表示されます。保存されているAmazon在庫を守るため、「保存ファイルで再照合」はできません。
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3 class="text-[13.5px] font-semibold text-ink">連携ステータス（編集者・特権管理者）</h3>
+                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">サイドメニューの下に、外部システムとの連携の状態が表示されます。5分ごとに自動で更新されます。</p>
+                        <ManualTermTable class="mt-2" :rows="integrationStatuses" term-label="項目" data-integration-statuses />
+                    </div>
                 </ManualSection>
             </div>
         </div>
