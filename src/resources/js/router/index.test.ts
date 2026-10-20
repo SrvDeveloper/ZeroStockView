@@ -35,6 +35,26 @@ describe("router", () => {
         expect(router.currentRoute.value.path).toBe("/manual");
     });
 
+    it("opens a manual section on its own page", async () => {
+        await router.push("/manual/data-import");
+
+        expect(router.currentRoute.value.name).toBe("manual");
+        expect(router.currentRoute.value.params.section).toBe("data-import");
+    });
+
+    it("moves old single-page manual links to the section page", async () => {
+        await router.push("/manual#survey-result");
+
+        expect(router.currentRoute.value.path).toBe("/manual/survey-result");
+        expect(router.currentRoute.value.hash).toBe("");
+    });
+
+    it("sends unknown manual sections back to the manual top", async () => {
+        await router.push("/manual/no-such-section");
+
+        expect(router.currentRoute.value.path).toBe("/manual");
+    });
+
     it("provides the API connection settings route", async () => {
         await router.push("/api-settings");
 

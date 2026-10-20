@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppIcon from "@/components/ui/AppIcon.vue";
+import { findManualSection } from "@/constants/manual";
 import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
@@ -30,6 +31,10 @@ const breadcrumb = computed<string[]>(() => {
     if (route.name === "survey-result") {
         const survey = surveys.getSurvey(String(route.params.id));
         trail.push(survey ? `${isoDate(survey.executedAt)} の調査結果` : "調査結果");
+    }
+    if (route.name === "manual") {
+        const section = findManualSection(String(route.params.section ?? ""));
+        if (section) trail.push(section.shortTitle);
     }
     if (route.name === "import-setting-edit") {
         const setting = importSettings.settings.find((item) => item.id === String(route.params.id));
