@@ -55,13 +55,13 @@ class SurveyPresentationTest extends TestCase
             ->assertJsonPath('data.amazonBasisAt', $import->basis_at->toISOString())
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 2)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 3)
-            ->assertJsonPath('data.products.0.skus.0.stock.amazonTotal', 5)
-            ->assertJsonPath('data.products.0.skus.0.stock.mallTotal', 14)
-            ->assertJsonPath('data.products.0.skus.0.stock.grandTotal', 27)
             ->assertJsonPath('data.products.0.skus.1.stock.amazonOwn', null)
-            ->assertJsonPath('data.products.0.skus.1.stock.amazonTotal', null)
-            ->assertJsonPath('data.products.0.skus.1.stock.mallTotal', null)
-            ->assertJsonPath('data.products.0.skus.1.stock.grandTotal', null);
+            ->assertJsonPath('data.products.0.skus.1.stock.amazonFba', null)
+            // 合計は画面側で計算するので返さない（utils/stock.ts）
+            ->assertJsonMissingPath('data.products.0.skus.0.stock.amazonTotal')
+            ->assertJsonMissingPath('data.products.0.skus.0.stock.mallTotal')
+            ->assertJsonMissingPath('data.products.0.skus.0.stock.grandTotal')
+            ->assertJsonMissingPath('data.products.0.skus.0.tqCode');
         $this->getJson('/api/surveys')->assertOk()
             ->assertJsonPath('data.0.amazonInventoryStatus', 'partial')
             ->assertJsonPath('data.0.products.0.skus.0.stock.amazonOwn', 2);
@@ -77,8 +77,8 @@ class SurveyPresentationTest extends TestCase
         $this->getJson('/api/surveys/'.$survey->id)
             ->assertOk()
             ->assertJsonPath('data.amazonInventoryStatus', 'complete')
-            ->assertJsonPath('data.products.0.skus.1.stock.amazonTotal', 0)
-            ->assertJsonPath('data.products.0.skus.1.stock.mallTotal', 9);
+            ->assertJsonPath('data.products.0.skus.1.stock.amazonOwn', 0)
+            ->assertJsonPath('data.products.0.skus.1.stock.amazonFba', 0);
         $completeSheet = $this->sheet($survey->fresh());
         $this->assertStringContainsString('<c r="J3"><v>0</v></c>', $completeSheet);
         $this->assertStringContainsString('<c r="K3"><v>0</v></c>', $completeSheet);
@@ -99,7 +99,7 @@ class SurveyPresentationTest extends TestCase
             ->assertJsonPath('data.amazonSource', 'sp_api')
             ->assertJsonPath('data.amazonBasisAt', null)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', null)
-            ->assertJsonPath('data.products.0.skus.0.stock.grandTotal', null);
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', null);
 
         $sheet = $this->sheet($survey);
         $this->assertStringContainsString('Amazon:自社', $sheet);
@@ -108,7 +108,7 @@ class SurveyPresentationTest extends TestCase
         $this->assertStringNotContainsString('<v>99</v>', $sheet);
     }
 
-    public function test_sku_without_asin_is_outside_amazon_scope_and_keeps_other_stock_totals(): void
+    public function test_sku_without_asin_is_outside_amazon_scope_and_keeps_other_stock_values(): void
     {
         $this->actingAs(User::factory()->create());
         $import = $this->import();
@@ -120,9 +120,9 @@ class SurveyPresentationTest extends TestCase
         $this->getJson('/api/surveys/'.$survey->id)
             ->assertOk()
             ->assertJsonPath('data.amazonInventoryStatus', 'complete')
-            ->assertJsonPath('data.products.0.skus.1.stock.amazonTotal', null)
-            ->assertJsonPath('data.products.0.skus.1.stock.mallTotal', 9)
-            ->assertJsonPath('data.products.0.skus.1.stock.grandTotal', 22);
+            ->assertJsonPath('data.products.0.skus.1.asin', '')
+            ->assertJsonPath('data.products.0.skus.1.stock.amazonOwn', null)
+            ->assertJsonPath('data.products.0.skus.1.stock.amazonFba', null);
     }
 
     public function test_legacy_survey_retains_its_saved_amazon_values_and_source(): void
@@ -143,8 +143,7 @@ class SurveyPresentationTest extends TestCase
             ->assertJsonPath('data.amazonInventoryImportId', null)
             ->assertJsonPath('data.amazonBasisAt', $survey->executed_at->toISOString())
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 4)
-            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 7)
-            ->assertJsonPath('data.products.0.skus.0.stock.grandTotal', 33);
+            ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 7);
 
         $sheet = $this->sheet($survey);
         $this->assertStringContainsString('<c r="J2"><v>4</v></c>', $sheet);

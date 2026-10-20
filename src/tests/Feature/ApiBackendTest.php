@@ -657,8 +657,7 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 4)
             ->assertJsonPath('data.products.0.skus.0.stock.bossRfc', 0)
             ->assertJsonPath('data.products.0.skus.0.stock.freeStock', null)
-            ->assertJsonPath('data.products.0.skus.0.stock.ecStock', null)
-            ->assertJsonPath('data.products.0.skus.0.stock.mallTotal', null);
+            ->assertJsonPath('data.products.0.skus.0.stock.ecStock', null);
         $surveyId = $first->json('data.id');
         $oldPath = Survey::query()->findOrFail($surveyId)->files()->firstOrFail()->stored_path;
         $date = '2026-10-16';

@@ -39,12 +39,8 @@ function buildProductResults(surveyId: string, productCodes: string[], memoSeedA
                 return {
                     id: `${surveyId}-sku-${skuIndex}`,
                     skuCode: sku.skuCode,
-                    colorName: sku.colorName,
                     size: sku.size,
                     asin: sku.asin,
-                    tqCode: sku.tqCode,
-                    tqColorNo: sku.tqColorNo,
-                    tqSize: sku.tqSize,
                     stock: buildStock(surveyId, sku.skuCode),
                     memo,
                 };

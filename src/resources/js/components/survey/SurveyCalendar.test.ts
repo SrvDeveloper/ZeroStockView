@@ -8,7 +8,7 @@ const ZERO = { amazonOwn: 0, amazonFba: 0, bossOwn: 0, bossRfc: 0, freeStock: 0,
 const STOCKED = { amazonOwn: 1, amazonFba: 1, bossOwn: 1, bossRfc: 1, freeStock: 1, ecStock: 1 };
 
 function sku(id: string, stock: SurveySkuResult["stock"]): SurveySkuResult {
-    return { id, skuCode: id, colorName: "", size: "", asin: "B1", tqCode: "", tqColorNo: "", tqSize: "", memo: "", stock };
+    return { id, skuCode: id, size: "", asin: "B1", memo: "", stock };
 }
 
 /** 現地時刻の 2026 年 month 月 day 日 hour 時の調査（month は 1〜12） */

@@ -28,13 +28,10 @@ export interface ImportSetting {
 export interface StockQuantities {
     amazonOwn: number | null;
     amazonFba: number | null;
-    amazonTotal?: number | null;
     bossOwn: number | null;
     bossRfc: number | null;
     freeStock: number | null;
     ecStock: number | null;
-    mallTotal?: number | null;
-    grandTotal?: number | null;
 }
 
 export const STOCK_FIELDS: { key: keyof StockQuantities; label: string; group: "Amazon" | "BOSS" | "その他" }[] = [
@@ -46,15 +43,12 @@ export const STOCK_FIELDS: { key: keyof StockQuantities; label: string; group: "
     { key: "ecStock", label: "ECストック", group: "その他" },
 ];
 
+/** 調査のSKU。在庫の合計（Amazon・モール全体・総数）は返さず、utils/stock.ts で計算する */
 export interface SurveySkuResult {
     skuCode: string;
     id: string;
-    colorName: string;
     size: string;
     asin: string;
-    tqCode: string;
-    tqColorNo: string;
-    tqSize: string;
     stock: StockQuantities;
     memo: string;
 }

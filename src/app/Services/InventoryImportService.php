@@ -235,7 +235,7 @@ class InventoryImportService
             ]);
         }
 
-        return $survey->refresh()->load(['products.skus', 'files', 'amazonImport.snapshots']);
+        return $survey->refresh()->load(['products.skus', 'files', 'amazonImport']);
     }
 
     /**
