@@ -320,6 +320,24 @@ describe("ManualPage", () => {
         expect(document.activeElement).toBe(other);
     });
 
+    it("draws simplified screens only where a control is hard to find", () => {
+        const withFigures = MANUAL_SECTIONS.filter((section) => mountManual(section.id).find("[data-manual-figure]").exists()).map((section) => section.id);
+
+        expect(withFigures).toEqual(["data-import", "basic-operation-amazon", "survey-result", "inventory-trend"]);
+    });
+
+    it.each(["data-import", "basic-operation-amazon", "survey-result", "inventory-trend"])("describes the %s figure and numbers every marker in its legend", (id) => {
+        const figure = mountManual(id).get("[data-manual-figure]");
+
+        expect(figure.get('[role="img"]').attributes("aria-label")).toBeTruthy();
+        const markers = figure
+            .get('[role="img"]')
+            .findAll("[data-figure-marker]")
+            .map((marker) => Number(marker.text()));
+        const legend = figure.findAll("[data-figure-legend] li");
+        expect(markers).toEqual(legend.map((_, index) => index + 1));
+    });
+
     it("no longer asks users to rename the downloaded files", () => {
         for (const section of MANUAL_SECTIONS) expect(mountManual(section.id).text(), section.id).not.toContain("リネーム");
     });

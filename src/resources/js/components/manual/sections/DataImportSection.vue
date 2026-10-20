@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ImportDropzoneFigure from "@/components/manual/figures/ImportDropzoneFigure.vue";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
 import ManualHeading from "@/components/manual/ManualHeading.vue";
 import ManualResult from "@/components/manual/ManualResult.vue";
@@ -30,6 +31,7 @@ const importErrors = [
                 「取込ファイルの準備①〜③」でダウンロードしたCSVを、「ここにCSVをドロップ」の枠にドラッグ＆ドロップします。<ManualUi icon="upload_file">ファイルを選択</ManualUi
                 ><ManualUi icon="folder_open">フォルダを選択</ManualUi>から選ぶこともできます。
             </p>
+            <ImportDropzoneFigure />
             <ul class="list-disc space-y-1 pl-5">
                 <li>1回に添付できるのは1〜3件です。3種類がそろっていなくても取り込めます。</li>
                 <li>ファイルの種類（BOSS・ECストック・フリー在庫）は、CSVの1行目の見出しから自動で判定します。ファイル名を変える必要はありません。</li>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TrendCsvMenuFigure from "@/components/manual/figures/TrendCsvMenuFigure.vue";
 import ManualUi from "@/components/manual/ManualUi.vue";
 import ManualCallout from "@/components/manual/ManualCallout.vue";
 import ManualHeading from "@/components/manual/ManualHeading.vue";
@@ -94,6 +95,7 @@ const trendCsvColumns = [
             右上の<ManualUi variant="primary" icon="download">日次在庫をCSV出力</ManualUi
             >を押下し、<ManualUi>選択品番の日次CSV</ManualUi>（表示中の品番）か<ManualUi>全品番の日次CSV</ManualUi>を選びます。期間で指定した開始日から終了日までについて、1日・1SKUを1行として出力します。在庫区分に関係なく、すべての倉庫の在庫数を出力します。調査がない日でもAmazon在庫を取得した日は出力し、その日のAmazon以外の列は空欄になります。
         </p>
+        <TrendCsvMenuFigure class="mt-4" />
         <ManualTermTable class="mt-4" :rows="trendCsvColumns" term-label="列" meaning-label="内容" data-trend-csv-columns />
     </div>
     <ManualCallout title="CSVの空欄と0の違い" tone="tip"
