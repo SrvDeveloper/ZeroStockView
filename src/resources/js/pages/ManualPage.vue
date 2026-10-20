@@ -1,26 +1,48 @@
 <script setup lang="ts">
 import ManualCallout from "@/components/manual/ManualCallout.vue";
+import ManualHeading from "@/components/manual/ManualHeading.vue";
 import ManualScreenshot from "@/components/manual/ManualScreenshot.vue";
 import ManualSection from "@/components/manual/ManualSection.vue";
 import ManualStep from "@/components/manual/ManualStep.vue";
-import ManualTableOfContents from "@/components/manual/ManualTableOfContents.vue";
+import ManualTableOfContents, { type ManualChapter } from "@/components/manual/ManualTableOfContents.vue";
 import ManualTermTable from "@/components/manual/ManualTermTable.vue";
 
-const sections = [
-    { id: "introduction", title: "はじめに" },
-    { id: "basic-operation-boss", title: "取込ファイルの準備①：BOSS" },
-    { id: "basic-operation-ec", title: "取込ファイルの準備②：ECストック" },
-    { id: "basic-operation-free", title: "取込ファイルの準備③：フリー在庫" },
-    { id: "data-import", title: "データ取込" },
-    { id: "basic-operation-amazon", title: "Amazon在庫の取得" },
-    { id: "survey-history", title: "在庫調査履歴" },
-    { id: "survey-result", title: "在庫調査結果" },
-    { id: "inventory-trend", title: "在庫推移" },
-    { id: "import-settings", title: "品番グループ" },
-    { id: "file-management", title: "ファイル管理" },
-    { id: "api-settings", title: "API連携設定" },
-    { id: "user-management", title: "ユーザー管理" },
-    { id: "notes", title: "注意事項" },
+/** 目次。章ごとにまとめ、節の名前は短く書く（節の ID は変えない） */
+const chapters: ManualChapter[] = [
+    { title: "", items: [{ id: "introduction", title: "はじめに" }] },
+    {
+        title: "取込ファイルの準備",
+        items: [
+            { id: "basic-operation-boss", title: "① BOSS" },
+            { id: "basic-operation-ec", title: "② ECストック" },
+            { id: "basic-operation-free", title: "③ フリー在庫" },
+        ],
+    },
+    {
+        title: "毎日の作業",
+        items: [
+            { id: "data-import", title: "データ取込" },
+            { id: "basic-operation-amazon", title: "Amazon在庫の取得" },
+        ],
+    },
+    {
+        title: "結果を確認する",
+        items: [
+            { id: "survey-history", title: "在庫調査履歴" },
+            { id: "survey-result", title: "在庫調査結果" },
+            { id: "inventory-trend", title: "在庫推移" },
+        ],
+    },
+    {
+        title: "設定",
+        items: [
+            { id: "import-settings", title: "品番グループ" },
+            { id: "file-management", title: "ファイル管理" },
+            { id: "api-settings", title: "API連携設定" },
+            { id: "user-management", title: "ユーザー管理" },
+        ],
+    },
+    { title: "", items: [{ id: "notes", title: "注意事項" }] },
 ];
 
 /** データ取込画面「Amazon 在庫」欄の状態（DataImportPage.vue の表示文言） */
@@ -112,20 +134,20 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
             <p class="mt-1 text-[12.5px] text-ink-2">システムの操作方法をご案内します。</p>
         </div>
 
-        <div class="grid items-start gap-4 lg:grid-cols-[13rem_minmax(0,1fr)]">
+        <div class="grid items-start gap-5 lg:grid-cols-[14rem_minmax(0,54rem)]">
             <div class="lg:sticky lg:top-16">
-                <ManualTableOfContents :items="sections" />
+                <ManualTableOfContents :chapters="chapters" />
             </div>
 
-            <div class="min-w-0 space-y-4">
+            <div class="min-w-0 space-y-5">
                 <ManualSection id="introduction" title="はじめに" description="このシステムでできることと、1日の作業の流れを説明します。" icon="waving_hand">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                    <p class="text-[14px] leading-relaxed text-ink">
                         ZeroStockView（在庫状況調査システム）は、品番グループに登録した品番のSKUごとに、Amazon（自社発送・FBA）、BOSS（自社倉庫・RFC倉庫）、フリー在庫、ECストックの在庫数をまとめて確認するシステムです。在庫数は1日1件の「在庫調査」として保存され、過去の日の在庫を見比べたり、在庫推移として確認したりできます。
                     </p>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">1日の作業の流れ</h3>
-                        <ol class="mt-2 list-decimal space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>1日の作業の流れ</ManualHeading>
+                        <ol class="mt-2 list-decimal space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>毎朝9:00に、Amazon在庫がSP-APIから自動で取得されます。操作は不要です。</li>
                             <li>
                                 BOSSとターコイズから、取込に使う3種類のファイル（倉庫毎の在庫数レポート、KEEP一覧表、在庫一覧照会表）をダウンロードします。手順は「取込ファイルの準備①〜③」を参照してください。
@@ -137,13 +159,13 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     <ManualCallout title="取込の順番" tone="tip">Amazon在庫の取得とファイルの取込は、どちらが先でもかまいません。同じ日の在庫調査にまとめて反映されます。</ManualCallout>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">権限ごとにできること</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>権限ごとにできること</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             ユーザーには「閲覧者」「編集者」「特権管理者」のいずれかの権限が設定されています。使えない操作のボタンやメニューは表示されません。権限の変更は特権管理者に依頼してください。
                         </p>
                         <div class="mt-2 overflow-x-auto rounded-card border border-line">
-                            <table class="w-full min-w-120 text-left text-[12.5px]" data-role-permissions>
-                                <thead class="border-b border-line bg-surface-2 text-[11px] text-muted">
+                            <table class="w-full min-w-120 text-left text-[13px]" data-role-permissions>
+                                <thead class="border-b border-line bg-surface-2 text-[11.5px] text-muted">
                                     <tr>
                                         <th class="px-3 py-2 font-semibold">できること</th>
                                         <th class="w-20 px-3 py-2 text-center font-semibold">閲覧者</th>
@@ -151,10 +173,10 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                                         <th class="w-24 px-3 py-2 text-center font-semibold">特権管理者</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-line-2 text-ink-2">
+                                <tbody class="divide-y divide-line-2 text-ink">
                                     <tr v-for="row in rolePermissions" :key="row.feature">
-                                        <td class="px-3 py-1.5">{{ row.feature }}</td>
-                                        <td v-for="allowed in [row.viewer, row.editor, row.admin]" :key="String(allowed) + row.feature" class="px-3 py-1.5 text-center">
+                                        <td class="px-3 py-2">{{ row.feature }}</td>
+                                        <td v-for="allowed in [row.viewer, row.editor, row.admin]" :key="String(allowed) + row.feature" class="px-3 py-2 text-center">
                                             <span v-if="allowed" class="font-semibold text-ink">○</span>
                                             <span v-else class="text-faint">－</span>
                                         </td>
@@ -169,7 +191,13 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="basic-operation-boss" title="取込ファイルの準備①：BOSS" description="BOSSの取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection
+                    id="basic-operation-boss"
+                    chapter="取込ファイルの準備"
+                    title="取込ファイルの準備①：BOSS"
+                    description="BOSSの取込に使用するデータは下記の手順で取得します。"
+                    icon="touch_app"
+                >
                     <ManualStep :number="1" title="在庫・商品一覧画面で商品一覧を表示します。">
                         <p>
                             BOSSにログインして、在庫・商品一覧画面を開き、検索条件を変更しないで検索ボタンを押下します。<br />
@@ -193,7 +221,13 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation-ec" title="取込ファイルの準備②：ECストック" description="ECストック在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection
+                    id="basic-operation-ec"
+                    chapter="取込ファイルの準備"
+                    title="取込ファイルの準備②：ECストック"
+                    description="ECストック在庫の取込に使用するデータは下記の手順で取得します。"
+                    icon="touch_app"
+                >
                     <ManualStep :number="1" title="ターコイズでKEEP一覧表出力画面を開きます。">
                         <p>ターコイズにログインして、「在庫管理」＞「KEEP一覧表」を押下します。</p>
                         <ManualScreenshot src="/img/manual/03-1.png" caption="KEEP一覧表出力画面を開く" />
@@ -208,7 +242,13 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="basic-operation-free" title="取込ファイルの準備③：フリー在庫" description="フリー在庫の取込に使用するデータは下記の手順で取得します。" icon="touch_app">
+                <ManualSection
+                    id="basic-operation-free"
+                    chapter="取込ファイルの準備"
+                    title="取込ファイルの準備③：フリー在庫"
+                    description="フリー在庫の取込に使用するデータは下記の手順で取得します。"
+                    icon="touch_app"
+                >
                     <ManualStep :number="1" title="ターコイズで在庫一覧照会画面を開きます。">
                         <p>ターコイズにログインして、「在庫管理」＞「在庫一覧照会」を押下します。</p>
                         <ManualScreenshot src="/img/manual/04-1.png" caption="在庫一覧照会画面を開く" />
@@ -226,8 +266,15 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </ManualStep>
                 </ManualSection>
 
-                <ManualSection id="data-import" title="データ取込" description="準備したファイルを取り込んで、その日の在庫調査を作成・更新します。" icon="upload">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection
+                    id="data-import"
+                    chapter="毎日の作業"
+                    audience="編集者・特権管理者"
+                    title="データ取込"
+                    description="準備したファイルを取り込んで、その日の在庫調査を作成・更新します。"
+                    icon="upload"
+                >
+                    <p class="text-[14px] leading-relaxed text-ink">
                         「データ取込」画面は、編集者と特権管理者が使えます。取込の対象は、すべての品番グループに登録した品番です（同じ品番が複数のグループにあっても、1回だけ取り込みます）。Amazon在庫はファイルでは取り込みません。「Amazon在庫の取得」を参照してください。
                     </p>
                     <ManualStep :number="1" title="データ取込画面を開きます。">
@@ -255,11 +302,11 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </ManualStep>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">同じ日に追加で取り込むとき</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>同じ日に追加で取り込むとき</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             在庫調査は1日1件です。取込を実行した日の調査がすでにあるときは、新しい調査は作られず、その調査が更新されます（初回取込日時は変わりません）。
                         </p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>添付した種類は、新しいファイルの内容に置き換わります。</li>
                             <li>
                                 添付しなかった種類は、その日に前回取り込んだファイルをそのまま使います。たとえば、午前にBOSSだけを取り込み、午後にECストックとフリー在庫を取り込むと、3種類がそろった調査になります。
@@ -271,16 +318,17 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
                 <ManualSection
                     id="basic-operation-amazon"
+                    chapter="毎日の作業"
                     title="Amazon在庫の取得"
                     description="Amazon在庫（自社発送・FBA）は、AmazonのSP-APIから自動で取得します。ファイルの準備は不要です。"
                     icon="cloud_download"
                 >
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">毎朝9:00の自動取得</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>毎朝9:00の自動取得</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             毎朝9:00に、品番グループに登録した品番のAmazon在庫を自動で取得します。Amazon側で在庫レポートを作成するため、完了までに時間がかかることがあります。取得が成功すると、その日の在庫調査に反映されます。
                         </p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>その日の在庫調査がすでにあるときは、その調査に反映します。</li>
                             <li>
                                 その日の在庫調査がまだないときは、Amazon在庫だけが入った調査を作成します。BOSS・ECストック・フリー在庫は取込待ちになり、あとでデータ取込を行うと同じ調査に追加されます。
@@ -291,8 +339,8 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">取得の状態を確認する</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>取得の状態を確認する</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             「データ取込」画面の「Amazon
                             在庫」欄で確認します。「最新の実行」に状態と、定期実行（毎朝の自動取得）か手動実行かが表示されます。「在庫基準日時」は、Amazon在庫がいつ時点の数かを示します。下の一覧には、直近5回の取得の開始日時・起動（定期／手動）・結果が表示されます。
                         </p>
@@ -300,8 +348,8 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">手動で取得する（特権管理者のみ）</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>手動で取得する（特権管理者のみ）</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             自動取得が失敗したときや、9:00以降に品番グループへ品番を追加したときは、「Amazon 在庫」欄の「Amazon
                             在庫を取得」を押下して取り直します。完了するまで、画面は自動で更新されます。受付・処理中の取得があるあいだは押せません。同じ日に何回取得しても、調査にはその日に成功した最新の在庫が反映されます。
                         </p>
@@ -311,20 +359,20 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">在庫調査結果での表示</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">在庫調査結果画面の上部の「Amazon 在庫」に、その調査へのAmazon在庫の反映状況が表示されます。</p>
+                        <ManualHeading>在庫調査結果での表示</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">在庫調査結果画面の上部の「Amazon 在庫」に、その調査へのAmazon在庫の反映状況が表示されます。</p>
                         <ManualTermTable class="mt-2" :rows="amazonSurveyStatuses" data-amazon-survey-statuses />
                     </div>
                 </ManualSection>
 
-                <ManualSection id="survey-history" title="在庫調査履歴" description="これまでの在庫調査を、日付ごとに確認します。" icon="history">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection id="survey-history" chapter="結果を確認する" title="在庫調査履歴" description="これまでの在庫調査を、日付ごとに確認します。" icon="history">
+                    <p class="text-[14px] leading-relaxed text-ink">
                         メニューの「在庫調査履歴」を押下します。すべての権限で使えます。在庫調査は1日1件で、削除するまで保持されます。右上の「カレンダー」「リスト」で表示を切り替えます。「最新の在庫を再読込」を押下すると、履歴を最新の状態に更新します。
                     </p>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">カレンダーで見る</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>カレンダーで見る</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             「＜」「＞」で月を移動します。月の横の「調査 n 日 ／ 経過 n
                             日」は、その月に調査がある日数と、今日までの日数です。調査のある日のマスには、次の印が表示されます。印の意味は、カレンダーの下の凡例でも確認できます。
                         </p>
@@ -332,9 +380,9 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">日を選んで詳細を見る</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">調査のある日を押下すると、右側に「○月○日（○）の調査」の詳細が表示されます。最初は最新の調査が選ばれています。</p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>日を選んで詳細を見る</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">調査のある日を押下すると、右側に「○月○日（○）の調査」の詳細が表示されます。最初は最新の調査が選ばれています。</p>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>全倉庫ゼロ・一部の倉庫でゼロのSKU数（前日比）と、品番数・SKU数</li>
                             <li> 初回取込日時（その日に最初に取り込んだ日時）、結果作成日時、結果更新日時（追加取込やAmazon在庫の反映で更新された日時）、Amazon 在庫の反映状況 </li>
                             <li>
@@ -345,8 +393,8 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">リストで見る</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>リストで見る</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             調査を新しい順に10件ずつ表示します。「調査期間」に開始日と終了日を指定すると、その期間の調査だけを表示します（「クリア」で解除）。一覧には、初回取込日時・品番数・SKU数・取込ファイル数・Amazon
                             在庫の反映状況・全倉庫ゼロのSKU数が表示されます。全倉庫ゼロが前の調査日より増えた日は、数字が色付きで表示されます。右端の「結果を開く」と、表のアイコンの「Excel出力」は、カレンダーの詳細欄と同じです。
                         </p>
@@ -357,14 +405,14 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="survey-result" title="在庫調査結果" description="1日分の在庫調査を、品番・SKUごとに確認します。" icon="fact_check">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection id="survey-result" chapter="結果を確認する" title="在庫調査結果" description="1日分の在庫調査を、品番・SKUごとに確認します。" icon="fact_check">
+                    <p class="text-[14px] leading-relaxed text-ink">
                         在庫調査履歴の「結果を開く」を押下するか、データ取込が完了すると開きます。すべての権限で使えます。「調査履歴に戻る」で在庫調査履歴に戻ります。
                     </p>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">画面上部のまとめ</h3>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>画面上部のまとめ</ManualHeading>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>
                                 見出しの下に、初回取込日時・結果作成日時・結果更新日時と、取込ファイル（保存期限内のファイルの種類の数）が表示されます。「一括ダウンロード」で、保存中の取込ファイルをまとめてダウンロードできます。
                             </li>
@@ -377,8 +425,8 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">在庫表の見方</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>在庫表の見方</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             品番ごとに、SKUの在庫を倉庫別（Amazon・BOSS・フリー在庫・ECストック）に表示します。Amazonは自社発送とFBA、BOSSは自社倉庫とRFC倉庫の合計です。「全倉庫ゼロ」は総数が0と確定したSKU、「一部の倉庫でゼロ」は総数が1以上で、0の倉庫があるSKUです。
                         </p>
                         <ManualTermTable class="mt-2" :rows="stockDisplays" data-stock-displays />
@@ -388,8 +436,8 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">絞り込む</h3>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>絞り込む</ManualHeading>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>品番グループ・ブランド・カテゴリを選ぶか、品番・SKU・ASINの一部を入力して絞り込みます。SKUやASINで絞り込むと、該当するSKUの行に印が付きます。</li>
                             <li>
                                 「在庫ゼロ」「在庫あり」のボタン（Amazon・BOSS・フリー・ECストック）を押下すると、在庫の条件で絞り込みます。複数押下したときは、「結合」で「AND」（すべて満たす）か「OR」（どれかを満たす）を選びます。取込待ち（「—」）の倉庫は、在庫ゼロの条件に該当しません。
@@ -399,33 +447,33 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">Excelに出力する</h3>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>Excelに出力する</ManualHeading>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>「全件をExcel出力」：調査のすべてのSKUを出力します。品番グループを選んでいるときは、そのグループのSKUを出力します。</li>
                             <li>「絞込結果をExcel出力」：絞り込みで該当したSKUだけを出力します。</li>
                         </ul>
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">メモを書く（特権管理者のみ）</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>メモを書く（特権管理者のみ）</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             品番の見出しの右にある「品番のメモを追加」と、SKUの行の「メモを追加」に入力します。入力欄から離れると自動で保存されます。メモは調査（日）ごとに保存され、同じ日の追加取込や再照合では残りますが、別の日の調査には引き継がれません。特権管理者以外は、メモを読むことだけができます。
                         </p>
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">最新の在庫を再読込</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>最新の在庫を再読込</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             「最新の在庫を再読込」を押下すると、この調査を最新の状態に読み込み直します。この画面は30秒ごとに自動で更新されますが、Amazon在庫が反映されたかをすぐ確かめたいときなどに使います。
                         </p>
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">保存ファイルで再照合（編集者・特権管理者）</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>保存ファイルで再照合（編集者・特権管理者）</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             その日に取り込んで保存されているファイルを使い、現在の品番グループの品番で照合し直して、この調査を更新します。ファイルを添付し直す必要はありません。次のようなときに使います。
                         </p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>品番グループに品番を追加・削除したあと、取込済みの日の結果にも反映したいとき</li>
                             <li>CrossWalkerでSKUの情報（ASIN、ターコイズの品番・カラー・サイズ）を直したあと、結果に反映したいとき</li>
                         </ul>
@@ -448,14 +496,14 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </ManualCallout>
                 </ManualSection>
 
-                <ManualSection id="inventory-trend" title="在庫推移" description="品番ごとに、日々の在庫数の移り変わりをグラフで確認します。" icon="show_chart">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection id="inventory-trend" chapter="結果を確認する" title="在庫推移" description="品番ごとに、日々の在庫数の移り変わりをグラフで確認します。" icon="show_chart">
+                    <p class="text-[14px] leading-relaxed text-ink">
                         メニューの「在庫推移」を押下します。すべての権限で使えます。各日の在庫調査（その日の最新の状態）を集計して表示します。調査がない日でも、Amazon在庫を取得した日はAmazon在庫だけを表示します。
                     </p>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">表示する内容を選ぶ</h3>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>表示する内容を選ぶ</ManualHeading>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>
                                 対象品番：「変更」を押下すると「対象品番を選択」が開きます。ブランドや検索（品番・ブランド・カテゴリ）で候補を絞り込み、品番を選んで「この品番を表示」を押下します。候補は、これまでの在庫調査かAmazon在庫の取得に含まれた品番です。
                             </li>
@@ -467,11 +515,11 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">品番全体のグラフ</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>品番全体のグラフ</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             グラフの右上の「品番全体」「SKU別」で表示を切り替えます。「品番全体」では、品番のすべてのSKUの在庫を日ごとに合計し、在庫区分に含まれる倉庫ごとに色分けして積み上げます。色と倉庫の対応は、グラフの上の凡例で確認できます。
                         </p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>未確定：取込待ち・未取得の倉庫がある日は、確定した倉庫だけを積み上げ、上に「未確定」の印（点線の枠）を付けます。合計は出しません。</li>
                             <li>欠品：日付の下の黄色の四角と数字は、その日に在庫区分の在庫が0だったSKUの数です。未確定のSKUがある日は数えません。</li>
                             <li>
@@ -481,12 +529,12 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">SKU別のグラフ</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>SKU別のグラフ</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             「SKU別」では、SKUごとに在庫区分の在庫数の折れ線を表示します。右上の札は「欠品
                             n日」（期間中に在庫0の日がある）、「在庫あり」、「データなし」のいずれかです。その下に、最新の在庫数と期間平均が表示されます。
                         </p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>点にマウスを重ねると、その日の日付と在庫数が表示されます。</li>
                             <li>点線の部分は、データのない日をまたいでつないだところです。</li>
                             <li>最後の点が黄色のときは、最新の在庫数が0です。</li>
@@ -494,22 +542,22 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">SKU別サマリー</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>SKU別サマリー</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             グラフの下に、SKUごとの数字を表にまとめます。見出しの横に、表示している期間と日数が表示されます。数字は在庫区分の在庫数で、データのない日は計算に含めません（値がないときは「—」）。
                         </p>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>推移：在庫数の小さな折れ線です。</li>
                             <li>最新在庫：期間中、最後にデータがある日の在庫数です。</li>
                             <li>期間平均・期間最小・期間最大：期間中の在庫数の平均・最小・最大です。</li>
                             <li>欠品日数：期間中に在庫が0だった日数です。1日以上あると黄色で表示します。</li>
                         </ul>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">グラフの右上の「再読込」を押下すると、最新のデータで表示し直します。</p>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">グラフの右上の「再読込」を押下すると、最新のデータで表示し直します。</p>
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">日次在庫をCSV出力</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>日次在庫をCSV出力</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             右上の「日次在庫をCSV出力」を押下し、「選択品番の日次CSV」（表示中の品番）か「全品番の日次CSV」を選びます。期間で指定した開始日から終了日までについて、1日・1SKUを1行として出力します。在庫区分に関係なく、すべての倉庫の在庫数を出力します。調査がない日でもAmazon在庫を取得した日は出力し、その日のAmazon以外の列は空欄になります。
                         </p>
                         <ManualTermTable class="mt-2" :rows="trendCsvColumns" term-label="列" meaning-label="内容" data-trend-csv-columns />
@@ -519,14 +567,21 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="import-settings" title="品番グループ" description="取込の対象にする品番を、用途ごとのグループにまとめます。" icon="category">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection
+                    id="import-settings"
+                    chapter="設定"
+                    audience="編集者・特権管理者"
+                    title="品番グループ"
+                    description="取込の対象にする品番を、用途ごとのグループにまとめます。"
+                    icon="category"
+                >
+                    <p class="text-[14px] leading-relaxed text-ink">
                         メニューの「品番グループ」を押下します。編集者と特権管理者が使えます。すべてのグループに登録した品番が取込の対象になり、同じ品番が複数のグループにあっても1回だけ取り込みます。グループは、在庫調査結果で品番を絞り込むときにも使います。
                     </p>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">一覧の見方</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>一覧の見方</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             見出しの下に、グループ数、取込対象の品番数（重複を除く）、取込対象のSKU数が表示されます。一覧には、グループ名、対象品番数（1グループ50件まで）、対象品番（先頭の5件）、最終同期（品番の情報を最後にCrossWalkerから取り込んだ日時）が表示されます。
                         </p>
                     </div>
@@ -551,11 +606,18 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="file-management" title="ファイル管理" description="保存されている取込ファイルを、調査ごとに確認・ダウンロード・削除します。" icon="folder_open">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection
+                    id="file-management"
+                    chapter="設定"
+                    audience="特権管理者のみ"
+                    title="ファイル管理"
+                    description="保存されている取込ファイルを、調査ごとに確認・ダウンロード・削除します。"
+                    icon="folder_open"
+                >
+                    <p class="text-[14px] leading-relaxed text-ink">
                         メニューの「ファイル管理」を押下します。特権管理者だけが使えます。取り込んだファイルは、アップロードから30日間保存され、過ぎると自動で削除されます。ファイルが削除されても、調査結果とメモは残ります。
                     </p>
-                    <ul class="list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                    <ul class="list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                         <li>見出しの下に、保存中のファイル数、合計サイズ、保存期限まで7日以内のファイル数が表示されます。</li>
                         <li>
                             調査（初回取込日時）ごとに、ファイルの種類・ファイル名・アップロード日時・サイズ・保存期限までの残り日数が表示されます。残りが7日以内のファイルは、黄色で表示されます。
@@ -568,11 +630,11 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="api-settings" title="API連携設定" description="外部システムが日次在庫データを取得するためのAPIを設定します。" icon="api">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
+                <ManualSection id="api-settings" chapter="設定" audience="特権管理者のみ" title="API連携設定" description="外部システムが日次在庫データを取得するためのAPIを設定します。" icon="api">
+                    <p class="text-[14px] leading-relaxed text-ink">
                         メニューの「API連携設定」を押下します。特権管理者だけが使えます。外部システムは、このAPIで、在庫推移の日次在庫CSVと同じ項目をJSON形式で取得します。設定を変えたら、右上の「保存」を押下してください。
                     </p>
-                    <ul class="list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                    <ul class="list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                         <li> API有効状態：「外部APIを有効にする」で、APIを使えるかどうかを切り替えます。有効にするには、APIキーの発行と、許可IPアドレスまたはCIDRの登録（1件以上）が必要です。 </li>
                         <li>APIキー：「発行」（2回目以降は「再発行」）を押下すると、新しいキーが表示されます。再発行すると、それまでのキーは使えなくなります。</li>
                         <li>
@@ -586,11 +648,9 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
                 </ManualSection>
 
-                <ManualSection id="user-management" title="ユーザー管理" description="ログインできるユーザーと、その権限を管理します。" icon="manage_accounts">
-                    <p class="text-[13px] leading-relaxed text-ink-2">
-                        メニューの「ユーザー管理」を押下します。特権管理者だけが使えます。権限ごとにできることは、「はじめに」の表を参照してください。
-                    </p>
-                    <ul class="list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                <ManualSection id="user-management" chapter="設定" audience="特権管理者のみ" title="ユーザー管理" description="ログインできるユーザーと、その権限を管理します。" icon="manage_accounts">
+                    <p class="text-[14px] leading-relaxed text-ink"> メニューの「ユーザー管理」を押下します。特権管理者だけが使えます。権限ごとにできることは、「はじめに」の表を参照してください。 </p>
+                    <ul class="list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                         <li>追加：「ユーザーを追加」を押下し、ログインID・権限・初期パスワードを入力して「ユーザーを作成」を押下します。</li>
                         <li>編集：一覧の鉛筆のアイコンを押下します。ログインIDと権限を変えて「変更を保存」を押下します。</li>
                         <li> パスワードの再設定：編集の画面で「パスワードを再設定する」を押下し、新しいパスワードを入力します。パスワードは半角英数字記号のみで12文字以上です。 </li>
@@ -603,7 +663,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                             <li>自分自身は削除できません。</li>
                         </ul>
                     </ManualCallout>
-                    <p class="text-[13px] leading-relaxed text-ink-2"> 自分のパスワードは、権限に関係なく、画面右上のログインIDを押下して「パスワード変更」から変更できます。 </p>
+                    <p class="text-[14px] leading-relaxed text-ink"> 自分のパスワードは、権限に関係なく、画面右上のログインIDを押下して「パスワード変更」から変更できます。 </p>
                 </ManualSection>
 
                 <ManualSection id="notes" title="注意事項" description="操作時に間違えやすい点をまとめます。" icon="error">
@@ -615,8 +675,8 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     >
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">調査の日付とAmazon在庫の反映</h3>
-                        <ul class="mt-1 list-disc space-y-0.5 pl-5 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>調査の日付とAmazon在庫の反映</ManualHeading>
+                        <ul class="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ink">
                             <li>在庫調査の日付は、取込を実行した日（日本時間）です。0時を過ぎてから取り込むと、翌日の調査になります。</li>
                             <li>
                                 Amazon在庫は、取得した日の調査にだけ反映されます。毎朝9:00の自動取得が失敗したときは、その日のうちに特権管理者が取り直してください。翌日に取得しても、前の日の調査には反映されません。
@@ -626,16 +686,16 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">旧方式（5ファイル）の調査</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">
+                        <ManualHeading>旧方式（5ファイル）の調査</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">
                             Amazon在庫をSP-APIで自動取得するようになる前は、Amazon在庫もファイル（在庫商品レポート・FBA在庫管理レポート）で取り込んでいました。この方式の調査は、Amazon在庫が取り込んだときの値のまま残り、在庫調査結果の「Amazon
                             在庫」に「旧ファイル」と表示されます。保存されているAmazon在庫を守るため、「保存ファイルで再照合」はできません。
                         </p>
                     </div>
 
                     <div>
-                        <h3 class="text-[13.5px] font-semibold text-ink">連携ステータス（編集者・特権管理者）</h3>
-                        <p class="mt-1 text-[13px] leading-relaxed text-ink-2">サイドメニューの下に、外部システムとの連携の状態が表示されます。5分ごとに自動で更新されます。</p>
+                        <ManualHeading>連携ステータス（編集者・特権管理者）</ManualHeading>
+                        <p class="mt-2 text-[14px] leading-relaxed text-ink">サイドメニューの下に、外部システムとの連携の状態が表示されます。5分ごとに自動で更新されます。</p>
                         <ManualTermTable class="mt-2" :rows="integrationStatuses" term-label="項目" data-integration-statuses />
                     </div>
                 </ManualSection>
