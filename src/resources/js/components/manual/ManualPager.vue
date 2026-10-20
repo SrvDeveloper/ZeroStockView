@@ -2,10 +2,13 @@
 import { computed } from "vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import { adjacentManualSections } from "@/constants/manual";
+import { useAuthStore } from "@/stores/auth";
 
 const props = defineProps<{ currentId: string }>();
 
-const adjacent = computed(() => adjacentManualSections(props.currentId));
+const auth = useAuthStore();
+/** 権限で見られない節は飛ばして、前後の節を選ぶ */
+const adjacent = computed(() => adjacentManualSections(props.currentId, auth.role));
 </script>
 
 <template>

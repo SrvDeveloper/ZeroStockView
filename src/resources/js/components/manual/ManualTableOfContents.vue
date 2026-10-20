@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import AppIcon from "@/components/ui/AppIcon.vue";
-import { MANUAL_CHAPTERS, type ManualHeadingMeta } from "@/constants/manual";
+import { computed } from "vue";
+import { visibleManualChapters, type ManualHeadingMeta } from "@/constants/manual";
+import { useAuthStore } from "@/stores/auth";
 
 defineProps<{
     currentId: string;
@@ -10,6 +12,10 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{ navigate: []; jump: [headingId: string] }>();
+
+const auth = useAuthStore();
+/** 権限で見られない節（と、節がなくなった章）は出さない */
+const chapters = computed(() => visibleManualChapters(auth.role));
 </script>
 
 <template>
@@ -23,7 +29,7 @@ const emit = defineEmits<{ navigate: []; jump: [headingId: string] }>();
         >
         <p class="px-2 text-[11px] font-semibold tracking-[0.08em] text-muted">目次</p>
         <div class="mt-1.5 space-y-2.5">
-            <div v-for="chapter in MANUAL_CHAPTERS" :key="chapter.sections[0]?.id">
+            <div v-for="chapter in chapters" :key="chapter.sections[0]?.id">
                 <p v-if="chapter.title" class="px-2 pb-0.5 text-[11px] font-semibold text-muted" data-toc-chapter>{{ chapter.title }}</p>
                 <ol class="space-y-px">
                     <li v-for="section in chapter.sections" :key="section.id">

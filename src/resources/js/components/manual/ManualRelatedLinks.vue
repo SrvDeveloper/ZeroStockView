@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { findManualSection, type ManualSectionMeta } from "@/constants/manual";
+import { canViewManualSection, findManualSection, type ManualSectionMeta } from "@/constants/manual";
+import { useAuthStore } from "@/stores/auth";
 
 const props = defineProps<{ ids: string[] }>();
 
-const sections = computed(() => props.ids.map((id) => findManualSection(id)).filter((section): section is ManualSectionMeta => section !== undefined));
+const auth = useAuthStore();
+const sections = computed(() => props.ids.map((id) => findManualSection(id)).filter((section): section is ManualSectionMeta => section !== undefined && canViewManualSection(section, auth.role)));
 </script>
 
 <template>

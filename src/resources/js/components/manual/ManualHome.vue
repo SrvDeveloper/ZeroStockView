@@ -3,6 +3,7 @@ import { computed } from "vue";
 import ManualSearch from "@/components/manual/ManualSearch.vue";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import StatusLamp from "@/components/ui/StatusLamp.vue";
+import { canViewManualSection } from "@/constants/manual";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 
@@ -127,6 +128,11 @@ const tasks: ManualTask[] = [
         ],
     },
 ];
+
+/* ── 権限で見られない節へのリンクは出さない ── */
+const canView = (to: ReturnType<typeof manualLink>) => canViewManualSection(to.params.section, role.value);
+const visiblePopularLinks = computed(() => popularLinks.filter((link) => canView(link.to)));
+const visibleTasks = computed(() => tasks.map((task) => ({ ...task, items: task.items.filter((item) => canView(item.to)) })).filter((task) => task.items.length > 0));
 </script>
 
 <template>
@@ -143,7 +149,7 @@ const tasks: ManualTask[] = [
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px]">
                     <span class="text-faint">よく見られている：</span>
                     <RouterLink
-                        v-for="link in popularLinks"
+                        v-for="link in visiblePopularLinks"
                         :key="link.label"
                         :to="link.to"
                         class="border-b border-sidebar-strong/40 text-sidebar-strong hover:border-sidebar-strong"
@@ -173,7 +179,7 @@ const tasks: ManualTask[] = [
                     v-for="step in dailyFlow"
                     :key="step.number"
                     class="flex flex-col gap-2.5 rounded-panel bg-surface p-[18px] shadow-card"
-                    :class="step.emphasis ? 'border-2 border-ink p-[17px]' : 'border border-line'"
+                    :class="step.emphasis && canView(step.to) ? 'border-2 border-ink p-[17px]' : 'border border-line'"
                 >
                     <div class="flex items-center justify-between gap-2">
                         <span class="font-num text-[34px] leading-none font-semibold" aria-hidden="true">{{ step.number }}</span>
@@ -181,7 +187,8 @@ const tasks: ManualTask[] = [
                     </div>
                     <h3 class="text-[16px] font-bold">{{ step.title }}</h3>
                     <p class="text-[13px] leading-[1.7] text-ink-2">{{ step.text }}</p>
-                    <RouterLink :to="step.to" class="mt-auto inline-flex items-center gap-1 text-[12.5px] font-bold text-ink hover:underline"
+                    <!-- 1日の流れは全体像として全員に見せ、見られない節へのリンクだけを外す -->
+                    <RouterLink v-if="canView(step.to)" :to="step.to" class="mt-auto inline-flex items-center gap-1 text-[12.5px] font-bold text-ink hover:underline"
                         >{{ step.link }}<AppIcon name="arrow_forward" :size="15"
                     /></RouterLink>
                 </li>
@@ -192,7 +199,7 @@ const tasks: ManualTask[] = [
         <section class="flex flex-col gap-4" aria-labelledby="manual-home-tasks">
             <h2 id="manual-home-tasks" class="text-[22px] font-extrabold">やりたいことから探す</h2>
             <div class="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3" data-home-tasks>
-                <div v-for="task in tasks" :key="task.title" class="overflow-hidden rounded-panel border border-line bg-surface shadow-card">
+                <div v-for="task in visibleTasks" :key="task.title" class="overflow-hidden rounded-panel border border-line bg-surface shadow-card">
                     <div class="flex items-center gap-3 border-b border-line-2 px-[18px] py-4">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-card" :class="task.tone === 'signal' ? 'bg-signal text-ink' : 'bg-ink text-white'">
                             <AppIcon :name="task.icon" :size="19" />
