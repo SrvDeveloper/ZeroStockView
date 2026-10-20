@@ -11,14 +11,24 @@ describe("ManualPage", () => {
 
         const sectionIds = wrapper.findAll("section").map((section) => section.attributes("id"));
 
-        expect(sectionIds).toEqual(["introduction", "basic-operation-boss", "basic-operation-ec", "basic-operation-free", "data-import", "basic-operation-amazon", "notes"]);
+        expect(sectionIds).toEqual([
+            "introduction",
+            "basic-operation-boss",
+            "basic-operation-ec",
+            "basic-operation-free",
+            "data-import",
+            "basic-operation-amazon",
+            "survey-history",
+            "survey-result",
+            "notes",
+        ]);
         expect(links.map((link) => link.attributes("href"))).toEqual(sectionIds.map((id) => `#${id}`));
     });
 
     it("shows callouts and screenshots for the import instructions", () => {
         const wrapper = mount(ManualPage);
 
-        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(7);
+        expect(wrapper.findAllComponents(ManualCallout)).toHaveLength(10);
         expect(wrapper.getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
         expect(wrapper.get("#basic-operation-amazon").text()).toContain("SP-API");
         expect(wrapper.get("#basic-operation-free").find('[role="alert"]').text()).toContain("ゼロ在庫出力のチェックを外さない");
@@ -59,6 +69,28 @@ describe("ManualPage", () => {
         expect(amazon.text()).toContain("手動で取得する（特権管理者のみ）");
         expect(amazon.findAll("[data-amazon-import-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["受付", "処理中", "成功", "失敗"]);
         expect(amazon.findAll("[data-amazon-survey-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["取込済み", "取込待ち", "一部未取得"]);
+    });
+
+    it("explains the survey history views and who can delete", () => {
+        const wrapper = mount(ManualPage);
+        const history = wrapper.get("#survey-history");
+
+        expect(history.text()).toContain("カレンダーで見る");
+        expect(history.text()).toContain("リストで見る");
+        expect(history.text()).toContain("一括ダウンロード");
+        expect(history.findAll("[data-calendar-marks] tbody td:first-child").map((cell) => cell.text())).toContain("全ゼロ n");
+        expect(history.find('[role="alert"]').text()).toContain("調査の削除（特権管理者のみ）");
+    });
+
+    it("explains how to read the survey result and when rerun is unavailable", () => {
+        const wrapper = mount(ManualPage);
+        const result = wrapper.get("#survey-result");
+
+        const terms = result.findAll("[data-stock-displays] tbody td:first-child").map((cell) => cell.text());
+        expect(terms).toEqual(expect.arrayContaining(["0（色付き）", "—", "対象外"]));
+        expect(result.text()).toContain("Ctrlキー");
+        expect(result.text()).toContain("保存ファイルで再照合（編集者・特権管理者）");
+        expect(result.find('[role="alert"]').text()).toContain("旧方式（5ファイル）");
     });
 
     it("no longer asks users to rename the downloaded files", () => {
