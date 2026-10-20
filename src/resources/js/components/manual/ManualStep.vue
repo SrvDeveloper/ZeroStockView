@@ -12,7 +12,7 @@ defineProps<{
         </span>
         <div class="min-w-0 flex-1 pt-px">
             <h3 class="text-[13.5px] font-semibold text-ink">{{ title }}</h3>
-            <div class="mt-2 space-y-3 text-[13px] leading-7 text-ink-2">
+            <div class="mt-2 space-y-3 text-[13px] leading-relaxed text-ink-2">
                 <slot />
             </div>
         </div>
