@@ -3,11 +3,15 @@
 namespace App\Services;
 
 use App\Models\AmazonInventoryImport;
+use App\Models\AmazonInventorySnapshot;
 use App\Models\ImportSetting;
 use App\Models\ImportTarget;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
+use App\Models\SurveySku;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -20,6 +24,11 @@ use RuntimeException;
 
 class InventoryImportService
 {
+    /** 調査のSKUへ品番マスタから写す列（SKUコードを除く） */
+    private const SKU_COLUMNS = ['child_asin', 'status', 'tq_item_no', 'tq_color_no', 'tq_size', 'sort_order'];
+
+    private const STOCK_COLUMNS = ['amazon_own_stock', 'amazon_fba_stock', 'boss_own_stock', 'boss_rfc_stock', 'free_stock', 'ec_stock'];
+
     private const FILE_TYPES = [
         'boss' => '倉庫毎の在庫数レポート',
         'ec_stock' => 'KEEP一覧表',
@@ -29,6 +38,7 @@ class InventoryImportService
     public function __construct(
         private CrossWalkerClient $crossWalker,
         private SurveyAmazonInventorySyncService $amazonSync,
+        private BulkRowWriter $writer,
     ) {}
 
     public function reimport(Survey $source, ImportSetting $setting): Survey
@@ -146,8 +156,6 @@ class InventoryImportService
                     $skus = $targets->pluck('product.skus')->flatten();
                     $stocks = $skus->mapWithKeys(fn ($sku): array => [
                         $sku->sku_code => [
-                            'amazon_own_stock' => null,
-                            'amazon_fba_stock' => null,
                             'boss_own_stock' => isset($allFiles['boss']) ? 0 : null,
                             'boss_rfc_stock' => isset($allFiles['boss']) ? 0 : null,
                             'free_stock' => isset($allFiles['free_stock']) ? 0 : null,
@@ -168,7 +176,10 @@ class InventoryImportService
                         $this->applyTq($stocks, $tqLookup, $allFiles['free_stock'], '可能在庫数', 'free_stock', false);
                     }
 
-                    $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $previousSettingName);
+                    // その日の Amazon 在庫があれば、行を書くときに一緒に入れる
+                    $amazonImport = $this->amazonSync->importFor($survey);
+                    $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $this->amazonSync->snapshotsOf($amazonImport), $previousSettingName);
+                    $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
 
                     foreach ($classifiedFiles as $key => $file) {
                         $type = self::FILE_TYPES[$key];
@@ -201,8 +212,6 @@ class InventoryImportService
                         ]);
                     }
 
-                    $this->amazonSync->syncSurvey($survey->id);
-
                     return $survey;
                 });
                 break;
@@ -227,7 +236,7 @@ class InventoryImportService
 
         try {
             // Catch an import that finished while the survey transaction was committing.
-            $this->amazonSync->syncSurvey($survey->id);
+            $this->amazonSync->syncSurveyIfNewerImport($survey->id);
         } catch (\Throwable $exception) {
             Log::error('調査保存後のAmazon在庫再同期に失敗しました。', [
                 'survey_id' => $survey->id,
@@ -281,16 +290,15 @@ class InventoryImportService
 
                 $stocks = $targets->pluck('product.skus')->flatten()->mapWithKeys(fn ($sku): array => [
                     $sku->sku_code => [
-                        'amazon_own_stock' => null,
-                        'amazon_fba_stock' => null,
                         'boss_own_stock' => null,
                         'boss_rfc_stock' => null,
                         'free_stock' => null,
                         'ec_stock' => null,
                     ],
                 ])->all();
-                $this->writeProducts($survey, $targets, $groupMemberships, $stocks, null);
-                $this->amazonSync->syncSurvey($survey->id);
+                $amazonImport = $this->amazonSync->importFor($survey);
+                $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $this->amazonSync->snapshotsOf($amazonImport), null);
+                $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
 
                 return $survey;
             });
@@ -331,58 +339,141 @@ class InventoryImportService
     }
 
     /**
-     * 調査の品番・SKUを作り直す。既存のメモとグループ所属は引き継ぐ。
+     * 調査の品番・SKUを、品番マスタと取込結果に合わせる。変わった行だけを書き、行のIDとメモは引き継ぐ。
+     * 品番は品番コード、SKUは品番コードとSKUコードで突き合わせ、なくなったものは消して新しいものを追加する。
+     * 別の品番へ移ったSKUは入れ直し、メモはSKUコードで引き継ぐ。グループ所属は以前の所属と合わせる。
      *
      * @param  Collection<int, ImportTarget>  $targets
      * @param  Collection<int, list<array{key: string, name: string, sortOrder: int}>>  $groupMemberships
-     * @param  array<string, array<string, int|null>>  $stocks
+     * @param  array<string, array<string, int|null>>  $stocks  SKUコード => Amazon 以外の在庫
+     * @param  EloquentCollection<string, AmazonInventorySnapshot>  $snapshots  SKUコード => その日の Amazon 在庫
      */
-    private function writeProducts(Survey $survey, Collection $targets, Collection $groupMemberships, array $stocks, ?string $previousSettingName): void
+    private function writeProducts(Survey $survey, Collection $targets, Collection $groupMemberships, array $stocks, EloquentCollection $snapshots, ?string $previousSettingName): void
     {
-        $existingProducts = $survey->products()->with('skus')->get();
-        $productMemos = $existingProducts->pluck('memo', 'product_code');
+        $existingProducts = $survey->products()->with('skus')->get()->keyBy('product_code');
         $skuMemos = $existingProducts->flatMap->skus->pluck('memo', 'sku_code');
-        $priorProducts = $existingProducts->keyBy('product_code');
-        $survey->products()->delete();
         $settingKeysByName = $groupMemberships->flatten(1)->pluck('key', 'name')->all();
 
+        $desiredProducts = [];
         foreach ($targets as $index => $target) {
             $product = $target->product;
-            $priorProduct = $priorProducts->get($product->product_code);
+            $priorProduct = $existingProducts->get($product->product_code);
             $priorMemberships = collect($priorProduct?->group_memberships ?? []);
             if ($priorProduct !== null && $priorMemberships->isEmpty() && $previousSettingName !== null) {
                 $priorMemberships->push(['key' => 'legacy:'.$previousSettingName, 'name' => $previousSettingName, 'sortOrder' => $priorProduct->sort_order]);
             }
-            // 現在の所属を先に置き、同じグループは現在の名前と並び順を使う
-            $memberships = SurveyProduct::mergeGroupMemberships(
-                collect($groupMemberships->get($product->id, []))->concat($priorMemberships),
-                $settingKeysByName,
-            );
-            $surveyProduct = $survey->products()->create([
-                'product_code' => $product->product_code,
-                'brand' => $product->brand,
-                'category' => $product->category,
-                'parent_asin' => $product->parent_asin,
-                'status' => $product->status,
-                'source_updated_at' => $product->source_updated_at,
+            $desiredProducts[$product->product_code] = [
+                ...$this->rawValues($product, ['brand', 'category', 'parent_asin', 'status', 'source_updated_at']),
                 'sort_order' => $index + 1,
-                'group_memberships' => $memberships,
-                'memo' => $productMemos->get($product->product_code),
-            ]);
+                // 現在の所属を先に置き、同じグループは現在の名前と並び順を使う
+                'group_memberships' => SurveyProduct::mergeGroupMemberships(
+                    collect($groupMemberships->get($product->id, []))->concat($priorMemberships),
+                    $settingKeysByName,
+                ),
+            ];
+        }
 
+        // なくなった品番の調査SKUは、外部キーで一緒に消える
+        $removedProducts = $existingProducts->diffKeys($desiredProducts);
+        foreach (array_chunk($removedProducts->modelKeys(), 500) as $chunk) {
+            SurveyProduct::query()->whereKey($chunk)->delete();
+        }
+        $keptProducts = $existingProducts->diffKeys($removedProducts);
+        $this->writeRows(
+            'survey_products',
+            $keptProducts->map(fn (SurveyProduct $product): array => [
+                ...$this->rawValues($product, ['id', 'brand', 'category', 'parent_asin', 'status', 'source_updated_at', 'sort_order']),
+                'group_memberships' => $product->group_memberships ?? [],
+            ])->all(),
+            $desiredProducts,
+            fn (string $productCode): array => ['survey_id' => $survey->getKey(), 'product_code' => $productCode, 'memo' => null],
+        );
+        $productIds = SurveyProduct::query()->where('survey_id', $survey->getKey())->pluck('id', 'product_code');
+
+        $existingSkus = [];
+        foreach ($keptProducts as $productCode => $product) {
             foreach ($product->skus as $sku) {
-                $surveyProduct->skus()->create(array_merge([
-                    'sku_code' => $sku->sku_code,
-                    'child_asin' => $sku->child_asin,
-                    'status' => $sku->status,
-                    'tq_item_no' => $sku->tq_item_no,
-                    'tq_color_no' => $sku->tq_color_no,
-                    'tq_size' => $sku->tq_size,
-                    'sort_order' => $sku->sort_order,
-                    'memo' => $skuMemos->get($sku->sku_code),
-                ], $stocks[$sku->sku_code]));
+                $existingSkus[$productCode."\x1f".$sku->sku_code] = $this->rawValues($sku, ['id', 'survey_product_id', ...self::SKU_COLUMNS, ...self::STOCK_COLUMNS]);
             }
         }
+        $desiredSkus = [];
+        $skuCodes = [];
+        foreach ($targets as $target) {
+            $productCode = $target->product->product_code;
+            foreach ($target->product->skus as $sku) {
+                $key = $productCode."\x1f".$sku->sku_code;
+                $skuCodes[$key] = $sku->sku_code;
+                $desiredSkus[$key] = [
+                    'survey_product_id' => $productIds[$productCode],
+                    ...$this->rawValues($sku, self::SKU_COLUMNS),
+                    ...$stocks[$sku->sku_code],
+                    ...$this->amazonSync->amazonValues($sku->child_asin, $snapshots->get($sku->sku_code)),
+                ];
+            }
+        }
+
+        foreach (array_chunk(array_column(array_diff_key($existingSkus, $desiredSkus), 'id'), 500) as $chunk) {
+            SurveySku::query()->whereKey($chunk)->delete();
+        }
+        $this->writeRows(
+            'survey_skus',
+            array_intersect_key($existingSkus, $desiredSkus),
+            $desiredSkus,
+            fn (string $key): array => ['sku_code' => $skuCodes[$key], 'memo' => $skuMemos->get($skuCodes[$key])],
+        );
+    }
+
+    /**
+     * 既存の行を望む値に合わせ、足りない行を追加する。値の変わらない行は書かない。
+     * 並び順（一意制約あり）が入れ替わる行は、先に重ならない値へ退避してから書く。
+     *
+     * @param  array<string, array<string, mixed>>  $current  キー => 既存の行（id と比べる列。値は DB に保存されている形）
+     * @param  array<string, array<string, mixed>>  $desired  キー => 望む行（sort_order を含む。配列の値は JSON で保存する）
+     * @param  callable(string): array<string, mixed>  $newRowValues  追加する行だけに書く値
+     */
+    private function writeRows(string $table, array $current, array $desired, callable $newRowValues): void
+    {
+        $encode = fn (array $row): array => array_map(fn (mixed $value): mixed => is_array($value) ? json_encode($value, JSON_THROW_ON_ERROR) : $value, $row);
+        $changes = [];
+        $movedIds = [];
+        foreach (array_intersect_key($desired, $current) as $key => $row) {
+            $existing = $current[$key];
+            foreach ($row as $column => $value) {
+                $differs = is_array($value)
+                    ? $value != $existing[$column]
+                    : ($value === null) !== ($existing[$column] === null) || (string) $value !== (string) $existing[$column];
+                if ($differs) {
+                    $changes[$existing['id']] = $encode($row);
+                    break;
+                }
+            }
+            if ((int) $row['sort_order'] !== (int) $existing['sort_order']) {
+                $movedIds[] = $existing['id'];
+            }
+        }
+
+        if ($movedIds !== []) {
+            $offset = max([...array_column($current, 'sort_order'), ...array_column($desired, 'sort_order')]) + 1;
+            $this->writer->moveSortOrderAside($table, $movedIds, $offset);
+        }
+        $this->writer->updateById($table, $changes);
+        $this->writer->insert($table, array_map(
+            fn (string $key): array => $encode($desired[$key] + $newRowValues($key)),
+            array_keys(array_diff_key($desired, $current)),
+        ));
+    }
+
+    /**
+     * モデルの列を、DB に保存されている形のまま取り出す。
+     *
+     * @param  list<string>  $columns
+     * @return array<string, mixed>
+     */
+    private function rawValues(Model $model, array $columns): array
+    {
+        $attributes = $model->getAttributes();
+
+        return array_combine($columns, array_map(fn (string $column): mixed => $attributes[$column] ?? null, $columns));
     }
 
     /**

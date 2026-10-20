@@ -9,14 +9,17 @@ use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\BulkRowWriter;
 use App\Services\InventoryImportService;
 use App\Services\InventoryTrendCsvExporter;
 use App\Services\SurveyAmazonInventorySyncService;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -761,36 +764,30 @@ class ApiBackendTest extends TestCase
         Storage::fake('local');
         $this->actingAs(User::factory()->create());
         $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
-        $sync = new class extends SurveyAmazonInventorySyncService
-        {
-            public int $calls = 0;
 
-            public function syncSurvey(int $surveyId): ?int
-            {
-                $this->calls++;
-                if ($this->calls === 2) {
-                    $basisAt = now();
-                    $import = AmazonInventoryImport::query()->create([
-                        'status' => 'succeeded',
-                        'trigger_source' => 'manual',
-                        'basis_at' => $basisAt,
-                        'snapshot_date' => $basisAt->toDateString(),
-                        'completed_at' => $basisAt,
-                    ]);
-                    $import->snapshots()->create([
-                        'product_code' => 'A-1001',
-                        'sku_code' => 'A-1001-01-M',
-                        'asin' => 'B000000001',
-                        'amazon_own_stock' => 8,
-                        'amazon_fba_stock' => 9,
-                        'basis_at' => $basisAt,
-                    ]);
-                }
-
-                return parent::syncSurvey($surveyId);
+        // 調査のトランザクションがコミットされた直後に、Amazon在庫取込が完了する（保存中には見えなかった取込）
+        $completed = null;
+        Event::listen(TransactionCommitted::class, function () use (&$completed): void {
+            if ($completed !== null || ! Survey::query()->exists()) {
+                return;
             }
-        };
-        $this->app->instance(SurveyAmazonInventorySyncService::class, $sync);
+            $basisAt = now();
+            $completed = AmazonInventoryImport::query()->create([
+                'status' => 'succeeded',
+                'trigger_source' => 'manual',
+                'basis_at' => $basisAt,
+                'snapshot_date' => $basisAt->toDateString(),
+                'completed_at' => $basisAt,
+            ]);
+            $completed->snapshots()->create([
+                'product_code' => 'A-1001',
+                'sku_code' => 'A-1001-01-M',
+                'asin' => 'B000000001',
+                'amazon_own_stock' => 8,
+                'amazon_fba_stock' => 9,
+                'basis_at' => $basisAt,
+            ]);
+        });
 
         $response = $this->post('/api/surveys', [
             'import_setting_id' => $settingId,
@@ -801,11 +798,12 @@ class ApiBackendTest extends TestCase
             ],
         ]);
 
+        $this->assertNotNull($completed);
         $response->assertCreated()
             ->assertJsonPath('data.amazonSource', 'sp_api')
+            ->assertJsonPath('data.amazonInventoryImportId', (string) $completed->id)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonOwn', 8)
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', 9);
-        $this->assertSame(2, $sync->calls);
         $this->assertDatabaseHas('survey_skus', [
             'survey_product_id' => Survey::query()->findOrFail($response->json('data.id'))->products()->first()->id,
             'amazon_own_stock' => 8,
@@ -818,18 +816,11 @@ class ApiBackendTest extends TestCase
         Storage::fake('local');
         $this->actingAs(User::factory()->create());
         $settingId = $this->postJson('/api/import-settings', $this->targetPayload())->assertCreated()->json('id');
-        $sync = new class extends SurveyAmazonInventorySyncService
+        $sync = new class(new BulkRowWriter) extends SurveyAmazonInventorySyncService
         {
-            private int $calls = 0;
-
-            public function syncSurvey(int $surveyId): ?int
+            public function syncSurveyIfNewerImport(int $surveyId): ?int
             {
-                $this->calls++;
-                if ($this->calls === 2) {
-                    throw new \RuntimeException('一時的な再同期エラー');
-                }
-
-                return parent::syncSurvey($surveyId);
+                throw new \RuntimeException('一時的な再同期エラー');
             }
         };
         $this->app->instance(SurveyAmazonInventorySyncService::class, $sync);
