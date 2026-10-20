@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/ui/AppIcon.vue";
 import { MANUAL_CHAPTERS, type ManualHeadingMeta } from "@/constants/manual";
 
 defineProps<{
@@ -13,6 +14,13 @@ const emit = defineEmits<{ navigate: []; jump: [headingId: string] }>();
 
 <template>
     <nav aria-label="操作マニュアルの目次" class="rounded-card border border-line bg-surface p-3 shadow-card lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto">
+        <RouterLink
+            :to="{ name: 'manual' }"
+            class="mb-2 flex items-center gap-1 rounded-control px-2 py-1.5 text-[12.5px] font-bold text-ink-2 hover:bg-tint hover:text-ink"
+            data-toc-home
+            @click="emit('navigate')"
+            ><AppIcon name="chevron_left" :size="16" />マニュアルのホーム</RouterLink
+        >
         <p class="px-2 text-[11px] font-semibold tracking-[0.08em] text-muted">目次</p>
         <div class="mt-1.5 space-y-2.5">
             <div v-for="chapter in MANUAL_CHAPTERS" :key="chapter.sections[0]?.id">
