@@ -62,9 +62,11 @@ class SurveyPresentationTest extends TestCase
             ->assertJsonMissingPath('data.products.0.skus.0.stock.mallTotal')
             ->assertJsonMissingPath('data.products.0.skus.0.stock.grandTotal')
             ->assertJsonMissingPath('data.products.0.skus.0.tqCode');
+        // 一覧は集計値だけを返し、SKU別の在庫は返さない
         $this->getJson('/api/surveys')->assertOk()
             ->assertJsonPath('data.0.amazonInventoryStatus', 'partial')
-            ->assertJsonPath('data.0.products.0.skus.0.stock.amazonOwn', 2);
+            ->assertJsonPath('data.0.skuCount', 2)
+            ->assertJsonMissingPath('data.0.products');
 
         $sheet = $this->sheet($survey);
         $this->assertStringContainsString('Amazon:自社', $sheet);

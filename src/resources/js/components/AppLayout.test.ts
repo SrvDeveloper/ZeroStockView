@@ -9,7 +9,7 @@ import type { UserRole } from "@/constants/roles";
 import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
-import type { Survey } from "@/types";
+import { toSurveySummary } from "@/utils/stock";
 
 const route = reactive<{ name: string; params: Record<string, string>; meta: { breadcrumb?: string[] } }>({ name: "data-import", params: {}, meta: {} });
 
@@ -92,7 +92,7 @@ describe("AppTopBar", () => {
     });
 
     it("adds the survey date on the survey result screen", () => {
-        useSurveysStore().surveys = [{ id: "7", executedAt: "2026-10-16T00:00:00+09:00", products: [], importSettingName: null, files: [] } as Survey];
+        useSurveysStore().summaries = [toSurveySummary({ id: "7", executedAt: "2026-10-16T00:00:00+09:00", products: [], importSettingName: null, files: [] })];
         setRoute("survey-result", ["在庫調査履歴"], { id: "7" });
         const wrapper = mount(AppTopBar, { props: { menuOpen: false }, global: { stubs: { RouterLink: RouterLinkStub } } });
 

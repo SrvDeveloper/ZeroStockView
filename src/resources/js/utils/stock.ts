@@ -1,4 +1,4 @@
-import type { StockQuantities, Survey, SurveySkuResult } from "@/types";
+import type { StockQuantities, Survey, SurveySkuResult, SurveySummary } from "@/types";
 
 /** 在庫セルの状態。low は 1〜{@link LOW_STOCK_THRESHOLD} 件、pending は取込待ち・未取得、na は Amazon の対象外 */
 export type StockState = "has" | "low" | "zero" | "pending" | "na";
@@ -7,7 +7,8 @@ export const LOW_STOCK_THRESHOLD = 5;
 
 type AmazonContext = Pick<Survey, "amazonSource" | "includesAmazonInventory">;
 
-export interface SurveySummary {
+/** 調査の件数の集計（全倉庫ゼロ・一部ゼロなど） */
+export interface SurveyCounts {
     productCount: number;
     skuCount: number;
     allZeroCount: number;
@@ -67,7 +68,7 @@ export function isPartialZero(sku: Pick<SurveySkuResult, "stock" | "asin">, surv
     return [amazon, bossTotal(sku.stock), sku.stock.freeStock, sku.stock.ecStock].some((quantity) => quantity === 0);
 }
 
-export function summarizeSurvey(survey: Survey): SurveySummary {
+export function summarizeSurvey(survey: Survey): SurveyCounts {
     const skus = survey.products.flatMap((product) => product.skus);
     return {
         productCount: survey.products.length,
@@ -77,10 +78,28 @@ export function summarizeSurvey(survey: Survey): SurveySummary {
     };
 }
 
+/** 明細から一覧用の概要を作る（取込・再照合・再読込のあと、一覧を取り直さずに揃えるため） */
+export function toSurveySummary(survey: Survey): SurveySummary {
+    return {
+        id: survey.id,
+        executedAt: survey.executedAt,
+        createdAt: survey.createdAt,
+        updatedAt: survey.updatedAt,
+        importSettingName: survey.importSettingName,
+        includesAmazonInventory: survey.includesAmazonInventory,
+        amazonSource: survey.amazonSource,
+        amazonInventoryStatus: survey.amazonInventoryStatus,
+        amazonInventoryImportId: survey.amazonInventoryImportId,
+        amazonBasisAt: survey.amazonBasisAt,
+        files: survey.files,
+        ...summarizeSurvey(survey),
+    };
+}
+
 /** 初回取込日時（executedAt）がこの調査の直前にある調査 */
-export function previousSurvey(surveys: Survey[], survey: Survey): Survey | null {
+export function previousSurvey<T extends { id: string; executedAt: string }>(surveys: T[], survey: { id: string; executedAt: string }): T | null {
     const current = new Date(survey.executedAt).getTime();
-    return surveys.reduce<Survey | null>((found, candidate) => {
+    return surveys.reduce<T | null>((found, candidate) => {
         const time = new Date(candidate.executedAt).getTime();
         if (candidate.id === survey.id || time >= current) return found;
         return found === null || time > new Date(found.executedAt).getTime() ? candidate : found;

@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import type { Survey } from "@/types";
 import { countExpiringFiles, fileRemainingDays } from "@/utils/files";
+import { toSurveySummary } from "@/utils/stock";
 
 const { fetchAmazonInventoryImports } = vi.hoisted(() => ({ fetchAmazonInventoryImports: vi.fn() }));
 
@@ -151,7 +152,7 @@ describe("IntegrationStatus", () => {
     it("warns about saved files close to expiry", async () => {
         fetchAmazonInventoryImports.mockResolvedValue([]);
         const uploadedAt = new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString();
-        useSurveysStore().surveys = [surveyWithFile(uploadedAt)];
+        useSurveysStore().summaries = [toSurveySummary(surveyWithFile(uploadedAt))];
         const wrapper = mount(IntegrationStatus);
         await flushPromises();
 

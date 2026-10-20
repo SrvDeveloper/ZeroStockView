@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Models\Survey;
 use App\Models\SurveyProduct;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -20,22 +19,10 @@ class SurveyResource extends JsonResource
     public function toArray(Request $request): array
     {
         $hasSavedAmazonInventory = $this->hasSavedAmazonInventory();
-        $amazonStatus = $this->amazonInventoryStatus();
 
-        return [
-            'id' => (string) $this->getKey(),
-            'executedAt' => $this->executed_at->toISOString(),
-            'createdAt' => $this->created_at->toISOString(),
-            'updatedAt' => $this->updated_at->toISOString(),
-            'importSettingName' => $this->import_setting_name,
+        return SurveySummaryResource::sharedFields($this->resource, $hasSavedAmazonInventory, $this->amazonInventoryStatus()) + [
             'groups' => $this->products->flatMap(fn (SurveyProduct $product): array => $this->memberships($product))
                 ->unique('key')->map(fn (array $group): array => ['key' => $group['key'], 'name' => $group['name']])->values(),
-            'includesAmazonInventory' => $hasSavedAmazonInventory,
-            'amazonSource' => $hasSavedAmazonInventory ? 'survey' : ($this->amazon_source === Survey::AMAZON_SOURCE_SP_API ? 'sp_api' : null),
-            'amazonInventoryStatus' => $amazonStatus,
-            'amazonInventoryImportId' => $this->amazon_source === Survey::AMAZON_SOURCE_SP_API && $this->amazon_inventory_import_id !== null
-                ? (string) $this->amazon_inventory_import_id : null,
-            'amazonBasisAt' => $hasSavedAmazonInventory ? $this->executed_at->toISOString() : $this->amazonImport?->basis_at?->toISOString(),
             'products' => $this->products->map(fn ($product): array => [
                 'id' => (string) $product->getKey(),
                 'productCode' => $product->product_code,
@@ -60,13 +47,6 @@ class SurveyResource extends JsonResource
                     ],
                     'memo' => $sku->memo ?? '',
                 ])->values(),
-            ])->values(),
-            'files' => $this->files->map(fn ($file): array => [
-                'id' => (string) $file->getKey(),
-                'type' => $file->file_type,
-                'fileName' => $file->original_name,
-                'uploadedAt' => $file->uploaded_at->toISOString(),
-                'sizeKb' => (int) ceil($file->size_bytes / 1024),
             ])->values(),
         ];
     }

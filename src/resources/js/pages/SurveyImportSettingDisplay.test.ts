@@ -9,6 +9,8 @@ import SurveyResultPage from "@/pages/SurveyResultPage.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
+import type { Survey } from "@/types";
+import { toSurveySummary } from "@/utils/stock";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -16,9 +18,26 @@ vi.mock("vue-router", () => ({
     useRouter: () => ({ push }),
 }));
 
+/** サーバーにある調査（明細）。画面を開く直前に、一覧の概要と明細としてストアへ入れる（seedStore） */
+let fixture: Survey[] = [];
+
+/** 一覧は概要、開いた調査は明細を持たせる。結果画面の明細取得は、サーバーの代わりに fixture から返す */
+function seedStore() {
+    const surveys = useSurveysStore();
+    surveys.summaries = fixture.map(toSurveySummary);
+    surveys.details = Object.fromEntries(fixture.map((survey) => [survey.id, survey]));
+    vi.spyOn(surveys, "loadSurvey").mockImplementation(async (id: string) => surveys.details[id]!);
+    return surveys;
+}
+
+function mountSeeded<T extends Parameters<typeof mount>[0]>(component: T, options?: Parameters<typeof mount>[1]) {
+    seedStore();
+    return mount(component, options);
+}
+
 function seedSurvey() {
     const surveys = useSurveysStore();
-    surveys.surveys = [
+    fixture = [
         {
             id: "1",
             executedAt: "2026-09-16T01:00:00Z",
@@ -33,10 +52,79 @@ function seedSurvey() {
 }
 
 async function mountHistoryList() {
-    const wrapper = mount(SurveyHistoryPage);
+    const wrapper = mountSeeded(SurveyHistoryPage);
     await wrapper.get('[data-history-view] [data-value="list"]').trigger("click");
     return wrapper;
 }
+
+describe("survey result detail loading", () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "viewer", role: "viewer" };
+    });
+
+    it("fetches the detail when the result URL is opened directly and compares with the previous summary", async () => {
+        const surveys = useSurveysStore();
+        const previous = { id: "0", executedAt: "2026-09-15T01:00:00Z", importSettingName: null, files: [], productCount: 1, skuCount: 1, allZeroCount: 0, partialZeroCount: 0 };
+        surveys.summaries = [previous];
+        let resolve: ((value: unknown) => void) | undefined;
+        const get = vi.spyOn(axios, "get").mockImplementation(() => new Promise((done) => (resolve = done)));
+        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+
+        expect(wrapper.find("[data-survey-loading]").exists()).toBe(true);
+        expect(get).toHaveBeenCalledWith("/api/surveys/1");
+        resolve?.({
+            data: {
+                data: {
+                    id: "1",
+                    executedAt: "2026-09-16T01:00:00Z",
+                    importSettingName: null,
+                    includesAmazonInventory: false,
+                    amazonSource: "sp_api",
+                    amazonInventoryStatus: "complete",
+                    files: [],
+                    products: [
+                        {
+                            id: "p",
+                            productCode: "A-1001",
+                            brand: "",
+                            category: "",
+                            parentAsin: "",
+                            memo: "",
+                            skus: [{ id: "s", skuCode: "A-1001-M", size: "M", asin: "", memo: "", stock: { amazonOwn: null, amazonFba: null, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 } }],
+                        },
+                    ],
+                },
+            },
+        });
+        await flushPromises();
+
+        expect(wrapper.find("[data-survey-loading]").exists()).toBe(false);
+        expect(wrapper.text()).toContain("A-1001");
+        expect(wrapper.get('[data-summary="all-zero"]').text()).toContain("前回比 +1");
+        expect(surveys.getSummary("1")?.allZeroCount).toBe(1);
+        get.mockRestore();
+    });
+
+    it("tells a missing survey apart from a loading failure and retries", async () => {
+        const get = vi.spyOn(axios, "get").mockRejectedValueOnce(Object.assign(new axios.AxiosError("not found"), { response: { status: 404 } }));
+        const missing = mount(SurveyResultPage, { props: { id: "9" }, global: { stubs: { RouterLink: true } } });
+        await flushPromises();
+        expect(missing.text()).toContain("指定された調査結果が見つかりません");
+
+        get.mockRejectedValueOnce(new Error("network")).mockResolvedValueOnce({ data: { data: { id: "8", executedAt: "2026-09-16T01:00:00Z", importSettingName: null, files: [], products: [] } } });
+        const failed = mount(SurveyResultPage, { props: { id: "8" }, global: { stubs: { RouterLink: true } } });
+        await flushPromises();
+        expect(failed.text()).toContain("調査結果を読み込めませんでした");
+        await failed
+            .findAll("button")
+            .find((button) => button.text().includes("再試行"))!
+            .trigger("click");
+        await flushPromises();
+        expect(failed.text()).toContain("在庫調査結果");
+        get.mockRestore();
+    });
+});
 
 describe("survey import setting display", () => {
     beforeEach(() => {
@@ -57,8 +145,7 @@ describe("survey import setting display", () => {
     });
 
     it("filters survey history by period", async () => {
-        const surveys = useSurveysStore();
-        surveys.surveys = [
+        fixture = [
             { id: "1", executedAt: "2026-09-18T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
             { id: "2", executedAt: "2026-09-17T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
             { id: "3", executedAt: "2026-09-10T12:00:00Z", importSettingName: "サングラス", products: [], files: [] },
@@ -89,8 +176,7 @@ describe("survey import setting display", () => {
     });
 
     it("keeps a rechecked past result out of the latest position", async () => {
-        const surveys = useSurveysStore();
-        surveys.surveys = [
+        fixture = [
             { id: "current", executedAt: "2026-09-18T12:00:00Z", createdAt: "2026-09-18T12:00:00Z", importSettingName: "売上TOP20", products: [], files: [] },
             { id: "rechecked", executedAt: "2026-09-16T12:00:00Z", createdAt: "2026-09-30T12:00:00Z", importSettingName: "別設定", products: [], files: [] },
         ];
@@ -101,7 +187,7 @@ describe("survey import setting display", () => {
     });
 
     it("shows the survey dates without listing the product groups", () => {
-        const wrapper = mount(SurveyResultPage, {
+        const wrapper = mountSeeded(SurveyResultPage, {
             props: { id: "1" },
             global: { stubs: { RouterLink: true } },
         });
@@ -113,7 +199,6 @@ describe("survey import setting display", () => {
     });
 
     it("shows all products in one daily history and lets the result filter by group", async () => {
-        const surveys = useSurveysStore();
         const baseSku = {
             id: "sku-a",
             skuCode: "A-1001-M",
@@ -126,11 +211,11 @@ describe("survey import setting display", () => {
             memo: "",
             stock: { amazonOwn: null, amazonFba: null, bossOwn: 4, bossRfc: 0, freeStock: null, ecStock: null },
         };
-        surveys.surveys[0].groups = [
+        fixture[0].groups = [
             { key: "setting:1", name: "Aグループ" },
             { key: "setting:2", name: "Bグループ" },
         ];
-        surveys.surveys[0].products = [
+        fixture[0].products = [
             { id: "product-a", productCode: "A-1001", brand: "A", category: "A", parentAsin: "", memo: "", groups: [{ key: "setting:1", name: "Aグループ", sortOrder: 1 }], skus: [baseSku] },
             {
                 id: "product-b",
@@ -151,7 +236,7 @@ describe("survey import setting display", () => {
         await history.get('[data-survey-id="1"] button').trigger("click");
         expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "1" } });
 
-        const result = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const result = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
         expect(result.text()).toContain("A-1001");
         expect(result.text()).toContain("B-2001");
         await result.get("select").setValue("setting:2");
@@ -160,7 +245,7 @@ describe("survey import setting display", () => {
     });
 
     it("clears each text filter from its clear button", async () => {
-        const wrapper = mount(SurveyResultPage, {
+        const wrapper = mountSeeded(SurveyResultPage, {
             props: { id: "1" },
             global: { stubs: { RouterLink: true } },
         });
@@ -182,8 +267,7 @@ describe("survey import setting display", () => {
     });
 
     it("shows combined Amazon and BOSS stock with Ctrl-hover breakdowns", async () => {
-        const surveys = useSurveysStore();
-        surveys.surveys[0].products = [
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -203,7 +287,7 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const wrapper = mount(SurveyResultPage, {
+        const wrapper = mountSeeded(SurveyResultPage, {
             props: { id: "1" },
             global: { stubs: { RouterLink: true } },
         });
@@ -270,12 +354,11 @@ describe("survey import setting display", () => {
     });
 
     it("shows the saved Amazon stock and a confirmed total for a three-file survey", () => {
-        const surveys = useSurveysStore();
-        surveys.surveys[0].includesAmazonInventory = false;
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].amazonInventoryStatus = "complete";
-        surveys.surveys[0].amazonBasisAt = "2026-09-16T00:00:00Z";
-        surveys.surveys[0].products = [
+        fixture[0].includesAmazonInventory = false;
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].amazonInventoryStatus = "complete";
+        fixture[0].amazonBasisAt = "2026-09-16T00:00:00Z";
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -296,7 +379,7 @@ describe("survey import setting display", () => {
             },
         ];
 
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("5");
         expect(wrapper.get("[data-stock-field=boss] [data-stock-value]").text()).toBe("9");
@@ -309,10 +392,10 @@ describe("survey import setting display", () => {
 
     it("keeps the total unknown until each SKU has Amazon stock", async () => {
         const surveys = useSurveysStore();
-        surveys.surveys[0].includesAmazonInventory = false;
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].amazonInventoryStatus = "pending";
-        surveys.surveys[0].products = [
+        fixture[0].includesAmazonInventory = false;
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].amazonInventoryStatus = "pending";
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -332,14 +415,14 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.text()).toContain("Amazon 在庫は取込待ちです");
         expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("取込待ち");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
 
-        surveys.surveys[0].amazonInventoryStatus = "partial";
-        surveys.surveys[0].amazonBasisAt = "2026-09-16T00:00:00Z";
+        surveys.details["1"]!.amazonInventoryStatus = "partial";
+        surveys.details["1"]!.amazonBasisAt = "2026-09-16T00:00:00Z";
         await nextTick();
         expect(wrapper.text()).toContain("一部SKU未取得");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
@@ -347,9 +430,9 @@ describe("survey import setting display", () => {
 
     it("refreshes an open result after Amazon inventory succeeds and accepts a later same-day value", async () => {
         const surveys = useSurveysStore();
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].amazonInventoryStatus = "pending";
-        surveys.surveys[0].products = [
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].amazonInventoryStatus = "pending";
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -369,7 +452,7 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const first = JSON.parse(JSON.stringify(surveys.surveys[0]));
+        const first = JSON.parse(JSON.stringify(fixture[0]));
         first.amazonInventoryStatus = "complete";
         first.amazonBasisAt = "2026-09-16T02:00:00Z";
         first.products[0].skus[0].stock.amazonOwn = 2;
@@ -382,7 +465,8 @@ describe("survey import setting display", () => {
             .spyOn(axios, "get")
             .mockResolvedValueOnce({ data: { data: first } })
             .mockResolvedValueOnce({ data: { data: latest } });
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        vi.mocked(surveys.loadSurvey).mockRestore();
 
         expect(wrapper.text()).toContain("取込待ち");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("—");
@@ -404,8 +488,8 @@ describe("survey import setting display", () => {
 
     it("checks an open SP-API result periodically and stops checking after leaving", async () => {
         const surveys = useSurveysStore();
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].amazonInventoryStatus = "pending";
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].amazonInventoryStatus = "pending";
         let poll: (() => void) | undefined;
         const interval = vi.spyOn(window, "setInterval").mockImplementation((handler) => {
             poll = handler as () => void;
@@ -413,11 +497,11 @@ describe("survey import setting display", () => {
         });
         const clear = vi.spyOn(window, "clearInterval").mockImplementation(() => undefined);
         const refresh = vi.spyOn(surveys, "refreshSurvey").mockImplementation(async () => {
-            surveys.surveys[0].amazonInventoryStatus = "complete";
-            surveys.surveys[0].amazonBasisAt = "2026-09-16T02:00:00Z";
-            return surveys.surveys[0];
+            surveys.details["1"]!.amazonInventoryStatus = "complete";
+            surveys.details["1"]!.amazonBasisAt = "2026-09-16T02:00:00Z";
+            return surveys.details["1"]!;
         });
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(interval).toHaveBeenCalledWith(expect.any(Function), 30000);
         poll?.();
@@ -432,7 +516,7 @@ describe("survey import setting display", () => {
 
     it("shows Amazon import states in survey history and refreshes the basis time", async () => {
         const surveys = useSurveysStore();
-        surveys.surveys = [
+        fixture = [
             { id: "pending", executedAt: "2026-09-18T12:00:00Z", importSettingName: "A", amazonInventoryStatus: "pending", products: [], files: [] },
             { id: "partial", executedAt: "2026-09-17T12:00:00Z", importSettingName: "B", amazonInventoryStatus: "partial", products: [], files: [] },
             { id: "complete", executedAt: "2026-09-16T12:00:00Z", importSettingName: "C", amazonInventoryStatus: "complete", products: [], files: [] },
@@ -445,8 +529,9 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-survey-id=complete]").text()).toContain("Amazon取込済み");
         expect(wrapper.get("[data-survey-id=legacy]").text()).toContain("Amazon旧ファイル");
         const load = vi.spyOn(surveys, "load").mockImplementation(async () => {
-            surveys.surveys[0].amazonInventoryStatus = "complete";
-            surveys.surveys[0].amazonBasisAt = "2026-09-18T10:00:00Z";
+            const pending = surveys.summaries.find((summary) => summary.id === "pending")!;
+            pending.amazonInventoryStatus = "complete";
+            pending.amazonBasisAt = "2026-09-18T10:00:00Z";
         });
         await wrapper.get('[data-testid="refresh-history"]').trigger("click");
         await flushPromises();
@@ -455,8 +540,7 @@ describe("survey import setting display", () => {
         expect(wrapper.get("[data-survey-id=pending]").text()).toContain("Amazon基準: 2026/09/18 10:00");
     });
     it("shows saved Amazon stock normally even when the survey ASIN is missing", () => {
-        const surveys = useSurveysStore();
-        surveys.surveys[0].products = [
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -476,7 +560,7 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const wrapper = mount(SurveyResultPage, {
+        const wrapper = mountSeeded(SurveyResultPage, {
             props: { id: "1" },
             global: { stubs: { RouterLink: true } },
         });
@@ -492,9 +576,8 @@ describe("survey import setting display", () => {
     });
 
     it("labels an ASIN-less SP-API SKU as outside scope and includes its other stock in the total", () => {
-        const surveys = useSurveysStore();
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].products = [
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -514,16 +597,15 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.get("[data-stock-field=amazon] [data-stock-value]").text()).toBe("対象外");
         expect(wrapper.get("[data-stock-field=total]").text()).toBe("22");
     });
 
     it("shows unimported sources as pending and excludes them from zero-stock filters", async () => {
-        const surveys = useSurveysStore();
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].products = [
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].products = [
             {
                 id: "product-1",
                 productCode: "A-1001",
@@ -543,7 +625,7 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.get("[data-stock-field=freeStock]").text()).toBe("—");
         expect(wrapper.get("[data-stock-field=ecStock]").text()).toBe("—");
@@ -557,9 +639,9 @@ describe("survey import setting display", () => {
 
     it("reruns a survey with another setting while at least one source file remains", async () => {
         const surveys = useSurveysStore();
-        surveys.surveys[0].includesAmazonInventory = false;
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].files = [
+        fixture[0].includesAmazonInventory = false;
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].files = [
             { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
             { id: "4", type: "KEEP一覧表", fileName: "KEEP一覧表.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
             { id: "5", type: "在庫一覧照会表", fileName: "在庫一覧照会表.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
@@ -572,7 +654,7 @@ describe("survey import setting display", () => {
         const rerunImport = vi
             .spyOn(surveys, "rerunImport")
             .mockResolvedValue({ id: "1", executedAt: "2026-09-16T01:00:00Z", createdAt: "2026-09-18T00:00:00Z", products: [], importSettingName: "別設定", files: [] });
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
         const menuButton = wrapper.get('[data-testid="rerun-menu-button"]');
         expect(menuButton.attributes("aria-expanded")).toBe("false");
         expect(wrapper.find('[data-testid="rerun-setting-select"]').exists()).toBe(false);
@@ -590,10 +672,10 @@ describe("survey import setting display", () => {
         expect(rerunImport).toHaveBeenCalledWith("1", "2");
         expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "1" }, query: { group: "setting:2" } });
         expect(wrapper.find('[data-testid="rerun-setting-select"]').exists()).toBe(false);
-        surveys.surveys[0].files = [surveys.surveys[0].files[0]!];
+        surveys.details["1"]!.files = [surveys.details["1"]!.files[0]!];
         await nextTick();
         expect(menuButton.attributes("disabled")).toBeUndefined();
-        surveys.surveys[0].files = [];
+        surveys.details["1"]!.files = [];
         await nextTick();
         expect(wrapper.text()).toContain("再照合に使える取込ファイルがないため、再照合機能は利用できません。");
         expect(menuButton.attributes("disabled")).toBeDefined();
@@ -601,14 +683,14 @@ describe("survey import setting display", () => {
 
     it("does not offer a rerun for a legacy five-file survey even when its files remain", async () => {
         const surveys = useSurveysStore();
-        surveys.surveys[0].includesAmazonInventory = true;
-        surveys.surveys[0].amazonSource = "survey";
-        surveys.surveys[0].files = [
+        fixture[0].includesAmazonInventory = true;
+        fixture[0].amazonSource = "survey";
+        fixture[0].files = [
             { id: "1", type: "在庫商品レポート", fileName: "在庫商品レポート.txt", uploadedAt: new Date().toISOString(), sizeKb: 1 },
             { id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 },
         ];
         const rerunImport = vi.spyOn(surveys, "rerunImport");
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
 
         const menuButton = wrapper.get('[data-testid="rerun-menu-button"]');
         expect(menuButton.attributes("disabled")).toBeDefined();
@@ -640,7 +722,6 @@ describe("survey import setting display", () => {
     });
 
     it("summarizes all-zero and partial-zero SKUs and compares them with the previous survey", () => {
-        const surveys = useSurveysStore();
         const skuOf = (id: string, stock: Record<string, number | null>) => ({
             id,
             skuCode: `A-1001-${id}`,
@@ -654,12 +735,12 @@ describe("survey import setting display", () => {
             stock: { amazonOwn: 1, amazonFba: 1, bossOwn: 1, bossRfc: 1, freeStock: 1, ecStock: 1, ...stock },
         });
         const zero = { amazonOwn: 0, amazonFba: 0, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 };
-        surveys.surveys[0].amazonSource = "sp_api";
-        surveys.surveys[0].amazonInventoryStatus = "complete";
-        surveys.surveys[0].products = [
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].amazonInventoryStatus = "complete";
+        fixture[0].products = [
             { id: "p1", productCode: "A-1001", brand: "A", category: "A", parentAsin: "", memo: "", skus: [skuOf("1", zero), skuOf("2", zero), skuOf("3", { ecStock: 0 }), skuOf("4", {})] },
         ];
-        surveys.surveys.push({
+        fixture.push({
             id: "0",
             executedAt: "2026-09-15T01:00:00Z",
             importSettingName: null,
@@ -667,7 +748,7 @@ describe("survey import setting display", () => {
             files: [],
             products: [{ id: "p0", productCode: "A-1001", brand: "A", category: "A", parentAsin: "", memo: "", skus: [skuOf("1", zero), skuOf("3", { ecStock: 0 }), skuOf("4", { freeStock: 0 })] }],
         });
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.get('[data-summary="all-zero"]').text()).toContain("2");
         expect(wrapper.get('[data-summary="all-zero"]').text()).toContain("前回比 +1 ▲");
@@ -681,14 +762,14 @@ describe("survey import setting display", () => {
     });
 
     it("omits the comparison when there is no earlier survey", () => {
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true } } });
 
         expect(wrapper.get("[data-survey-summary]").text()).not.toContain("前回比");
     });
 
     it.each(["admin", "editor", "viewer"] as const)("shows only permitted result actions for %s", (role) => {
         useAuthStore().user = { id: "2", loginId: role, role };
-        const current = useSurveysStore().surveys[0];
+        const current = fixture[0];
         current.amazonSource = "sp_api";
         current.files = [{ id: "file-1", type: "倉庫毎の在庫数レポート", fileName: "boss.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 }];
         current.products = [
@@ -711,7 +792,7 @@ describe("survey import setting display", () => {
                 ],
             },
         ];
-        const wrapper = mount(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
 
         expect(wrapper.find('[data-testid="rerun-menu-button"]').exists()).toBe(role !== "viewer");
         expect(wrapper.text()).toContain("絞込結果をExcel出力");

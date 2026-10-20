@@ -29,7 +29,7 @@ function isoDate(iso: string): string {
 const breadcrumb = computed<string[]>(() => {
     const trail = [...(route.meta.breadcrumb ?? [])];
     if (route.name === "survey-result") {
-        const survey = surveys.getSurvey(String(route.params.id));
+        const survey = surveys.getSummary(String(route.params.id));
         trail.push(survey ? `${isoDate(survey.executedAt)} の調査結果` : "調査結果");
     }
     if (route.name === "manual") {

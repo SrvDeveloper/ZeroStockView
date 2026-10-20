@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StockQuantities, Survey, SurveySkuResult } from "@/types";
-import { amazonStockState, isAllZero, isPartialZero, previousSurvey, skuTotal, stockState, summarizeSurvey } from "@/utils/stock";
+import { amazonStockState, isAllZero, isPartialZero, previousSurvey, skuTotal, stockState, summarizeSurvey, toSurveySummary } from "@/utils/stock";
 
 const SP_API = { amazonSource: "sp_api" as const, includesAmazonInventory: true };
 const LEGACY = { amazonSource: "survey" as const, includesAmazonInventory: true };
@@ -97,6 +97,17 @@ describe("survey helpers", () => {
         const zeros = { amazonOwn: 0, amazonFba: 0, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 };
         const summary = summarizeSurvey(survey("1", "2026-10-16T00:00:00Z", [sku(zeros), sku({ freeStock: 0 }), sku(), sku({ bossRfc: null })]));
         expect(summary).toEqual({ productCount: 1, skuCount: 4, allZeroCount: 1, partialZeroCount: 1 });
+    });
+
+    it("turns a detail into a history summary without the SKU details", () => {
+        const zeros = { amazonOwn: 0, amazonFba: 0, bossOwn: 0, bossRfc: 0, freeStock: 0, ecStock: 0 };
+        const detail = { ...survey("1", "2026-10-16T00:00:00Z", [sku(zeros), sku()]), groups: [{ key: "setting:1", name: "A" }] };
+
+        const result = toSurveySummary(detail);
+
+        expect(result).toMatchObject({ id: "1", executedAt: "2026-10-16T00:00:00Z", productCount: 1, skuCount: 2, allZeroCount: 1, partialZeroCount: 0 });
+        expect(result).not.toHaveProperty("products");
+        expect(result).not.toHaveProperty("groups");
     });
 
     it("finds the survey just before the given one", () => {

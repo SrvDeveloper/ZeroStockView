@@ -4,11 +4,11 @@ import { computed, ref, watch } from "vue";
 import SurveyFilesZipButton from "@/components/survey/SurveyFilesZipButton.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import StatusLamp from "@/components/ui/StatusLamp.vue";
-import { IMPORT_FILE_TYPES, type Survey, type SurveyFile } from "@/types";
+import { IMPORT_FILE_TYPES, type SurveyBase, type SurveyFile } from "@/types";
 import { downloadFromApi } from "@/utils/download";
 import { fileRemainingDays } from "@/utils/files";
 
-const props = defineProps<{ survey: Survey }>();
+const props = defineProps<{ survey: SurveyBase }>();
 
 const FILE_LABELS: Record<string, string> = { 倉庫毎の在庫数レポート: "BOSS", KEEP一覧表: "ECストック", 在庫一覧照会表: "フリー在庫" };
 const knownTypes = new Set<string>(IMPORT_FILE_TYPES.map(({ type }) => type));

@@ -46,7 +46,7 @@ const crossWalkerLamp = computed<{ state: LampState; detail: string }>(() => {
     return { state: status.status === "succeeded" ? "ok" : "error", detail: formatLampTime(status.checkedAt) };
 });
 
-const expiringFileCount = computed(() => countExpiringFiles(surveys.surveys));
+const expiringFileCount = computed(() => countExpiringFiles(surveys.summaries));
 
 async function refreshAmazon() {
     try {
