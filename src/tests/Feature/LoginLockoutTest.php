@@ -18,7 +18,7 @@ class LoginLockoutTest extends TestCase
 
     private const PASSWORD = 'correct-password-1234';
 
-    private const LOCKED_MESSAGE = 'ログインに続けて失敗したため、このログインIDはロックされています。11:00以降にもう一度お試しいただくか、特権管理者にロックの解除を依頼してください。';
+    private const LOCKED_MESSAGE = 'ロックされています。11:00以降に再度お試しいただくか、特権管理者に解除を依頼してください。';
 
     protected function setUp(): void
     {

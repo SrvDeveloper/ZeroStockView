@@ -38,7 +38,7 @@ describe("LoginPage", () => {
     });
 
     it("shows the message returned when login fails, such as a lock", async () => {
-        const locked = "ログインに続けて失敗したため、このログインIDはロックされています。";
+        const locked = "ロックされています。11:00以降に再度お試しいただくか、特権管理者に解除を依頼してください。";
         vi.spyOn(useAuthStore(), "login").mockResolvedValue(locked);
         const wrapper = mount(LoginPage);
 

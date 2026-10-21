@@ -50,8 +50,7 @@ class AuthController extends Controller
 
     private function lockedResponse(CarbonImmutable $lockedUntil): JsonResponse
     {
-        $message = 'ログインに続けて失敗したため、このログインIDはロックされています。'
-            .$lockedUntil->setTimezone('Asia/Tokyo')->format('G:i').'以降にもう一度お試しいただくか、特権管理者にロックの解除を依頼してください。';
+        $message = 'ロックされています。'.$lockedUntil->setTimezone('Asia/Tokyo')->format('G:i').'以降に再度お試しいただくか、特権管理者に解除を依頼してください。';
 
         return response()->json([
             'message' => $message,
