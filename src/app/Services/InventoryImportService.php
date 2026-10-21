@@ -39,6 +39,7 @@ class InventoryImportService
         private CrossWalkerClient $crossWalker,
         private SurveyAmazonInventorySyncService $amazonSync,
         private BulkRowWriter $writer,
+        private SurveyHistoryPruner $historyPruner,
     ) {}
 
     public function reimport(Survey $source, ImportSetting $setting): Survey
@@ -238,6 +239,9 @@ class InventoryImportService
         foreach ($replacedFiles as [$disk, $path]) {
             Storage::disk($disk)->delete($path);
         }
+        if ($survey->wasRecentlyCreated) {
+            $this->pruneHistory();
+        }
 
         try {
             // Catch an import that finished while the survey transaction was committing.
@@ -280,7 +284,7 @@ class InventoryImportService
         $executedAt = $completedAt !== null && $completedAt->toDateString() === $date ? $import->completed_at : $import->basis_at;
 
         try {
-            return DB::transaction(function () use ($targets, $groupMemberships, $date, $executedAt): ?Survey {
+            $created = DB::transaction(function () use ($targets, $groupMemberships, $date, $executedAt): ?Survey {
                 if ($this->surveyExistsOn($date)) {
                     return null;
                 }
@@ -315,6 +319,24 @@ class InventoryImportService
             }
 
             throw $exception;
+        }
+        if ($created !== null) {
+            $this->pruneHistory();
+        }
+
+        return $created;
+    }
+
+    /**
+     * 調査を新しく作ったあと、上限（500件）を超えた古い調査を削除する。
+     * 調査の保存はすでに終わっているので、失敗してもログに残すだけにする（次に調査を作ったときに削除し直す）。
+     */
+    private function pruneHistory(): void
+    {
+        try {
+            $this->historyPruner->prune();
+        } catch (\Throwable $exception) {
+            Log::error('上限を超えた古い調査履歴の削除に失敗しました。', ['reason' => $exception->getMessage()]);
         }
     }
 
