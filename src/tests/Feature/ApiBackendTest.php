@@ -666,9 +666,9 @@ class ApiBackendTest extends TestCase
         $date = '2026-10-16';
         $this->getJson("/api/inventory-trends?product_code=A-1001&from={$date}&to={$date}&scope=free")
             ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', null);
-        $csvRows = app(InventoryTrendCsvExporter::class)->rows(
+        $csvRows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
             'A-1001', CarbonImmutable::parse($date), CarbonImmutable::parse($date),
-        );
+        ), false);
         $this->assertNull($csvRows[0]['freeStock']);
         $this->assertNull($csvRows[0]['ecStock']);
 
