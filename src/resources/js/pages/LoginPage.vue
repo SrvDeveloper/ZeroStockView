@@ -56,7 +56,7 @@ async function submit() {
             <form class="flex flex-col gap-3 px-6 pt-4 pb-6" @submit.prevent="submit">
                 <BaseAlert v-if="errorMessage" tone="danger">{{ errorMessage }}</BaseAlert>
 
-                <BaseInput v-model="loginId" class="[&_input]:font-mono" label="ログインID" autocomplete="username" placeholder="login_id" />
+                <BaseInput v-model="loginId" class="[&_input]:font-mono" label="ログインID" autocomplete="username" placeholder="id" />
                 <BaseInput v-model="password" type="password" label="パスワード" autocomplete="current-password" placeholder="••••••••••••" />
 
                 <BaseButton type="submit" variant="primary" block class="mt-1 h-9" :loading="submitting">
