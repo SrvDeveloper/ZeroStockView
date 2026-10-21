@@ -18,7 +18,7 @@ class LoginLockoutTest extends TestCase
 
     private const PASSWORD = 'correct-password-1234';
 
-    private const LOCKED_MESSAGE = 'ログインに続けて失敗したため、このログインIDはロックされています。10:15以降にもう一度お試しいただくか、特権管理者にロックの解除を依頼してください。';
+    private const LOCKED_MESSAGE = 'ログインに続けて失敗したため、このログインIDはロックされています。11:00以降にもう一度お試しいただくか、特権管理者にロックの解除を依頼してください。';
 
     protected function setUp(): void
     {
@@ -27,7 +27,7 @@ class LoginLockoutTest extends TestCase
         User::factory()->create(['login_id' => 'editor', 'role' => User::ROLE_EDITOR, 'password' => Hash::make(self::PASSWORD)]);
     }
 
-    public function test_login_id_is_locked_after_five_failures_and_unlocks_after_fifteen_minutes(): void
+    public function test_login_id_is_locked_after_five_failures_and_unlocks_after_an_hour(): void
     {
         for ($attempt = 1; $attempt < LoginLockout::MAX_ATTEMPTS; $attempt++) {
             $this->login('editor', 'wrong-password')->assertUnprocessable()->assertJsonPath('message', '認証情報が正しくありません。');
@@ -41,10 +41,23 @@ class LoginLockoutTest extends TestCase
         $this->login('editor', self::PASSWORD)->assertTooManyRequests();
         $this->assertGuest();
 
-        $this->travelTo('2026-10-21 10:14:59');
+        $this->travelTo('2026-10-21 10:59:59');
         $this->login('editor', self::PASSWORD)->assertTooManyRequests();
-        $this->travelTo('2026-10-21 10:15:00');
+        $this->travelTo('2026-10-21 11:00:00');
         $this->login('editor', self::PASSWORD)->assertOk()->assertJsonPath('user.loginId', 'editor');
+    }
+
+    public function test_failures_are_counted_again_fifteen_minutes_after_the_first_failure(): void
+    {
+        for ($attempt = 1; $attempt < LoginLockout::MAX_ATTEMPTS; $attempt++) {
+            $this->login('editor', 'wrong-password')->assertUnprocessable();
+        }
+
+        $this->travelTo('2026-10-21 10:15:00');
+        for ($attempt = 1; $attempt < LoginLockout::MAX_ATTEMPTS; $attempt++) {
+            $this->login('editor', 'wrong-password')->assertUnprocessable();
+        }
+        $this->login('editor', self::PASSWORD)->assertOk();
     }
 
     public function test_successful_login_resets_the_failure_count(): void
@@ -90,7 +103,7 @@ class LoginLockoutTest extends TestCase
             ->assertJsonPath('users.0.loginId', 'admin')
             ->assertJsonPath('users.0.lockedUntil', null)
             ->assertJsonPath('users.1.loginId', 'editor')
-            ->assertJsonPath('users.1.lockedUntil', '2026-10-21T10:15:00+09:00');
+            ->assertJsonPath('users.1.lockedUntil', '2026-10-21T11:00:00+09:00');
         $this->postJson("/api/users/{$editor->id}/unlock")->assertOk()
             ->assertJsonPath('user.loginId', 'editor')
             ->assertJsonPath('user.lockedUntil', null);
