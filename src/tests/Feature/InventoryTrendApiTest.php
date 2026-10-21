@@ -117,9 +117,9 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonCount(0, 'data.series');
         $this->getJson('/api/inventory-trends/export?product_code=API-ONLY&from=2026-09-27&to=2026-09-27')
             ->assertOk();
-        $rows = app(InventoryTrendCsvExporter::class)->rows(
+        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
             'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'),
-        );
+        ), false);
         $this->assertCount(1, $rows);
         $this->assertSame(4, $rows[0]['amazonOwn']);
         $this->assertSame(6, $rows[0]['amazonFba']);
@@ -204,7 +204,7 @@ class InventoryTrendApiTest extends TestCase
                 ->assertOk()->assertJsonPath('data.series.0.points.0.quantity', null);
         }
 
-        $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27')), false);
         $this->assertCount(1, $rows);
         $this->assertNull($rows[0]['amazonOwn']);
         $this->assertNull($rows[0]['amazonFba']);
@@ -260,7 +260,7 @@ class InventoryTrendApiTest extends TestCase
                 ->assertJsonPath('data.dailySources.0.amazonBasisAt', $import->basis_at->toIso8601String());
         }
 
-        $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27')), false);
         $this->assertCount(2, $rows);
         $this->assertSame(4, $rows[0]['amazonOwn']);
         $this->assertNull($rows[1]['amazonOwn']);
@@ -387,7 +387,7 @@ class InventoryTrendApiTest extends TestCase
                 ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-10-19', 'amazon' => 10, 'boss' => null, 'free' => null, 'stock' => null]);
         }
 
-        $rows = app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-10-19'), CarbonImmutable::parse('2026-10-19'));
+        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows('A-1001', CarbonImmutable::parse('2026-10-19'), CarbonImmutable::parse('2026-10-19')), false);
         $this->assertCount(1, $rows);
         $this->assertSame([4, 6, null, null, null, null], [$rows[0]['amazonOwn'], $rows[0]['amazonFba'], $rows[0]['bossOwn'], $rows[0]['bossRfc'], $rows[0]['freeStock'], $rows[0]['ecStock']]);
     }

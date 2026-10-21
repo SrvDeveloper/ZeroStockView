@@ -150,6 +150,43 @@ class ExternalInventoryApiTest extends TestCase
             ->assertJsonPath('meta.count', 2);
     }
 
+    public function test_external_daily_api_streams_the_same_json_bytes_as_a_whole_json_response(): void
+    {
+        $this->configureApi(['203.0.113.0/24']);
+        $this->snapshot('2026-09-26 09:00:00', 'A-1001', 'A-1001-M', 1);
+        $this->snapshot('2026-09-26 18:00:00', 'A-1001', 'A-1001-M', 90);
+        $this->snapshot('2026-09-26 10:00:00', 'B/2002', 'B/2002-L', 70);
+        SurveyProduct::query()->where('product_code', 'B/2002')->update(['brand' => 'ブランド "B"', 'category' => 'トップス/シャツ']);
+        $this->amazonSnapshot('2026-09-26', '09:00:00', 'C-3003', 'C-3003-M', 5, 6);
+        $this->amazonSnapshot('2026-09-28', '09:00:00', 'A-1001', 'A-1001-M', 7, 8);
+        $client = $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])->withHeader('X-API-Key', self::API_KEY);
+
+        $response = $client->get('/api/v1/inventory/daily?from=2026-09-26&to=2026-09-28')->assertOk();
+
+        $this->assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
+        $row = fn (string $date, string $code, ?string $brand, ?string $category, string $sku, ?string $size, int $own, int $fba, ?int $base): array => [
+            'date' => $date, 'productCode' => $code, 'brand' => $brand, 'category' => $category, 'sku' => $sku, 'size' => $size,
+            'amazonOwn' => $own, 'amazonFba' => $fba,
+            'bossOwn' => $base === null ? null : $base + 2, 'bossRfc' => $base === null ? null : $base + 3,
+            'freeStock' => $base === null ? null : $base + 4, 'ecStock' => $base === null ? null : $base + 5,
+        ];
+        // 以前の response()->json() と同じ形・同じエスケープ（日本語は \uXXXX、/ は \/）になる
+        $this->assertSame(json_encode([
+            'data' => [
+                $row('2026-09-26', 'A-1001', 'ALPHA', 'トップス', 'A-1001-M', 'M', 90, 91, 90),
+                $row('2026-09-26', 'B/2002', 'ブランド "B"', 'トップス/シャツ', 'B/2002-L', 'M', 70, 71, 70),
+                $row('2026-09-26', 'C-3003', null, null, 'C-3003-M', null, 5, 6, null),
+                $row('2026-09-28', 'A-1001', null, null, 'A-1001-M', null, 7, 8, null),
+            ],
+            'meta' => ['from' => '2026-09-26', 'to' => '2026-09-28', 'productCode' => null, 'count' => 4],
+        ]), $response->streamedContent());
+
+        $this->assertSame(
+            '{"data":[],"meta":{"from":"2026-09-27","to":"2026-09-27","productCode":"A-1001","count":0}}',
+            $client->get('/api/v1/inventory/daily?product_code=A-1001&from=2026-09-27&to=2026-09-27')->assertOk()->streamedContent(),
+        );
+    }
+
     public function test_external_inventory_api_can_filter_a_product_and_validates_the_period(): void
     {
         $this->configureApi(['203.0.113.42']);
@@ -210,7 +247,7 @@ class ExternalInventoryApiTest extends TestCase
             ->assertJsonPath('data.0.amazonOwn', null)
             ->assertJsonPath('data.1.amazonFba', null);
         $exporter = app(InventoryTrendCsvExporter::class);
-        $this->assertNull($exporter->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'))[0]['amazonOwn']);
+        $this->assertNull(iterator_to_array($exporter->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27')), false)[0]['amazonOwn']);
         $path = $exporter->export('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
         try {
             $csv = file_get_contents($path);
@@ -231,7 +268,7 @@ class ExternalInventoryApiTest extends TestCase
             ->assertJsonPath('data.0.bossOwn', 4)
             ->assertJsonPath('data.1.amazonOwn', null)
             ->assertJsonPath('data.1.amazonFba', null);
-        $rows = $exporter->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'));
+        $rows = iterator_to_array($exporter->rows('A-1001', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27')), false);
         $this->assertSame(2, $rows[0]['amazonOwn']);
         $this->assertSame(3, $rows[0]['amazonFba']);
         $this->assertNull($rows[1]['amazonOwn']);
@@ -277,9 +314,9 @@ class ExternalInventoryApiTest extends TestCase
             ->assertJsonPath('data.0.freeStock', null)
             ->assertJsonPath('data.0.ecStock', null);
 
-        $rows = app(InventoryTrendCsvExporter::class)->rows(
+        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
             'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-28'),
-        );
+        ), false);
         $this->assertCount(1, $rows);
         $this->assertSame(0, $rows[0]['amazonOwn']);
         $this->assertNull($rows[0]['bossOwn']);
