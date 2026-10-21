@@ -13,11 +13,14 @@ use Illuminate\Support\Facades\RateLimiter;
  */
 class LoginLockout
 {
-    /** この回数失敗するとロックする（最初の失敗から LOCK_MINUTES 分以内に数えた回数） */
+    /** この回数失敗するとロックする（最初の失敗から ATTEMPT_WINDOW_MINUTES 分以内に数えた回数） */
     public const MAX_ATTEMPTS = 5;
 
+    /** 失敗の回数を数える期間（分）。最初の失敗からこの時間が過ぎると数え直す */
+    public const ATTEMPT_WINDOW_MINUTES = 15;
+
     /** ロックする時間（分） */
-    public const LOCK_MINUTES = 15;
+    public const LOCK_MINUTES = 60;
 
     /** ロック中なら解除される日時、ロックされていなければ null */
     public function lockedUntil(string $loginId): ?CarbonImmutable
@@ -35,7 +38,7 @@ class LoginLockout
      */
     public function recordFailure(string $loginId): ?CarbonImmutable
     {
-        $attempts = RateLimiter::hit($this->attemptsKey($loginId), self::LOCK_MINUTES * 60);
+        $attempts = RateLimiter::hit($this->attemptsKey($loginId), self::ATTEMPT_WINDOW_MINUTES * 60);
         if ($attempts < self::MAX_ATTEMPTS) {
             return null;
         }
