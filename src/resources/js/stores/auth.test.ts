@@ -51,7 +51,7 @@ describe("auth store", () => {
     });
 
     it("returns the server's lock message when the login ID is locked", async () => {
-        const locked = "ログインに続けて失敗したため、このログインIDはロックされています。10:15以降にもう一度お試しいただくか、特権管理者にロックの解除を依頼してください。";
+        const locked = "ロックされています。11:00以降に再度お試しいただくか、特権管理者に解除を依頼してください。";
         vi.mocked(axios.post)
             .mockRejectedValueOnce({ isAxiosError: true, response: { status: 429, data: { message: locked } } })
             .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { message: "認証情報が正しくありません。" } } });
