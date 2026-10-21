@@ -13,6 +13,10 @@ import ManualCallout from "@/components/manual/ManualCallout.vue";
         <li>編集：一覧の鉛筆のアイコンを押下します。ログインIDと権限を変えて<ManualUi variant="primary">変更を保存</ManualUi>を押下します。</li>
         <li> パスワードの再設定：編集の画面で<ManualUi icon="key">パスワードを再設定する</ManualUi>を押下し、新しいパスワードを入力します。パスワードは半角英数字記号のみで12文字以上です。 </li>
         <li>削除：一覧のごみ箱のアイコンを押下し、<ManualUi>削除する</ManualUi>を押下します。削除したユーザーは、すぐにログアウトされます。</li>
+        <li
+            >ロックの解除：ログインに続けて失敗したユーザーは、ログインIDの横に「ロック中（解除される日時まで）」と表示されます。一覧の鍵のアイコン（<ManualUi icon="lock_open">ロックを解除</ManualUi
+            >）を押下すると、すぐにログインできるようになります。解除しなくても、表示された日時を過ぎると自動で解除されます。</li
+        >
     </ul>
     <ManualCallout title="権限の変更と削除の注意" tone="warning">
         <ul class="list-disc space-y-0.5 pl-5">

@@ -5,21 +5,23 @@ import UserManagementPage from "@/pages/UserManagementPage.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
+import { formatDateTime } from "@/utils/format";
 import { toSurveySummary } from "@/utils/stock";
 
-const { fetchUsers, createUser, updateUser, deleteUser, replace } = vi.hoisted(() => ({
+const { fetchUsers, createUser, updateUser, unlockUser, deleteUser, replace } = vi.hoisted(() => ({
     fetchUsers: vi.fn(),
     createUser: vi.fn(),
     updateUser: vi.fn(),
+    unlockUser: vi.fn(),
     deleteUser: vi.fn(),
     replace: vi.fn(),
 }));
 
-vi.mock("@/api/users", () => ({ fetchUsers, createUser, updateUser, deleteUser }));
+vi.mock("@/api/users", () => ({ fetchUsers, createUser, updateUser, unlockUser, deleteUser }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ replace }) }));
 
-const admin = { id: "1", loginId: "admin", role: "admin" as const };
-const editor = { id: "2", loginId: "staff", role: "editor" as const };
+const admin = { id: "1", loginId: "admin", role: "admin" as const, lockedUntil: null };
+const editor = { id: "2", loginId: "staff", role: "editor" as const, lockedUntil: null };
 
 function mountPage() {
     return mount(UserManagementPage, { global: { stubs: { Teleport: true } } });
@@ -68,6 +70,36 @@ describe("UserManagementPage", () => {
         expect(wrapper.get('[data-user-id="1"] [data-delete-blocked]').attributes("title")).toBe("自分自身・最後の特権管理者は削除できません");
         expect(wrapper.get('[aria-label="adminを削除"]').attributes("disabled")).toBeDefined();
         expect(wrapper.get('[aria-label="staffを削除"]').attributes("disabled")).toBeUndefined();
+    });
+
+    it("shows a locked user and unlocks it", async () => {
+        fetchUsers.mockResolvedValue([admin, { ...editor, lockedUntil: "2026-10-21T10:15:00+09:00" }]);
+        unlockUser.mockResolvedValue({ ...editor, lockedUntil: null });
+        const wrapper = mountPage();
+        await flushPromises();
+
+        expect(wrapper.find('[data-user-id="1"] [data-locked-user]').exists()).toBe(false);
+        expect(wrapper.find('[aria-label="adminのロックを解除"]').exists()).toBe(false);
+        expect(wrapper.get('[data-user-id="2"] [data-locked-user]').text()).toBe(`ロック中（${formatDateTime("2026-10-21T10:15:00+09:00")}まで）`);
+
+        await wrapper.get('[aria-label="staffのロックを解除"]').trigger("click");
+        await flushPromises();
+
+        expect(unlockUser).toHaveBeenCalledWith("2");
+        expect(wrapper.find('[data-user-id="2"] [data-locked-user]').exists()).toBe(false);
+        expect(wrapper.find('[aria-label="staffのロックを解除"]').exists()).toBe(false);
+    });
+
+    it("keeps the lock visible when unlocking fails", async () => {
+        fetchUsers.mockResolvedValue([admin, { ...editor, lockedUntil: "2026-10-21T10:15:00+09:00" }]);
+        unlockUser.mockRejectedValue(new Error("unavailable"));
+        const wrapper = mountPage();
+        await flushPromises();
+
+        await wrapper.get('[aria-label="staffのロックを解除"]').trigger("click");
+        await flushPromises();
+
+        expect(wrapper.find('[data-user-id="2"] [data-locked-user]').exists()).toBe(true);
     });
 
     it("shows an error when the user list cannot be loaded", async () => {

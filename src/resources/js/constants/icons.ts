@@ -39,6 +39,7 @@ export const ICON_NAMES = [
     "key",
     "lightbulb",
     "lock",
+    "lock_open",
     "manage_accounts",
     "menu",
     "menu_book",

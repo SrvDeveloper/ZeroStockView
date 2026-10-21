@@ -115,6 +115,7 @@ const tasks: ManualTask[] = [
         items: [
             { label: "取込に失敗したとき", to: manualLink("data-import", "import-errors") },
             { label: "取込ファイルの保存期限（30日）", to: manualLink("notes", "file-retention") },
+            { label: "ログインできない（ロック）", to: manualLink("notes", "login-lock") },
             { label: "旧方式（5ファイル）の調査", to: manualLink("notes", "legacy-surveys") },
         ],
     },

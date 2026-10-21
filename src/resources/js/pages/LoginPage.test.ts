@@ -36,4 +36,19 @@ describe("LoginPage", () => {
         expect(loadSurveys).toHaveBeenCalledOnce();
         expect(loadSettings).toHaveBeenCalledTimes(role === "viewer" ? 0 : 1);
     });
+
+    it("shows the message returned when login fails, such as a lock", async () => {
+        const locked = "ログインに続けて失敗したため、このログインIDはロックされています。";
+        vi.spyOn(useAuthStore(), "login").mockResolvedValue(locked);
+        const wrapper = mount(LoginPage);
+
+        const inputs = wrapper.findAll("input");
+        await inputs[0].setValue("editor");
+        await inputs[1].setValue("password1234");
+        await wrapper.get("form").trigger("submit");
+        await flushPromises();
+
+        expect(wrapper.text()).toContain(locked);
+        expect(push).not.toHaveBeenCalled();
+    });
 });

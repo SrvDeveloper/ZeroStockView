@@ -8,6 +8,8 @@ export interface AuthUser {
     role: UserRole;
 }
 
+const LOGIN_FAILED_MESSAGE = "認証情報が正しくありません。";
+
 export const useAuthStore = defineStore("auth", {
     state: () => ({
         user: null as AuthUser | null,
@@ -29,21 +31,24 @@ export const useAuthStore = defineStore("auth", {
                 this.initialized = true;
             }
         },
-        async login(loginId: string, password: string): Promise<boolean> {
+        /** ログインできたら true、できなければ画面に出すメッセージを返す */
+        async login(loginId: string, password: string): Promise<true | string> {
             try {
                 const { data } = await axios.post<{ user: AuthUser }>("/api/login", { login_id: loginId, password });
                 if (!data.user || !isUserRole(data.user.role)) {
                     await axios.post("/api/logout");
                     this.user = null;
                     this.initialized = true;
-                    return false;
+                    return LOGIN_FAILED_MESSAGE;
                 }
                 this.user = data.user;
                 this.initialized = true;
-                return this.user !== null;
-            } catch {
+                return true;
+            } catch (error) {
                 this.user = null;
-                return false;
+                // 続けて失敗してロックされたときは、解除される時刻と問い合わせ先をサーバーのメッセージで伝える
+                const message: unknown = axios.isAxiosError(error) && error.response?.status === 429 ? error.response.data?.message : null;
+                return typeof message === "string" && message !== "" ? message : LOGIN_FAILED_MESSAGE;
             }
         },
         async logout() {

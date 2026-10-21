@@ -2,7 +2,7 @@
 import axios from "axios";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { createUser, deleteUser, fetchUsers, updateUser, type ManagedUser, type UserInput } from "@/api/users";
+import { createUser, deleteUser, fetchUsers, unlockUser, updateUser, type ManagedUser, type UserInput } from "@/api/users";
 import AppIcon from "@/components/ui/AppIcon.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseBadge from "@/components/ui/BaseBadge.vue";
@@ -17,6 +17,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
+import { formatDateTime } from "@/utils/format";
 import { isValidPassword } from "@/utils/password";
 
 const router = useRouter();
@@ -39,6 +40,8 @@ const saving = ref(false);
 const passwordOpen = ref(false);
 const roleChanging = computed(() => editingUser.value !== null && form.role !== editingUser.value.role);
 const lastAdminDemotion = computed(() => editingUser.value?.role === "admin" && adminCount.value <= 1 && form.role !== "admin");
+
+const unlockingId = ref<string | null>(null);
 
 const pendingDeleteId = ref<string | null>(null);
 const pendingDelete = computed(() => users.value.find((user) => user.id === pendingDeleteId.value) ?? null);
@@ -168,6 +171,21 @@ async function saveUser(): Promise<void> {
     }
 }
 
+async function unlock(user: ManagedUser): Promise<void> {
+    if (!canManageUsers.value || unlockingId.value !== null) return;
+    unlockingId.value = user.id;
+    try {
+        const saved = await unlockUser(user.id);
+        const index = users.value.findIndex((candidate) => candidate.id === saved.id);
+        if (index >= 0) users.value[index] = saved;
+        toast.push(`${saved.loginId} のロックを解除しました`);
+    } catch {
+        toast.push("ロックを解除できませんでした。時間をおいて再度お試しください。", "error");
+    } finally {
+        unlockingId.value = null;
+    }
+}
+
 function deleteBlockedReason(user: ManagedUser): string {
     if (user.id === auth.user?.id && user.role === "admin" && adminCount.value <= 1) return "自分自身・最後の特権管理者は削除できません";
     if (user.id === auth.user?.id) return "自分自身は削除できません";
@@ -234,7 +252,7 @@ async function confirmDelete(): Promise<void> {
                         <tr>
                             <th class="px-[18px] py-2.5 font-semibold">ログインID</th>
                             <th class="px-4 py-2.5 font-semibold">権限</th>
-                            <th class="w-28 px-[18px] py-2.5 text-right font-semibold">操作</th>
+                            <th class="w-36 px-[18px] py-2.5 text-right font-semibold">操作</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-line-2">
@@ -243,6 +261,9 @@ async function confirmDelete(): Promise<void> {
                                 <span class="inline-flex items-center gap-2">
                                     <span class="font-mono text-[12.5px] font-medium text-ink">{{ user.loginId }}</span>
                                     <BaseBadge v-if="user.id === auth.user?.id" data-current-user>自分</BaseBadge>
+                                    <BaseBadge v-if="user.lockedUntil" tone="danger" data-locked-user :title="`ログインに続けて失敗したため、${formatDateTime(user.lockedUntil)}までロックされています`"
+                                        >ロック中（{{ formatDateTime(user.lockedUntil) }}まで）</BaseBadge
+                                    >
                                 </span>
                             </td>
                             <td class="px-4 py-2" :data-user-role="user.role">
@@ -250,6 +271,17 @@ async function confirmDelete(): Promise<void> {
                             </td>
                             <td class="px-[18px] py-2">
                                 <div class="flex items-center justify-end gap-1">
+                                    <BaseButton
+                                        v-if="user.lockedUntil"
+                                        variant="ghost"
+                                        size="sm"
+                                        icon="lock_open"
+                                        title="ロックを解除"
+                                        :aria-label="`${user.loginId}のロックを解除`"
+                                        :loading="unlockingId === user.id"
+                                        :disabled="unlockingId !== null && unlockingId !== user.id"
+                                        @click="unlock(user)"
+                                    />
                                     <BaseButton variant="ghost" size="sm" icon="edit" title="編集" :aria-label="`${user.loginId}を編集`" @click="openForm(user)" />
                                     <span :title="deleteBlockedReason(user) || '削除'" :data-delete-blocked="deleteBlockedReason(user) || undefined">
                                         <BaseButton

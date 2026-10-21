@@ -53,6 +53,7 @@ Route::prefix('api')->group(function (): void {
             Route::get('/users', [UserController::class, 'index']);
             Route::post('/users', [UserController::class, 'store']);
             Route::put('/users/{user}', [UserController::class, 'update']);
+            Route::post('/users/{user}/unlock', [UserController::class, 'unlock']);
             Route::delete('/users/{user}', [UserController::class, 'destroy']);
 
             Route::get('/api-connection-settings', [ApiConnectionSettingController::class, 'show']);
