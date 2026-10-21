@@ -59,11 +59,22 @@ class SurveyFileController extends Controller
             throw new RuntimeException('ZIPファイルを作成できませんでした。');
         }
 
+        // 中身をメモリに読み込まず、ファイルから直接ZIPに入れる（実際に読むのは close() のとき）
         foreach ($files as $file) {
-            $contents = Storage::disk($file->disk)->get($file->stored_path);
-            $zip->addFromString($file->original_name, $contents);
+            $zip->addFile(Storage::disk($file->disk)->path($file->stored_path), $file->original_name);
         }
-        $zip->close();
+        $closed = false;
+        try {
+            $closed = $zip->close();
+        } finally {
+            // 確認のあとにファイルが消えた場合など、作りかけのZIPを残さない
+            if (! $closed) {
+                @unlink($temporaryPath);
+            }
+        }
+        if (! $closed) {
+            throw new RuntimeException('ZIPファイルを作成できませんでした。');
+        }
 
         $fileName = $survey->executed_at->format('YmdHi').'_取込ファイル一式.zip';
 
