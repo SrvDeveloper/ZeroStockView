@@ -16,36 +16,59 @@ class AmazonReportClient
 
     private const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 
+    /**
+     * 自社在庫とFBA在庫のレポートを両方先に作成依頼し、完成を並行して待つ。
+     *
+     * @return array{0: AmazonInventoryReport, 1: AmazonInventoryReport} 自社在庫, FBA在庫
+     */
+    public function fetchInventories(): array
+    {
+        [$own, $fba] = $this->fetch([self::OWN_REPORT, self::FBA_REPORT]);
+
+        return [$own, $fba];
+    }
+
     public function fetchOwnInventory(): AmazonInventoryReport
     {
-        return $this->fetch(self::OWN_REPORT);
+        return $this->fetch([self::OWN_REPORT])[0];
     }
 
     public function fetchFbaInventory(): AmazonInventoryReport
     {
-        return $this->fetch(self::FBA_REPORT);
+        return $this->fetch([self::FBA_REPORT])[0];
     }
 
-    private function fetch(string $reportType): AmazonInventoryReport
+    /**
+     * @param  list<string>  $reportTypes
+     * @return list<AmazonInventoryReport> $reportTypes と同じ順
+     */
+    private function fetch(array $reportTypes): array
     {
         $settings = $this->settings();
         $token = $this->accessToken($settings);
         $baseUrl = $settings['endpoint'].'/reports/2021-06-30';
         $request = $this->request()->withHeaders(['x-amz-access-token' => $token]);
-        $body = [
-            'reportType' => $reportType,
-            'marketplaceIds' => [$settings['marketplace_id']],
-        ];
-        if ($reportType === self::OWN_REPORT) {
-            $body['reportOptions'] = ['preferredReportDocumentLocale' => 'ja_JP'];
+        $reportIds = [];
+        foreach ($reportTypes as $reportType) {
+            $body = [
+                'reportType' => $reportType,
+                'marketplaceIds' => [$settings['marketplace_id']],
+            ];
+            if ($reportType === self::OWN_REPORT) {
+                $body['reportOptions'] = ['preferredReportDocumentLocale' => 'ja_JP'];
+            }
+            $created = $this->json($this->send(fn (): Response => $request->post($baseUrl.'/reports', $body), 'レポート作成'), 'レポート作成');
+            $reportIds[$reportType] = $this->identifier($created, 'reportId');
         }
+        $documentIds = $this->waitForDocuments($request, $baseUrl, $reportIds);
 
-        $created = $this->json($this->send(fn (): Response => $request->post($baseUrl.'/reports', $body), 'レポート作成'), 'レポート作成');
-        $reportId = $this->identifier($created, 'reportId');
-        $documentId = $this->waitForDocument($request, $baseUrl, $reportId, $reportType);
-        if ($documentId === null) {
-            return $this->fetchFbaInventorySummaries($request, $settings);
-        }
+        return array_map(fn (string $reportType): AmazonInventoryReport => $documentIds[$reportType] === null
+            ? $this->fetchFbaInventorySummaries($request, $settings)
+            : $this->download($request, $baseUrl, $reportType, $reportIds[$reportType], $documentIds[$reportType]), $reportTypes);
+    }
+
+    private function download(PendingRequest $request, string $baseUrl, string $reportType, string $reportId, string $documentId): AmazonInventoryReport
+    {
         $document = $this->json($this->send(fn (): Response => $request->get($baseUrl.'/documents/'.rawurlencode($documentId)), '文書情報取得'), '文書情報取得');
         $url = $this->documentUrl($document);
         $response = $this->send(fn (): Response => $this->request(false)->withoutRedirecting()->get($url), '文書ダウンロード');
@@ -102,26 +125,41 @@ class AmazonReportClient
         return $token;
     }
 
-    private function waitForDocument(PendingRequest $request, string $baseUrl, string $reportId, string $reportType): ?string
+    /**
+     * すべてのレポートの完成を待つ。待つ回数の上限はレポートごとに数え、まだのレポートだけを毎回確かめる。
+     * FBAのレポートが作れなかった（FATAL）ときは、文書IDを null にする。
+     *
+     * @param  array<string, string>  $reportIds  レポートの種類 => レポートID
+     * @return array<string, ?string> レポートの種類 => 文書ID
+     */
+    private function waitForDocuments(PendingRequest $request, string $baseUrl, array $reportIds): array
     {
         $attempts = max(1, (int) config('services.amazon_sp_api.poll_attempts', 40));
+        $pending = $reportIds;
+        $documentIds = [];
         for ($attempt = 0; $attempt < $attempts; $attempt++) {
             if ($attempt > 0) {
                 sleep(max(0, (int) config('services.amazon_sp_api.poll_interval_seconds', 15)));
             }
-            $payload = $this->json($this->send(fn (): Response => $request->get($baseUrl.'/reports/'.rawurlencode($reportId)), '処理状態確認'), '処理状態確認');
-            $status = $payload['processingStatus'] ?? null;
-            if ($status === 'DONE') {
-                return $this->identifier($payload, 'reportDocumentId');
+            foreach ($pending as $reportType => $reportId) {
+                $payload = $this->json($this->send(fn (): Response => $request->get($baseUrl.'/reports/'.rawurlencode($reportId)), '処理状態確認'), '処理状態確認');
+                $status = $payload['processingStatus'] ?? null;
+                if ($status === 'IN_QUEUE' || $status === 'IN_PROGRESS') {
+                    continue;
+                }
+                if ($status === 'DONE') {
+                    $documentIds[$reportType] = $this->identifier($payload, 'reportDocumentId');
+                } elseif ($status === 'FATAL' && $reportType === self::FBA_REPORT) {
+                    $documentIds[$reportType] = null;
+                } elseif ($status === 'CANCELLED' || $status === 'FATAL') {
+                    throw new AmazonReportException('Amazonレポートの生成が失敗しました（'.$status.'）。');
+                } else {
+                    throw new AmazonReportException('Amazonレポートの処理状態が不正です。');
+                }
+                unset($pending[$reportType]);
             }
-            if ($status === 'FATAL' && $reportType === self::FBA_REPORT) {
-                return null;
-            }
-            if ($status === 'CANCELLED' || $status === 'FATAL') {
-                throw new AmazonReportException('Amazonレポートの生成が失敗しました（'.$status.'）。');
-            }
-            if ($status !== 'IN_QUEUE' && $status !== 'IN_PROGRESS') {
-                throw new AmazonReportException('Amazonレポートの処理状態が不正です。');
+            if ($pending === []) {
+                return $documentIds;
             }
         }
 

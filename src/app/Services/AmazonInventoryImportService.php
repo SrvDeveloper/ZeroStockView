@@ -58,8 +58,7 @@ class AmazonInventoryImportService
 
         try {
             [$stocks, $asinIndex] = $this->targetsAtStart();
-            $own = $this->reports->fetchOwnInventory();
-            $fba = $this->reports->fetchFbaInventory();
+            [$own, $fba] = $this->reports->fetchInventories();
             $matchedOwn = $this->applyReport($stocks, $asinIndex, $own, 'amazon_own_stock');
             $matchedFba = $this->applyReport($stocks, $asinIndex, $fba, 'amazon_fba_stock');
             $basisAt = $own->retrievedAt->greaterThan($fba->retrievedAt) ? $own->retrievedAt : $fba->retrievedAt;

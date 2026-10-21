@@ -136,8 +136,7 @@ class AmazonInventoryImportServiceTest extends TestCase
         $this->target('P-1', 'SKU-1', 'B000000001');
         $this->fakeCrossWalker(1);
         $reports = Mockery::mock(AmazonReportClient::class);
-        $reports->shouldReceive('fetchOwnInventory')->once()->andReturn($this->report('OWN', [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '9']]));
-        $reports->shouldReceive('fetchFbaInventory')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
+        $reports->shouldReceive('fetchInventories')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
         $this->app->instance(AmazonReportClient::class, $reports);
 
         $service = app(AmazonInventoryImportService::class);
@@ -208,8 +207,7 @@ class AmazonInventoryImportServiceTest extends TestCase
         $success = $service->process($service->queue('scheduled')->id);
 
         $reports = Mockery::mock(AmazonReportClient::class);
-        $reports->shouldReceive('fetchOwnInventory')->once()->andReturn($this->report('OWN', [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '9']]));
-        $reports->shouldReceive('fetchFbaInventory')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
+        $reports->shouldReceive('fetchInventories')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
         $this->app->instance(AmazonReportClient::class, $reports);
         $failed = app(AmazonInventoryImportService::class)->process($service->queue('manual')->id);
 
@@ -328,8 +326,7 @@ class AmazonInventoryImportServiceTest extends TestCase
         $this->assertSame(5, $evening->fresh()->amazon_fba_stock);
 
         $reports = Mockery::mock(AmazonReportClient::class);
-        $reports->shouldReceive('fetchOwnInventory')->once()->andReturn($this->report('OWN', [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '9']]));
-        $reports->shouldReceive('fetchFbaInventory')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
+        $reports->shouldReceive('fetchInventories')->once()->andThrow(new AmazonReportException('FBAレポートの生成に失敗しました。'));
         $this->app->instance(AmazonReportClient::class, $reports);
         $failed = app(AmazonInventoryImportService::class)->process($service->queue('manual')->id);
 
@@ -434,8 +431,7 @@ class AmazonInventoryImportServiceTest extends TestCase
         $product->skus()->update(['child_asin' => null]);
         $this->fakeCrossWalker(1);
         $reports = Mockery::mock(AmazonReportClient::class);
-        $reports->shouldNotReceive('fetchOwnInventory');
-        $reports->shouldNotReceive('fetchFbaInventory');
+        $reports->shouldNotReceive('fetchInventories');
         $this->app->instance(AmazonReportClient::class, $reports);
 
         $service = app(AmazonInventoryImportService::class);
@@ -486,8 +482,7 @@ class AmazonInventoryImportServiceTest extends TestCase
     private function fakeReports(array $ownRows, array $fbaRows): void
     {
         $client = Mockery::mock(AmazonReportClient::class);
-        $client->shouldReceive('fetchOwnInventory')->once()->andReturn($this->report('OWN', $ownRows));
-        $client->shouldReceive('fetchFbaInventory')->once()->andReturn($this->report('FBA', $fbaRows, '2026-10-14 09:02:00'));
+        $client->shouldReceive('fetchInventories')->once()->andReturn([$this->report('OWN', $ownRows), $this->report('FBA', $fbaRows, '2026-10-14 09:02:00')]);
         $this->app->instance(AmazonReportClient::class, $client);
     }
 
