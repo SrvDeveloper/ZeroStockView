@@ -6,6 +6,7 @@ use App\Exceptions\AmazonReportException;
 use App\Services\AmazonReportClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -188,6 +189,121 @@ class AmazonReportClientTest extends TestCase
             $this->assertStringContainsString('名前解決', $exception->getMessage());
             $this->assertStringNotContainsString('secret', $exception->getMessage());
         }
+    }
+
+    public function test_fetch_inventories_requests_both_reports_before_waiting_and_authenticates_once(): void
+    {
+        $requests = $this->fakeReports(['own' => ['IN_QUEUE', 'DONE'], 'fba' => ['IN_PROGRESS', 'IN_PROGRESS', 'DONE']], 3);
+
+        [$own, $fba] = app(AmazonReportClient::class)->fetchInventories();
+
+        $this->assertSame(['GET_FLAT_FILE_OPEN_LISTINGS_DATA', 'own', [['asin' => 'B000000001', 'sku' => 'SKU-1', 'quantity' => '12']]], [$own->reportType, $own->reportId, $own->rows]);
+        $this->assertSame(['GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA', 'fba', [['asin' => 'B000000002', 'sku' => 'SKU-2', 'quantity' => '3']]], [$fba->reportType, $fba->reportId, $fba->rows]);
+        // 作成を2本とも依頼してから待ち始め、できあがったレポートはそれ以上確かめない
+        $this->assertSame([
+            '認証',
+            '作成 GET_FLAT_FILE_OPEN_LISTINGS_DATA', '作成 GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA',
+            '状態 own', '状態 fba',
+            '状態 own', '状態 fba',
+            '状態 fba',
+            '文書 own', 'ダウンロード own', '文書 fba', 'ダウンロード fba',
+        ], $requests->all());
+    }
+
+    public function test_fetch_inventories_uses_fba_inventory_api_when_fba_report_generation_is_fatal(): void
+    {
+        $requests = $this->fakeReports(['own' => ['IN_PROGRESS', 'DONE'], 'fba' => ['FATAL']]);
+
+        [$own, $fba] = app(AmazonReportClient::class)->fetchInventories();
+
+        $this->assertSame('own', $own->reportId);
+        $this->assertSame(['FBA_INVENTORY_API', [['asin' => 'B000000003', 'sku' => '', 'quantity' => '4']]], [$fba->reportType, $fba->rows]);
+        $this->assertSame(['状態 own', '状態 fba', '状態 own', '文書 own', 'ダウンロード own', 'FBA在庫一覧'], $requests->slice(3)->values()->all());
+    }
+
+    public function test_fetch_inventories_fails_without_downloading_when_own_report_generation_is_fatal(): void
+    {
+        $requests = $this->fakeReports(['own' => ['IN_PROGRESS', 'FATAL'], 'fba' => ['DONE']]);
+
+        try {
+            app(AmazonReportClient::class)->fetchInventories();
+            $this->fail('自社在庫のレポートが作れないときは失敗するべきです。');
+        } catch (AmazonReportException $exception) {
+            $this->assertStringContainsString('FATAL', $exception->getMessage());
+        }
+        $this->assertSame(['状態 own', '状態 fba', '状態 own'], $requests->slice(3)->values()->all());
+    }
+
+    public function test_fetch_inventories_times_out_when_either_report_stays_in_progress(): void
+    {
+        $requests = $this->fakeReports(['own' => ['DONE'], 'fba' => ['IN_PROGRESS', 'IN_PROGRESS', 'IN_PROGRESS']]);
+
+        try {
+            app(AmazonReportClient::class)->fetchInventories();
+            $this->fail('制限時間内に完成しないときは失敗するべきです。');
+        } catch (AmazonReportException $exception) {
+            $this->assertStringContainsString('制限時間内', $exception->getMessage());
+        }
+        // 待つ回数の上限（2回）はレポートごとに数える
+        $this->assertSame(['状態 own', '状態 fba', '状態 fba'], $requests->slice(3)->values()->all());
+    }
+
+    /**
+     * 自社在庫（own）とFBA在庫（fba）のレポートを返す偽のSP-APIを用意し、受けた要求を記録する。
+     *
+     * @param  array{own: list<string>, fba: list<string>}  $statuses  レポートID => 状態確認のたびに返す状態
+     * @return Collection<int, string>
+     */
+    private function fakeReports(array $statuses, int $pollAttempts = 2): Collection
+    {
+        config(['services.amazon_sp_api.poll_attempts' => $pollAttempts]);
+        $requests = collect();
+        $documents = [
+            'own' => "出品者SKU\tASIN\t数量\nSKU-1\tB000000001\t12\n",
+            'fba' => "sku\tasin\tafn-fulfillable-quantity\nSKU-2\tB000000002\t3\n",
+        ];
+        Http::fake(function (Request $request) use ($requests, &$statuses, $documents) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+            if (str_contains($request->url(), '/auth/o2/token')) {
+                $requests->push('認証');
+
+                return Http::response(['access_token' => 'access-token']);
+            }
+            if ($request->method() === 'POST' && str_ends_with($path, '/reports')) {
+                $requests->push('作成 '.$request['reportType']);
+
+                return Http::response(['reportId' => $request['reportType'] === 'GET_FLAT_FILE_OPEN_LISTINGS_DATA' ? 'own' : 'fba']);
+            }
+            if (preg_match('#/reports/(own|fba)$#', $path, $matches) === 1) {
+                $requests->push('状態 '.$matches[1]);
+                $status = array_shift($statuses[$matches[1]]);
+
+                return Http::response(['processingStatus' => $status] + ($status === 'DONE' ? ['reportDocumentId' => 'doc-'.$matches[1]] : []));
+            }
+            if (preg_match('#/documents/doc-(own|fba)$#', $path, $matches) === 1) {
+                $requests->push('文書 '.$matches[1]);
+
+                return Http::response(['url' => 'https://reports.s3.amazonaws.com/'.$matches[1]]);
+            }
+            if (preg_match('#^/(own|fba)$#', $path, $matches) === 1 && str_starts_with($request->url(), 'https://reports.s3.amazonaws.com/')) {
+                $requests->push('ダウンロード '.$matches[1]);
+
+                return Http::response($documents[$matches[1]]);
+            }
+            if (str_contains($path, '/fba/inventory/v1/summaries')) {
+                $requests->push('FBA在庫一覧');
+
+                return Http::response(['payload' => ['inventorySummaries' => [[
+                    'asin' => 'B000000003',
+                    'sellerSku' => 'SKU-3',
+                    'inventoryDetails' => ['fulfillableQuantity' => 4],
+                ]]]]);
+            }
+
+            return Http::response([], 404);
+        });
+
+        return $requests;
     }
 
     private function fakeReport(string $contents, ?string $compression = null): void

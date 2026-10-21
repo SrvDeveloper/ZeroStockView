@@ -361,8 +361,7 @@ class ImportPathBenchmarkTest extends TestCase
         }
         $retrievedAt = CarbonImmutable::now('Asia/Tokyo');
         $reports = Mockery::mock(AmazonReportClient::class);
-        $reports->shouldReceive('fetchOwnInventory')->andReturn(new AmazonInventoryReport('OWN', 'own', $retrievedAt, $rows));
-        $reports->shouldReceive('fetchFbaInventory')->andReturn(new AmazonInventoryReport('FBA', 'fba', $retrievedAt, $rows));
+        $reports->shouldReceive('fetchInventories')->andReturn([new AmazonInventoryReport('OWN', 'own', $retrievedAt, $rows), new AmazonInventoryReport('FBA', 'fba', $retrievedAt, $rows)]);
         $this->app->instance(AmazonReportClient::class, $reports);
     }
 }
