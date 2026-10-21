@@ -24,12 +24,12 @@ let refreshTimer: ReturnType<typeof setInterval> | undefined;
 const timeFormatter = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const todayFormatter = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" });
 
-/** 当日なら HH:mm、それ以外は MM-DD HH:mm */
+/** 当日なら HH:mm、それ以外は MM/DD HH:mm（日付を「10-20」と書くと時刻の 10:20 に見えるため「/」で区切る） */
 function formatLampTime(iso: string): string {
     const date = new Date(iso);
     const parts = Object.fromEntries(timeFormatter.formatToParts(date).map((part) => [part.type, part.value]));
     const time = `${parts.hour}:${parts.minute}`;
-    return todayFormatter.format(date) === todayFormatter.format(new Date()) ? time : `${parts.month}-${parts.day} ${time}`;
+    return todayFormatter.format(date) === todayFormatter.format(new Date()) ? time : `${parts.month}/${parts.day} ${time}`;
 }
 
 const amazonLamp = computed<{ state: LampState; detail: string }>(() => {
@@ -88,37 +88,37 @@ onBeforeUnmount(() => clearInterval(refreshTimer));
 <template>
     <section v-if="canView" class="flex flex-col gap-[7px] rounded-card bg-white/4 px-3 py-2.5 text-[11.5px] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]" aria-label="連携ステータス">
         <p class="text-[10.5px] font-medium text-sidebar-dim">連携ステータス</p>
-        <div class="flex items-center gap-2 text-sidebar-strong" data-integration="amazon">
+        <div class="flex items-center gap-1.5 text-sidebar-strong" data-integration="amazon">
             <template v-if="failed">
                 <span>Amazon SP-API</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">状態を取得できません</span>
             </template>
             <template v-else-if="loaded">
                 <StatusLamp :state="amazonLamp.state" label="Amazon SP-API" />
-                <span class="ml-auto font-mono text-[10px] text-sidebar-dim">{{ amazonLamp.detail }}</span>
+                <span class="ml-auto font-mono text-[10px] whitespace-nowrap text-sidebar-dim">{{ amazonLamp.detail }}</span>
             </template>
             <template v-else>
                 <span>Amazon SP-API</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">確認中…</span>
             </template>
         </div>
-        <div class="flex items-center gap-2 text-sidebar-strong" data-integration="crosswalker" :title="crossWalkerStatus?.message ?? undefined">
+        <div class="flex items-center gap-1.5 text-sidebar-strong" data-integration="crosswalker" :title="crossWalkerStatus?.message ?? undefined">
             <template v-if="crossWalkerFailed">
                 <span>CrossWalker</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">状態を取得できません</span>
             </template>
             <template v-else-if="crossWalkerLoaded">
                 <StatusLamp :state="crossWalkerLamp.state" label="CrossWalker" />
-                <span class="ml-auto font-mono text-[10px] text-sidebar-dim">{{ crossWalkerLamp.detail }}</span>
+                <span class="ml-auto font-mono text-[10px] whitespace-nowrap text-sidebar-dim">{{ crossWalkerLamp.detail }}</span>
             </template>
             <template v-else>
                 <span>CrossWalker</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">確認中…</span>
             </template>
         </div>
-        <div class="flex items-center gap-2 text-sidebar-strong" data-integration="files">
+        <div class="flex items-center gap-1.5 text-sidebar-strong" data-integration="files">
             <StatusLamp :state="expiringFileCount > 0 ? 'warn' : 'ok'" label="保存ファイル" />
-            <span class="ml-auto font-mono text-[10px] text-sidebar-dim">{{ expiringFileCount > 0 ? `${expiringFileCount}件 期限間近` : "期限間近なし" }}</span>
+            <span class="ml-auto font-mono text-[10px] whitespace-nowrap text-sidebar-dim">{{ expiringFileCount > 0 ? `${expiringFileCount}件 期限間近` : "期限間近なし" }}</span>
         </div>
     </section>
 </template>

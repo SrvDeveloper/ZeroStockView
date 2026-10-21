@@ -125,7 +125,7 @@ describe("IntegrationStatus", () => {
 
         const row = wrapper.get('[data-integration="crosswalker"]');
         expect(row.get("[data-lamp-state]").attributes("data-lamp-state")).toBe(state);
-        expect(row.text()).toContain("10-16 09:15");
+        expect(row.text()).toContain("10/16 09:15");
         expect(row.attributes("title")).toBe(crossWalker.message ?? undefined);
     });
 
