@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\LoginLockout;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +14,8 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
+    public function __construct(private LoginLockout $lockout) {}
+
     public function index(): JsonResponse
     {
         return response()->json([
@@ -70,6 +73,14 @@ class UserController extends Controller
         return response()->json(['user' => $this->present($updated)]);
     }
 
+    /** ログインに続けて失敗してロックされたユーザーのロックを解除する */
+    public function unlock(User $user): JsonResponse
+    {
+        $this->lockout->clear($user->login_id);
+
+        return response()->json(['user' => $this->present($user)]);
+    }
+
     public function destroy(Request $request, User $user): JsonResponse
     {
         if ($user->is($request->user())) {
@@ -118,6 +129,7 @@ class UserController extends Controller
             'id' => (string) $user->getKey(),
             'loginId' => $user->login_id,
             'role' => $user->role,
+            'lockedUntil' => $this->lockout->lockedUntil($user->login_id)?->toIso8601String(),
         ];
     }
 }

@@ -28,10 +28,10 @@ async function submit() {
         return;
     }
     submitting.value = true;
-    const ok = await auth.login(loginId.value, password.value);
-    if (!ok) {
+    const result = await auth.login(loginId.value, password.value);
+    if (result !== true) {
         submitting.value = false;
-        errorMessage.value = "認証情報が正しくありません。";
+        errorMessage.value = result;
         return;
     }
     await Promise.allSettled([surveys.load(), ...(canAccess(auth.role, EDITOR_ROLES) ? [importSettings.load()] : [])]);

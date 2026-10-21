@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "@/stores/auth";
 import type { UserRole } from "@/constants/roles";
 
-vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
+vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), isAxiosError: (error: unknown) => (error as { isAxiosError?: boolean })?.isAxiosError === true } }));
 
 describe("auth store", () => {
     beforeEach(() => {
@@ -50,13 +50,25 @@ describe("auth store", () => {
         expect(auth.initialized).toBe(true);
     });
 
+    it("returns the server's lock message when the login ID is locked", async () => {
+        const locked = "ログインに続けて失敗したため、このログインIDはロックされています。10:15以降にもう一度お試しいただくか、特権管理者にロックの解除を依頼してください。";
+        vi.mocked(axios.post)
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 429, data: { message: locked } } })
+            .mockRejectedValueOnce({ isAxiosError: true, response: { status: 422, data: { message: "認証情報が正しくありません。" } } });
+
+        const auth = useAuthStore();
+        expect(await auth.login("editor", "password1234")).toBe(locked);
+        expect(await auth.login("editor", "wrong")).toBe("認証情報が正しくありません。");
+        expect(auth.user).toBeNull();
+    });
+
     it("ends a login session if the response has an unknown role", async () => {
         vi.mocked(axios.post)
             .mockResolvedValueOnce({ data: { user: { id: "1", loginId: "unknown", role: "unknown" } } })
             .mockResolvedValueOnce({});
 
         const auth = useAuthStore();
-        expect(await auth.login("unknown", "password1234")).toBe(false);
+        expect(await auth.login("unknown", "password1234")).toBe("認証情報が正しくありません。");
         expect(auth.user).toBeNull();
         expect(axios.post).toHaveBeenLastCalledWith("/api/logout");
     });

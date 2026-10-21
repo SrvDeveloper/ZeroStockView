@@ -44,6 +44,7 @@ class RoleAuthorizationTest extends TestCase
         'GET api/users' => 'role:admin',
         'POST api/users' => 'role:admin',
         'PUT api/users/{user}' => 'role:admin',
+        'POST api/users/{user}/unlock' => 'role:admin',
         'DELETE api/users/{user}' => 'role:admin',
         'DELETE api/import-settings/{importSetting}' => 'role:admin',
         'DELETE api/surveys/{survey}' => 'role:admin',

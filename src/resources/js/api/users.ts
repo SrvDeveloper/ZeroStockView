@@ -5,6 +5,8 @@ export interface ManagedUser {
     id: string;
     loginId: string;
     role: UserRole;
+    /** ログインに続けて失敗してロックされているときの解除日時（ISO 8601）。ロックされていなければ null */
+    lockedUntil: string | null;
 }
 
 export interface UserInput {
@@ -35,6 +37,11 @@ export async function createUser(input: UserInput): Promise<ManagedUser> {
 
 export async function updateUser(id: string, input: UserInput): Promise<ManagedUser> {
     const { data } = await axios.put<{ user: ManagedUser }>(`/api/users/${id}`, payload(input));
+    return data.user;
+}
+
+export async function unlockUser(id: string): Promise<ManagedUser> {
+    const { data } = await axios.post<{ user: ManagedUser }>(`/api/users/${id}/unlock`);
     return data.user;
 }
 

@@ -149,7 +149,7 @@ describe("ManualPage", () => {
     it("keeps every callout and the screenshots for the import instructions", () => {
         const callouts = MANUAL_SECTIONS.reduce((count, section) => count + mountManual(section.id).findAllComponents(ManualCallout).length, 0);
 
-        expect(callouts).toBe(15);
+        expect(callouts).toBe(16);
         expect(mountManual("basic-operation-boss").getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
         expect(mountManual("basic-operation-free").get('[role="alert"]').text()).toContain("ゼロ在庫出力のチェックを外さない");
     });
