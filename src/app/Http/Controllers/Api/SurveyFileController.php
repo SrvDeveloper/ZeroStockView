@@ -60,8 +60,10 @@ class SurveyFileController extends Controller
         }
 
         // 中身をメモリに読み込まず、ファイルから直接ZIPに入れる（実際に読むのは close() のとき）
+        // 圧縮レベルは libzip の既定の 9 ではなく 6 にする（大きさは約1割増えるが、圧縮の時間は約4分の1になる）
         foreach ($files as $file) {
             $zip->addFile(Storage::disk($file->disk)->path($file->stored_path), $file->original_name);
+            $zip->setCompressionIndex($zip->numFiles - 1, ZipArchive::CM_DEFLATE, 6);
         }
         $closed = false;
         try {

@@ -52,6 +52,7 @@ class SurveyFileDownloadTest extends TestCase
         $entries = [];
         for ($index = 0; $index < $zip->numFiles; $index++) {
             $entries[$zip->getNameIndex($index)] = $zip->getFromIndex($index);
+            $this->assertSame(ZipArchive::CM_DEFLATE, $zip->statIndex($index)['comp_method']);
         }
         $zip->close();
         ksort($contents);
