@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListInventoryTrendProductsRequest;
 use App\Http\Requests\ShowInventoryTrendRequest;
-use App\Models\AmazonInventoryImport;
-use App\Models\AmazonInventorySnapshot;
 use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
@@ -23,12 +21,8 @@ class InventoryTrendController extends Controller
 {
     public function products(ListInventoryTrendProductsRequest $request): JsonResponse
     {
-        $surveyCodes = SurveyProduct::query()->select('product_code')->distinct();
-        $apiCodes = AmazonInventorySnapshot::query()->select('product_code')->distinct()
-            ->whereHas('import', fn ($query) => $query->where('status', 'succeeded'));
-        $baseQuery = Product::query()->where(fn ($query) => $query
-            ->whereIn('product_code', $surveyCodes)
-            ->orWhereIn('product_code', $apiCodes));
+        // 在庫推移は調査の値だけで描く。Amazon在庫のスナップショットは調査に写すためだけに使う
+        $baseQuery = Product::query()->whereIn('product_code', SurveyProduct::query()->select('product_code')->distinct());
         $brands = (clone $baseQuery)->orderBy('brand')->distinct()->pluck('brand')->values();
         $data = $request->validated();
 
@@ -49,15 +43,8 @@ class InventoryTrendController extends Controller
             ->distinct()->pluck('product_code')->flip();
 
         $dateQuery = Survey::query()->whereHas('products');
-        $apiDateQuery = AmazonInventoryImport::query()->where('status', 'succeeded')->whereHas('snapshots');
-        $firstDates = array_filter([
-            (clone $dateQuery)->min('executed_at'),
-            (clone $apiDateQuery)->min('snapshot_date'),
-        ]);
-        $lastDates = array_filter([
-            (clone $dateQuery)->max('executed_at'),
-            (clone $apiDateQuery)->max('snapshot_date'),
-        ]);
+        $firstDate = (clone $dateQuery)->min('executed_at');
+        $lastDate = (clone $dateQuery)->max('executed_at');
 
         return response()->json([
             'data' => $products->map(fn (Product $product): array => [
@@ -68,9 +55,9 @@ class InventoryTrendController extends Controller
                 'hasSurveyHistory' => $surveyProductCodes->has($product->product_code),
             ])->values(),
             'brands' => $brands,
-            'dateRange' => $firstDates && $lastDates ? [
-                'from' => CarbonImmutable::parse(min($firstDates))->toDateString(),
-                'to' => CarbonImmutable::parse(max($lastDates))->toDateString(),
+            'dateRange' => $firstDate !== null && $lastDate !== null ? [
+                'from' => CarbonImmutable::parse($firstDate)->toDateString(),
+                'to' => CarbonImmutable::parse($lastDate)->toDateString(),
             ] : null,
         ]);
     }
@@ -92,15 +79,7 @@ class InventoryTrendController extends Controller
             ->orderBy('id')
             ->get()
             ->keyBy(fn (Survey $survey): string => $survey->executed_at->toDateString());
-        $dailyImports = $scope === 'amazon' ? AmazonInventoryImport::query()
-            ->where('status', 'succeeded')
-            ->whereBetween('snapshot_date', [$from->toDateString(), $to->toDateString()])
-            ->whereHas('snapshots')
-            ->with(['snapshots' => fn ($query) => $query->where('product_code', $productCode)])
-            ->orderBy('basis_at')->orderBy('completed_at')->orderBy('id')->get()
-            ->keyBy(fn (AmazonInventoryImport $import): string => $import->snapshot_date->toDateString()) : collect();
-        $currentProduct = Product::query()->where('product_code', $productCode)->with('skus')->first();
-        $currentSkus = $currentProduct?->skus->keyBy('sku_code');
+        $currentProduct = Product::query()->where('product_code', $productCode)->first();
 
         $dates = collect();
         for ($date = $from->startOfDay(); $date->lte($to); $date = $date->addDay()) {
@@ -114,33 +93,6 @@ class InventoryTrendController extends Controller
 
         foreach ($dates as $date) {
             $survey = $dailySurveys->get($date);
-            $import = $dailyImports->get($date);
-            if ($survey === null && $import !== null && $import->snapshots->isNotEmpty()) {
-                $basisAt = $import->basis_at->toIso8601String();
-                $dailySources[] = ['date' => $date, 'source' => 'sp_api', 'basisAt' => $basisAt, 'amazonBasisAt' => $basisAt, 'amazonInventoryStatus' => 'complete'];
-                $warehouseTotals[$date] = [
-                    'amazon' => $import->snapshots->sum(fn (AmazonInventorySnapshot $snapshot): int => $snapshot->amazon_own_stock + $snapshot->amazon_fba_stock),
-                    'boss' => null,
-                    'free' => null,
-                    'stock' => null,
-                ];
-                foreach ($import->snapshots as $snapshot) {
-                    $currentSku = $currentSkus?->get($snapshot->sku_code);
-                    $skuMetadata[$snapshot->sku_code] = [
-                        'skuCode' => $snapshot->sku_code,
-                        'size' => $currentSku?->tq_size ?? '',
-                        'sortOrder' => $currentSku?->sort_order ?? PHP_INT_MAX,
-                    ];
-                    $quantities[$snapshot->sku_code][$date] = [
-                        'quantity' => $snapshot->amazon_own_stock + $snapshot->amazon_fba_stock,
-                        'source' => 'sp_api',
-                        'basisAt' => $basisAt,
-                    ];
-                }
-
-                continue;
-            }
-
             $selectedProductSnapshot = $survey?->products->first();
             if ($selectedProductSnapshot === null) {
                 continue;

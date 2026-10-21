@@ -65,6 +65,11 @@ class ReconcileSurveyAmazonInventory extends Command
 
             return true;
         }
+        if ($import->snapshotsExpired() && ! $import->snapshots()->exists()) {
+            $this->info("{$date->toDateString()} はAmazon在庫の記録が保存期間を過ぎて削除されているため、調査を作成しません。");
+
+            return true;
+        }
 
         try {
             $survey = $importer->createFromAmazonImport($import);

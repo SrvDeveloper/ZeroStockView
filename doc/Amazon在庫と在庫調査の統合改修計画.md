@@ -31,6 +31,7 @@
 2. `surveys` に調査のAmazon取得方式を明示する列（例: `amazon_source = legacy_file | sp_api`）を追加する。現行の `includes_amazon_inventory` は移行期間中だけ互換用に維持し、移行完了後に廃止する。
 3. 既存の `surveys.amazon_inventory_import_id` は、その調査へ**実際に反映した**同日・最新成功取込のIDとして使う。`sp_api` 調査でIDがない場合は取込待ちを表す。取得基準日時はこの取込のメタデータから表示する。
 4. `amazon_inventory_imports` と `amazon_inventory_snapshots` は取得原本・再適用の入力として維持する。通常の調査結果と合計の読取り時には、スナップショットとSKUを結合して数量を合成しない。
+   - 2026-10-21 変更（性能改善 PERF-13）: スナップショットは調査にAmazon在庫を写すためだけに使い、在庫推移・日別CSV・外部APIでは読まない。取込の対象日から30日を過ぎたスナップショットは毎日1時（日本時間）の `amazon-inventory:prune-snapshots` で削除する（取込の記録は残す）。取込ファイル（アップロードから30日）の保存期限が先に切れるので、再照合で使う間は残る。保存期間を過ぎて削除した日は、再適用（`syncSurvey`・再照合・`survey:amazon-reconcile`）で調査のAmazon数量を書き換えずに残し、Amazon在庫だけの調査も作らない。
 
 ## 4. 書込みと再同期
 
@@ -53,9 +54,10 @@
 ## 5. 読取り経路と画面
 
 - `SurveyResource` と `SurveyExcelExporter` の読取り時スナップショット合成を削除し、`survey_skus` のAmazon数量を返す。調査履歴一覧と結果画面には「取込待ち／取込済み／一部SKU未取得」とAmazon基準日時を表示する。取込成功後、開いている画面・次回表示時に調査データを再取得する。
-- `InventoryTrendController` は、調査がある日はAmazon・BOSS・モール全体・総数を同じ調査の `survey_skus` から算出する。Amazonのみ取得され調査がない日は、Amazon単独の推移に限り取得原本を表示し、モール全体・総数は表示しない。AMZSYNC-10 以降、Amazon取得が成功した日には調査が作られるため、この扱いは機能追加前の日と、利用者が調査を削除した日に限られる。取得元とAmazon基準日時はメタデータとして示す。
+- `InventoryTrendController` は、調査がある日はAmazon・BOSS・モール全体・総数を同じ調査の `survey_skus` から算出する。取得元とAmazon基準日時はメタデータとして示す。
+  - 2026-10-21 変更（性能改善 PERF-13）: 以前は、Amazonのみ取得され調査がない日（機能追加前の日と、利用者が調査を削除した日）にAmazon単独の推移に限り取得原本を表示していたが、やめた。調査がない日・調査に含まれない品番は表示しない。
 - 品番別の推移グラフは、対象日のSKUに未取得値があれば部分合計を出さず「取込待ち／未確定」とする。SKU別推移でも `NULL` を0として描画しない。
-- `InventoryTrendCsvExporter`、`/api/v1/inventory/daily`、Excelは調査がある品番・日付では `survey_skus` の数量を使用する。調査がない品番・日付では、日別CSVと外部APIに最新成功Amazon取込のSKU別Amazon数量だけを返し、他の在庫区分は空欄またはJSON `null` とする。取込待ち・未取得のAmazon数量も空欄またはJSON `null` とし、取得後は同じ日付の再取得で数値を返す。外部API仕様書に値が後から確定・更新されることを記載する。
+- `InventoryTrendCsvExporter`、`/api/v1/inventory/daily`、Excelは `survey_skus` の数量を使用する。調査がない品番・日付の行は返さない（2026-10-21 変更、性能改善 PERF-13。以前は最新成功Amazon取込のSKU別Amazon数量だけの行を返していた）。取込待ち・未取得のAmazon数量も空欄またはJSON `null` とし、取得後は同じ日付の再取得で数値を返す。外部API仕様書に値が後から確定・更新されることを記載する。
 - 取込画面は3ファイルのままとし、Amazon取得の進行・成功・失敗を表示する。調査実行をAmazon取得待ちで止めない。
 
 ## 6. 既存データの移行

@@ -23,6 +23,7 @@ class AmazonInventoryImportService
         private AmazonReportClient $reports,
         private SurveyAmazonInventorySyncService $surveySync,
         private InventoryImportService $surveyImporter,
+        private BulkRowWriter $writer,
     ) {}
 
     public function queue(string $triggerSource): AmazonInventoryImport
@@ -69,7 +70,8 @@ class AmazonInventoryImportService
                     throw new AmazonInventoryImportException('Amazon在庫取込の実行権が失われました。');
                 }
 
-                $import->snapshots()->createMany(array_values(array_map(fn (array $stock): array => [
+                $this->writer->insert('amazon_inventory_snapshots', array_values(array_map(fn (array $stock): array => [
+                    'amazon_inventory_import_id' => $import->id,
                     'product_code' => $stock['product_code'],
                     'sku_code' => $stock['sku_code'],
                     'asin' => $stock['asin'],

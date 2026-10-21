@@ -157,28 +157,23 @@ class ExternalInventoryApiTest extends TestCase
         $this->snapshot('2026-09-26 18:00:00', 'A-1001', 'A-1001-M', 90);
         $this->snapshot('2026-09-26 10:00:00', 'B/2002', 'B/2002-L', 70);
         SurveyProduct::query()->where('product_code', 'B/2002')->update(['brand' => 'ブランド "B"', 'category' => 'トップス/シャツ']);
-        $this->amazonSnapshot('2026-09-26', '09:00:00', 'C-3003', 'C-3003-M', 5, 6);
-        $this->amazonSnapshot('2026-09-28', '09:00:00', 'A-1001', 'A-1001-M', 7, 8);
         $client = $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])->withHeader('X-API-Key', self::API_KEY);
 
         $response = $client->get('/api/v1/inventory/daily?from=2026-09-26&to=2026-09-28')->assertOk();
 
         $this->assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
-        $row = fn (string $date, string $code, ?string $brand, ?string $category, string $sku, ?string $size, int $own, int $fba, ?int $base): array => [
+        $row = fn (string $date, string $code, string $brand, string $category, string $sku, string $size, int $own, int $fba, int $base): array => [
             'date' => $date, 'productCode' => $code, 'brand' => $brand, 'category' => $category, 'sku' => $sku, 'size' => $size,
             'amazonOwn' => $own, 'amazonFba' => $fba,
-            'bossOwn' => $base === null ? null : $base + 2, 'bossRfc' => $base === null ? null : $base + 3,
-            'freeStock' => $base === null ? null : $base + 4, 'ecStock' => $base === null ? null : $base + 5,
+            'bossOwn' => $base + 2, 'bossRfc' => $base + 3, 'freeStock' => $base + 4, 'ecStock' => $base + 5,
         ];
         // 以前の response()->json() と同じ形・同じエスケープ（日本語は \uXXXX、/ は \/）になる
         $this->assertSame(json_encode([
             'data' => [
                 $row('2026-09-26', 'A-1001', 'ALPHA', 'トップス', 'A-1001-M', 'M', 90, 91, 90),
                 $row('2026-09-26', 'B/2002', 'ブランド "B"', 'トップス/シャツ', 'B/2002-L', 'M', 70, 71, 70),
-                $row('2026-09-26', 'C-3003', null, null, 'C-3003-M', null, 5, 6, null),
-                $row('2026-09-28', 'A-1001', null, null, 'A-1001-M', null, 7, 8, null),
             ],
-            'meta' => ['from' => '2026-09-26', 'to' => '2026-09-28', 'productCode' => null, 'count' => 4],
+            'meta' => ['from' => '2026-09-26', 'to' => '2026-09-28', 'productCode' => null, 'count' => 2],
         ]), $response->streamedContent());
 
         $this->assertSame(
@@ -277,66 +272,28 @@ class ExternalInventoryApiTest extends TestCase
             ->assertJsonPath('data.products.0.skus.0.stock.amazonFba', $rows[0]['amazonFba']);
     }
 
-    public function test_external_daily_api_returns_amazon_only_rows_on_days_without_a_survey(): void
+    public function test_external_daily_api_does_not_return_amazon_snapshots_of_days_without_a_survey(): void
     {
         $this->configureApi(['203.0.113.42']);
-        $product = Product::factory()->create([
-            'product_code' => 'API-ONLY',
-            'brand' => 'API BRAND',
-            'category' => 'トップス',
-        ]);
-        Sku::factory()->for($product)->create([
-            'sku_code' => 'API-ONLY-M',
-            'tq_size' => 'M',
-            'sort_order' => 1,
-        ]);
+        $product = Product::factory()->create(['product_code' => 'API-ONLY']);
+        Sku::factory()->for($product)->create(['sku_code' => 'API-ONLY-M', 'sort_order' => 1]);
         $this->amazonSnapshot('2026-09-27', '09:00:00', 'API-ONLY', 'API-ONLY-M', 2, 3);
-        $this->amazonSnapshot('2026-09-27', '18:00:00', 'API-ONLY', 'API-ONLY-M', 0, 7);
-        $this->amazonSnapshot('2026-09-27', '20:00:00', 'API-ONLY', 'API-ONLY-M', 99, 99, 'failed');
-        $this->amazonSnapshot('2026-09-28', '08:00:00', 'API-ONLY', 'API-ONLY-M', 10, 11);
-        $this->amazonSnapshot('2026-09-28', '09:00:00', 'OTHER', 'OTHER-M', 8, 9);
-        $this->amazonSnapshot('2026-09-28', '10:00:00', 'FAILED-ONLY', 'FAILED-M', 80, 90, 'failed');
+        $client = $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])->withHeader('X-API-Key', self::API_KEY);
 
-        $url = '/api/v1/inventory/daily?product_code=API-ONLY&from=2026-09-27&to=2026-09-28';
-        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])
-            ->withHeader('X-API-Key', self::API_KEY)
-            ->getJson($url)
+        // スナップショットは調査にAmazon在庫を写すためだけに使い、調査のない日・品番の在庫としては返さない
+        $client->getJson('/api/v1/inventory/daily?from=2026-09-27&to=2026-09-27')
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.date', '2026-09-27')
-            ->assertJsonPath('data.0.productCode', 'API-ONLY')
-            ->assertJsonPath('data.0.brand', 'API BRAND')
-            ->assertJsonPath('data.0.size', 'M')
-            ->assertJsonPath('data.0.amazonOwn', 0)
-            ->assertJsonPath('data.0.amazonFba', 7)
-            ->assertJsonPath('data.0.bossOwn', null)
-            ->assertJsonPath('data.0.bossRfc', null)
-            ->assertJsonPath('data.0.freeStock', null)
-            ->assertJsonPath('data.0.ecStock', null);
-
-        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
-            'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-28'),
-        ), false);
-        $this->assertCount(1, $rows);
-        $this->assertSame(0, $rows[0]['amazonOwn']);
-        $this->assertNull($rows[0]['bossOwn']);
-        $path = app(InventoryTrendCsvExporter::class)->export(
-            'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-28'),
-        );
-        try {
-            $this->assertStringContainsString('API-ONLY-M,M,0,7,,,,', file_get_contents($path));
-        } finally {
-            unlink($path);
-        }
-
-        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])
-            ->withHeader('X-API-Key', self::API_KEY)
-            ->getJson('/api/v1/inventory/daily?product_code=FAILED-ONLY&from=2026-09-28&to=2026-09-28')
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('meta.count', 0);
+        $client->getJson('/api/v1/inventory/daily?product_code=API-ONLY&from=2026-09-27&to=2026-09-27')
             ->assertUnprocessable()
             ->assertJsonValidationErrors('product_code');
+        $this->assertSame([], iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
+            null, CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'),
+        ), false));
     }
 
-    public function test_external_daily_api_keeps_survey_values_for_a_product_with_a_same_day_import(): void
+    public function test_external_daily_api_returns_only_survey_values_on_a_day_with_an_import(): void
     {
         $this->configureApi(['203.0.113.42']);
         $survey = Survey::factory()->create(['executed_at' => '2026-09-27 10:00:00']);
@@ -349,19 +306,15 @@ class ExternalInventoryApiTest extends TestCase
         $this->amazonSnapshot('2026-09-27', '18:00:00', 'A-1001', 'A-1001-M', 90, 91);
         $this->amazonSnapshot('2026-09-27', '19:00:00', 'OTHER', 'OTHER-M', 8, 9);
 
+        // 調査に入っていない品番（OTHER）は、同じ日のスナップショットにあっても返さない
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.42'])
             ->withHeader('X-API-Key', self::API_KEY)
             ->getJson('/api/v1/inventory/daily?from=2026-09-27&to=2026-09-27')
             ->assertOk()
-            ->assertJsonCount(2, 'data')
+            ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.productCode', 'A-1001')
             ->assertJsonPath('data.0.amazonOwn', 4)
-            ->assertJsonPath('data.0.amazonFba', 5)
-            ->assertJsonPath('data.1.productCode', 'OTHER')
-            ->assertJsonPath('data.1.amazonOwn', 8)
-            ->assertJsonPath('data.1.brand', null)
-            ->assertJsonPath('data.1.size', null)
-            ->assertJsonPath('data.1.bossOwn', null);
+            ->assertJsonPath('data.0.amazonFba', 5);
     }
 
     /** @param array<int, string> $allowedNetworks */
