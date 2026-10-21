@@ -40,6 +40,9 @@ class ImportPathBenchmarkTest extends TestCase
 
     private const ASIN_SKU_COUNT = 559;
 
+    /** 大きいファイルの経路で使うファイルの大きさ（取込の上限 20,480 KiB の少し下） */
+    private const LARGE_FILE_BYTES = 20_000_000;
+
     /** @var array<string, array<string, mixed>> CrossWalkerの品番データ（品番コード => 品番） */
     private array $items = [];
 
@@ -73,6 +76,8 @@ class ImportPathBenchmarkTest extends TestCase
             'data' => array_values(array_intersect_key($this->items, array_flip($request['item_nos'] ?? []))),
         ]));
         $this->listenToDatabase();
+        // 大きいファイルの経路で、変更前のコードでもメモリ上限で止まらずに計測できるようにする
+        ini_set('memory_limit', '1G');
     }
 
     public function test_measure_import_paths(): void
@@ -114,6 +119,12 @@ class ImportPathBenchmarkTest extends TestCase
         // 翌日、Amazon在庫の取込より先にファイルを取り込む（調査を新規作成）
         $this->travelTo(CarbonImmutable::parse('2026-10-21 08:30:00', 'Asia/Tokyo'));
         $this->measure('取込（3ファイル、調査を新規作成・Amazon在庫なし）', fn () => $this->post('/api/surveys', ['files' => [$this->bossFile(), $this->keepFile(), $this->freeFile()]])->assertSuccessful());
+
+        // 大きいファイル（上限20 MiBに近い3ファイル）の取込。対象外の行で水増しする
+        $this->travelTo(CarbonImmutable::parse('2026-10-22 10:00:00', 'Asia/Tokyo'));
+        $largeFiles = [$this->bossFile(self::LARGE_FILE_BYTES), $this->keepFile(self::LARGE_FILE_BYTES), $this->freeFile(self::LARGE_FILE_BYTES)];
+        $this->measure('取込（3ファイル、各約20 MiB）', fn () => $this->post('/api/surveys', ['files' => $largeFiles])->assertSuccessful());
+        $this->assertSame(1, DB::table('survey_skus')->where('sku_code', 'P-0002-01')->orderByDesc('id')->value('boss_own_stock'));
 
         $this->assertSame(self::SKU_COUNT, DB::table('skus')->count());
         $this->report();
@@ -240,8 +251,8 @@ class ImportPathBenchmarkTest extends TestCase
         return array_merge(...array_map(fn (array $item): array => $item['skus'], array_values($this->items)));
     }
 
-    /** 倉庫毎の在庫数レポート。対象SKUの自社倉庫・RFC倉庫の行に、対象外の行を足して約3,000行にする */
-    private function bossFile(): UploadedFile
+    /** 倉庫毎の在庫数レポート。対象SKUの自社倉庫・RFC倉庫の行に、対象外の行を足して約3,000行（$bytes を指定すればその大きさ）にする */
+    private function bossFile(?int $bytes = null): UploadedFile
     {
         $rows = [['倉庫毎の実在庫', '商品ID', '商品名', 'カテゴリー名', '実在庫数', '倉庫ID', '倉庫', '実在庫 (倉庫毎)', '引当済 (倉庫毎)', 'SKUコード']];
         foreach ($this->allSkus() as $index => $sku) {
@@ -249,36 +260,48 @@ class ImportPathBenchmarkTest extends TestCase
                 $rows[] = ['', (string) $index, '商品', 'カテゴリ', '10', '1', $warehouse, (string) ($index % 7), '0', $sku['sku_code']];
             }
         }
+        $filler = fn (int $i): array => ['', (string) $i, '対象外', 'カテゴリ', '1', '1', '自社倉庫', '1', '0', sprintf('OTHER-%05d', $i)];
+        if ($bytes !== null) {
+            return $this->largeCsv('boss.csv', $rows, $filler, $bytes);
+        }
         for ($i = count($rows); $i < 3025; $i++) {
-            $rows[] = ['', (string) $i, '対象外', 'カテゴリ', '1', '1', '自社倉庫', '1', '0', sprintf('OTHER-%05d', $i)];
+            $rows[] = $filler($i);
         }
 
         return $this->csv('boss.csv', $rows);
     }
 
     /** KEEP一覧表（約420行、対象SKUの一部とそれ以外） */
-    private function keepFile(): UploadedFile
+    private function keepFile(?int $bytes = null): UploadedFile
     {
         $rows = [['会社コード', 'キープ伝票番号', '得意先コード', '品番', 'カラーNo', 'サイズ', '商品名', 'キープ残数']];
         foreach (array_slice($this->allSkus(), 0, 300) as $index => $sku) {
             $rows[] = ['1', (string) $index, '59', $sku['tq_item_no'], $sku['tq_color_no'], $sku['tq_size'], '商品', (string) ($index % 3)];
         }
+        $filler = fn (int $i): array => ['1', (string) $i, '59', sprintf('X%04d', $i), '01', 'M', '対象外', '1'];
+        if ($bytes !== null) {
+            return $this->largeCsv('keep.csv', $rows, $filler, $bytes);
+        }
         for ($i = count($rows); $i < 417; $i++) {
-            $rows[] = ['1', (string) $i, '59', sprintf('X%04d', $i), '01', 'M', '対象外', '1'];
+            $rows[] = $filler($i);
         }
 
         return $this->csv('keep.csv', $rows);
     }
 
     /** 在庫一覧照会表（約3,500行、対象SKUの全行とそれ以外） */
-    private function freeFile(): UploadedFile
+    private function freeFile(?int $bytes = null): UploadedFile
     {
         $rows = [['ブランド', '品番', 'カラーNo', 'ｻｲｽﾞ', '品名', 'カラー名', '倉庫ｺｰﾄﾞ', '倉庫名', '可能在庫数', '出荷残数', 'ｷｰﾌﾟ残数', '現在庫数']];
         foreach ($this->allSkus() as $index => $sku) {
             $rows[] = ['BRAND', $sku['tq_item_no'], $sku['tq_color_no'], $sku['tq_size'], '商品', '黒', '01', '本社', (string) ($index % 5), '0', '0', '5'];
         }
+        $filler = fn (int $i): array => ['BRAND', sprintf('Y%05d', $i), '01', 'M', '対象外', '黒', '01', '本社', '1', '0', '0', '1'];
+        if ($bytes !== null) {
+            return $this->largeCsv('free.csv', $rows, $filler, $bytes);
+        }
         for ($i = count($rows); $i < 3490; $i++) {
-            $rows[] = ['BRAND', sprintf('Y%05d', $i), '01', 'M', '対象外', '黒', '01', '本社', '1', '0', '0', '1'];
+            $rows[] = $filler($i);
         }
 
         return $this->csv('free.csv', $rows);
@@ -296,6 +319,32 @@ class ImportPathBenchmarkTest extends TestCase
         fclose($stream);
 
         return UploadedFile::fake()->createWithContent($name, $contents);
+    }
+
+    /**
+     * 大きいCSVを、メモリに溜めずに一時ファイルへ直接書く（Shift_JIS）。$rows のあとに、$bytes になるまで $filler の行を足す。
+     *
+     * @param  list<list<string>>  $rows
+     * @param  callable(int): list<string>  $filler
+     */
+    private function largeCsv(string $name, array $rows, callable $filler, int $bytes): UploadedFile
+    {
+        $path = tempnam(sys_get_temp_dir(), 'bench');
+        $file = fopen($path, 'w');
+        $line = fopen('php://memory', 'r+');
+        $written = 0;
+        for ($i = 0; $written < $bytes; $i++) {
+            ftruncate($line, 0);
+            rewind($line);
+            fputcsv($line, $rows[$i] ?? $filler($i), eol: "\r\n");
+            rewind($line);
+            $written += (int) fwrite($file, mb_convert_encoding((string) stream_get_contents($line), 'SJIS-win', 'UTF-8'));
+        }
+        fclose($line);
+        fclose($file);
+        $this->beforeApplicationDestroyed(fn () => @unlink($path));
+
+        return new UploadedFile($path, $name, 'text/csv', null, true);
     }
 
     /** 自社在庫・FBA在庫のレポート。ASINのある559 SKUに、レポートにしかない行を足す */
