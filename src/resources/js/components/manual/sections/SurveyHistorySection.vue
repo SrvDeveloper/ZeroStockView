@@ -15,7 +15,9 @@ const calendarMarks = [
 
 <template>
     <p>
-        メニューの<ManualUi variant="menu">在庫調査履歴</ManualUi>を押下します。すべての権限で使えます。在庫調査は1日1件で、削除するまで保持されます。右上の<ManualUi>カレンダー</ManualUi
+        メニューの<ManualUi variant="menu">在庫調査履歴</ManualUi
+        >を押下します。すべての権限で使えます。在庫調査は1日1件で、最新の500件（約1年4か月分）まで保持されます。それより古い調査は、新しい調査を作ったときに自動で削除されます。右上の<ManualUi
+            >カレンダー</ManualUi
         ><ManualUi>リスト</ManualUi>で表示を切り替えます。<ManualUi icon="refresh">最新の在庫を再読込</ManualUi>を押下すると、履歴を最新の状態に更新します。
     </p>
 
