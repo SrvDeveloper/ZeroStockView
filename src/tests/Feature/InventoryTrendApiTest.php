@@ -87,59 +87,28 @@ class InventoryTrendApiTest extends TestCase
             ->assertJsonPath('data.series.0.points.0.quantity', 10);
     }
 
-    public function test_api_only_product_is_available_in_amazon_trends_and_daily_csv(): void
+    public function test_product_only_in_amazon_snapshots_has_no_inventory_history(): void
     {
         $this->actingAs(User::factory()->create());
         $product = Product::factory()->create(['product_code' => 'API-ONLY', 'brand' => 'API BRAND']);
         Sku::factory()->for($product)->create(['sku_code' => 'API-ONLY-M', 'tq_size' => 'M', 'sort_order' => 1]);
         $this->apiSnapshot('2026-09-27 09:00:00', 'API-ONLY', 'API-ONLY-M', 4, 6);
-        $this->apiSnapshot('2026-09-26 18:00:00', 'FAILED', 'FAILED-M', 80, 90, 'failed');
-        $this->assertSame('2026-09-27', AmazonInventoryImport::query()->first()->snapshot_date->toDateString());
 
+        // スナップショットは調査にAmazon在庫を写すためだけに使い、在庫推移の品番・期間・値には使わない
         $this->getJson('/api/inventory-trends/products')
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.productCode', 'API-ONLY')
-            ->assertJsonPath('data.0.hasSurveyHistory', false)
-            ->assertJsonPath('dateRange.from', '2026-09-27');
-
-        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=amazon')
-            ->assertOk()
-            ->assertJsonPath('data.product.brand', 'API BRAND')
-            ->assertJsonPath('data.series.0.size', 'M')
-            ->assertJsonPath('data.series.0.points.0.quantity', 10)
-            ->assertJsonPath('data.series.0.points.0.source', 'sp_api')
-            ->assertJsonPath('data.dailySources.0.source', 'sp_api')
-            ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'complete');
-
-        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=grandTotal')
-            ->assertOk()
-            ->assertJsonCount(0, 'data.series');
-        $this->getJson('/api/inventory-trends/export?product_code=API-ONLY&from=2026-09-27&to=2026-09-27')
-            ->assertOk();
-        $rows = iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
-            'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'),
-        ), false);
-        $this->assertCount(1, $rows);
-        $this->assertSame(4, $rows[0]['amazonOwn']);
-        $this->assertSame(6, $rows[0]['amazonFba']);
-        $this->assertNull($rows[0]['bossOwn']);
-    }
-
-    public function test_amazon_only_day_does_not_reuse_an_older_import_when_latest_success_omits_the_product(): void
-    {
-        $this->actingAs(User::factory()->create());
-        Product::factory()->create(['product_code' => 'API-ONLY']);
-        $this->apiSnapshot('2026-09-27 09:00:00', 'API-ONLY', 'API-ONLY-M', 4, 6);
-        $this->apiSnapshot('2026-09-27 10:00:00', 'OTHER', 'OTHER-M', 8, 9);
-
+            ->assertJsonCount(0, 'data')
+            ->assertJsonPath('dateRange', null);
         $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=amazon')
             ->assertOk()
             ->assertJsonCount(0, 'data.series')
             ->assertJsonCount(0, 'data.dailySources');
+        $this->assertSame([], iterator_to_array(app(InventoryTrendCsvExporter::class)->rows(
+            'API-ONLY', CarbonImmutable::parse('2026-09-27'), CarbonImmutable::parse('2026-09-27'),
+        ), false));
     }
 
-    public function test_amazon_trends_use_the_survey_on_survey_days_and_imports_only_on_survey_free_days(): void
+    public function test_amazon_trends_use_only_surveys_and_leave_days_without_a_survey_empty(): void
     {
         $this->actingAs(User::factory()->create());
         $product = Product::factory()->create(['product_code' => 'A-1001']);
@@ -158,14 +127,12 @@ class InventoryTrendApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.series.0.points.0.quantity', 12)
             ->assertJsonPath('data.series.0.points.1.quantity', 13)
-            ->assertJsonPath('data.series.0.points.2.quantity', 13)
+            ->assertJsonPath('data.series.0.points.2.quantity', null)
+            ->assertJsonPath('data.series.0.points.2.source', null)
             ->assertJsonPath('data.series.0.points.3.quantity', 14)
-            ->assertJsonPath('data.dailySources.0.source', 'survey')
-            ->assertJsonPath('data.dailySources.1.source', 'survey')
-            ->assertJsonPath('data.dailySources.2.source', 'sp_api')
-            ->assertJsonPath('data.dailySources.3.source', 'survey')
-            ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'legacy_file')
-            ->assertJsonPath('data.dailySources.2.amazonInventoryStatus', 'complete');
+            ->assertJsonPath('data.dailySources.*.date', ['2026-09-27', '2026-09-28', '2026-09-30'])
+            ->assertJsonPath('data.dailySources.*.source', ['survey', 'survey', 'survey'])
+            ->assertJsonPath('data.dailySources.0.amazonInventoryStatus', 'legacy_file');
         $this->assertNotEmpty($amazon->json('data.dailySources.1.basisAt'));
 
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-30&scope=grandTotal')
@@ -347,18 +314,6 @@ class InventoryTrendApiTest extends TestCase
         $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-27&scope=grandTotal')
             ->assertOk()
             ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-09-27', 'amazon' => null, 'boss' => 6, 'free' => null, 'stock' => null]);
-    }
-
-    public function test_warehouse_totals_on_amazon_only_days_confirm_only_amazon(): void
-    {
-        $this->actingAs(User::factory()->create());
-        $product = Product::factory()->create(['product_code' => 'API-ONLY']);
-        Sku::factory()->for($product)->create(['sku_code' => 'API-ONLY-M', 'sort_order' => 1]);
-        $this->apiSnapshot('2026-09-27 09:00:00', 'API-ONLY', 'API-ONLY-M', 4, 6);
-
-        $this->getJson('/api/inventory-trends?product_code=API-ONLY&from=2026-09-27&to=2026-09-27&scope=amazon')
-            ->assertOk()
-            ->assertJsonPath('data.warehouseTotals.0', ['date' => '2026-09-27', 'amazon' => 10, 'boss' => null, 'free' => null, 'stock' => null]);
     }
 
     public function test_amazon_only_survey_keeps_other_warehouses_pending_in_trends_and_daily_csv(): void

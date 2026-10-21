@@ -32,6 +32,10 @@ class SurveyAmazonInventorySyncService
 
             $import = $this->importFor($survey);
             $snapshots = $this->snapshotsOf($import);
+            if ($snapshots === null) {
+                // 保存期間を過ぎてスナップショットを消した日は、調査に写してある値をそのまま残す
+                return $survey->amazon_inventory_import_id;
+            }
 
             $changes = [];
             foreach ($survey->products()->with('skus')->get() as $product) {
@@ -84,11 +88,18 @@ class SurveyAmazonInventorySyncService
         return $import;
     }
 
-    /** @return Collection<string, AmazonInventorySnapshot> SKUコード => スナップショット */
-    public function snapshotsOf(?AmazonInventoryImport $import): Collection
+    /**
+     * @return Collection<string, AmazonInventorySnapshot>|null SKUコード => スナップショット。
+     *                                                          保存期間を過ぎてスナップショットを消した取込は null
+     */
+    public function snapshotsOf(?AmazonInventoryImport $import): ?Collection
     {
         $snapshots = $import?->snapshots()->get()->keyBy('sku_code') ?? new Collection;
         if ($import !== null && $snapshots->isEmpty()) {
+            if ($import->snapshotsExpired()) {
+                return null;
+            }
+
             throw new RuntimeException('成功したAmazon在庫取込にSKU別スナップショットがありません。');
         }
 

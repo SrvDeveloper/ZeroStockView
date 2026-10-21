@@ -16,6 +16,24 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class AmazonInventoryImport extends Model
 {
+    /**
+     * スナップショットを残す日数。スナップショットは調査にAmazon在庫を写すためだけに使い、
+     * 取込ファイル（アップロードから30日）で調査を作り直せる間だけ残す。
+     */
+    public const SNAPSHOT_RETENTION_DAYS = 30;
+
+    /** この日より前の取込のスナップショットは消す（取込ファイルの保存期限が切れたあとに消える） */
+    public static function snapshotCutoffDate(): CarbonImmutable
+    {
+        return CarbonImmutable::now('Asia/Tokyo')->startOfDay()->subDays(self::SNAPSHOT_RETENTION_DAYS);
+    }
+
+    /** 保存期間を過ぎて、スナップショットを消してよい取込か */
+    public function snapshotsExpired(): bool
+    {
+        return $this->snapshot_date !== null && $this->snapshot_date->lt(self::snapshotCutoffDate());
+    }
+
     /** @return HasMany<AmazonInventorySnapshot, $this> */
     public function snapshots(): HasMany
     {

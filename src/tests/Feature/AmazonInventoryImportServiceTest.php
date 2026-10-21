@@ -20,7 +20,9 @@ use App\Services\CrossWalkerClient;
 use App\Services\InventoryImportService;
 use App\Services\SurveyAmazonInventorySyncService;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Mockery;
 use Tests\TestCase;
 
@@ -43,6 +45,10 @@ class AmazonInventoryImportServiceTest extends TestCase
         $service = app(AmazonInventoryImportService::class);
         $queued = $service->queue('manual');
         $this->assertSame('queued', $queued->status);
+        $snapshotInserts = 0;
+        DB::listen(function (QueryExecuted $query) use (&$snapshotInserts): void {
+            $snapshotInserts += preg_match('/^insert into "amazon_inventory_snapshots"/i', $query->sql);
+        });
         $run = $service->process($queued->id);
 
         $this->assertSame('succeeded', $run->status);
@@ -60,6 +66,9 @@ class AmazonInventoryImportServiceTest extends TestCase
         $this->assertSame('2026-10-14 09:02:00', $run->basis_at->format('Y-m-d H:i:s'));
         $this->assertDatabaseHas('amazon_inventory_snapshots', ['amazon_inventory_import_id' => $run->id, 'sku_code' => 'SKU-1', 'amazon_own_stock' => 5, 'amazon_fba_stock' => 3, 'source' => 'sp_api']);
         $this->assertDatabaseHas('amazon_inventory_snapshots', ['amazon_inventory_import_id' => $run->id, 'sku_code' => 'SKU-2', 'amazon_own_stock' => 0, 'amazon_fba_stock' => 0]);
+        $this->assertSame(['2026-10-14 09:02:00'], AmazonInventorySnapshot::query()->distinct()->pluck('basis_at')->map->format('Y-m-d H:i:s')->all());
+        // SKU ごとに 1 行ずつではなく、まとめて 1 文で保存する
+        $this->assertSame(1, $snapshotInserts);
         // 調査のない日だったので、Amazon在庫だけの調査が 1 件作られる（詳細は専用のテスト）。
         $this->assertSame(1, Survey::query()->count());
     }

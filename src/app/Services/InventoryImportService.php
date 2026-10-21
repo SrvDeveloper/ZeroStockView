@@ -178,8 +178,11 @@ class InventoryImportService
 
                     // その日の Amazon 在庫があれば、行を書くときに一緒に入れる
                     $amazonImport = $this->amazonSync->importFor($survey);
-                    $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $this->amazonSync->snapshotsOf($amazonImport), $previousSettingName);
-                    $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
+                    $snapshots = $this->amazonSync->snapshotsOf($amazonImport);
+                    $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $snapshots, $previousSettingName);
+                    if ($snapshots !== null) {
+                        $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
+                    }
 
                     foreach ($classifiedFiles as $key => $file) {
                         $type = self::FILE_TYPES[$key];
@@ -200,6 +203,8 @@ class InventoryImportService
                         }
 
                         $storedFiles[] = $path;
+                        // 再照合は元のファイルを使い直すだけなので、アップロード日時と保存期限は元のファイルのままにする
+                        $original = $source?->files->firstWhere('file_type', $type);
                         $survey->files()->create([
                             'file_type' => $type,
                             'original_name' => $file->getClientOriginalName(),
@@ -207,8 +212,8 @@ class InventoryImportService
                             'stored_path' => $path,
                             'mime_type' => $file->getClientMimeType(),
                             'size_bytes' => $file->getSize(),
-                            'uploaded_at' => now(),
-                            'expires_at' => now()->addDays(30),
+                            'uploaded_at' => $original?->uploaded_at ?? now(),
+                            'expires_at' => $original?->expires_at ?? now()->addDays(30),
                         ]);
                     }
 
@@ -261,7 +266,8 @@ class InventoryImportService
         }
 
         $date = $import->snapshot_date->toDateString();
-        if ($this->surveyExistsOn($date)) {
+        // 保存期間を過ぎてスナップショットを消した日は、Amazon在庫を写せないので調査を作らない
+        if ($this->surveyExistsOn($date) || ($import->snapshotsExpired() && ! $import->snapshots()->exists())) {
             return null;
         }
 
@@ -346,9 +352,10 @@ class InventoryImportService
      * @param  Collection<int, ImportTarget>  $targets
      * @param  Collection<int, list<array{key: string, name: string, sortOrder: int}>>  $groupMemberships
      * @param  array<string, array<string, int|null>>  $stocks  SKUコード => Amazon 以外の在庫
-     * @param  EloquentCollection<string, AmazonInventorySnapshot>  $snapshots  SKUコード => その日の Amazon 在庫
+     * @param  EloquentCollection<string, AmazonInventorySnapshot>|null  $snapshots  SKUコード => その日の Amazon 在庫。
+     *                                                                               null は保存期間を過ぎて消した日で、調査にある Amazon の値を残す
      */
-    private function writeProducts(Survey $survey, Collection $targets, Collection $groupMemberships, array $stocks, EloquentCollection $snapshots, ?string $previousSettingName): void
+    private function writeProducts(Survey $survey, Collection $targets, Collection $groupMemberships, array $stocks, ?EloquentCollection $snapshots, ?string $previousSettingName): void
     {
         $existingProducts = $survey->products()->with('skus')->get()->keyBy('product_code');
         $skuMemos = $existingProducts->flatMap->skus->pluck('memo', 'sku_code');
@@ -407,7 +414,9 @@ class InventoryImportService
                     'survey_product_id' => $productIds[$productCode],
                     ...$this->rawValues($sku, self::SKU_COLUMNS),
                     ...$stocks[$sku->sku_code],
-                    ...$this->amazonSync->amazonValues($sku->child_asin, $snapshots->get($sku->sku_code)),
+                    ...($snapshots === null && isset($existingSkus[$key])
+                        ? $this->keptAmazonValues($sku->child_asin, $existingSkus[$key])
+                        : $this->amazonSync->amazonValues($sku->child_asin, $snapshots?->get($sku->sku_code))),
                 ];
             }
         }
@@ -421,6 +430,21 @@ class InventoryImportService
             $desiredSkus,
             fn (string $key): array => ['sku_code' => $skuCodes[$key], 'memo' => $skuMemos->get($skuCodes[$key])],
         );
+    }
+
+    /**
+     * スナップショットを消した日に、調査SKUにある Amazon の値をそのまま残す。ASIN は品番マスタにあればそれを使う。
+     *
+     * @param  array<string, mixed>  $existing  調査SKUの既存の行
+     * @return array{child_asin: mixed, amazon_own_stock: mixed, amazon_fba_stock: mixed}
+     */
+    private function keptAmazonValues(?string $childAsin, array $existing): array
+    {
+        return [
+            'child_asin' => is_string($childAsin) && trim($childAsin) !== '' ? $childAsin : $existing['child_asin'],
+            'amazon_own_stock' => $existing['amazon_own_stock'],
+            'amazon_fba_stock' => $existing['amazon_fba_stock'],
+        ];
     }
 
     /**

@@ -11,6 +11,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('survey-files:prune')->daily();
+Schedule::command('amazon-inventory:prune-snapshots')->dailyAt('01:00')->timezone('Asia/Tokyo')->onOneServer()->withoutOverlapping();
 Schedule::command('amazon-inventory:queue')->dailyAt('09:00')->timezone('Asia/Tokyo')->onOneServer()->withoutOverlapping();
 Schedule::call(fn () => app(AmazonInventoryImportService::class)->expireStale())
     ->name('amazon-inventory-expire-stale')->everyFiveMinutes()->onOneServer()->withoutOverlapping();

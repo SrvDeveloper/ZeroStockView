@@ -2,7 +2,6 @@
 
 namespace App\Rules;
 
-use App\Models\AmazonInventorySnapshot;
 use App\Models\SurveyProduct;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -17,9 +16,7 @@ class InventoryHistoryProductCode implements ValidationRule
             return;
         }
 
-        if (SurveyProduct::query()->where('product_code', $value)->exists()
-            || AmazonInventorySnapshot::query()->where('product_code', $value)
-                ->whereHas('import', fn ($query) => $query->where('status', 'succeeded'))->exists()) {
+        if (SurveyProduct::query()->where('product_code', $value)->exists()) {
             return;
         }
 
