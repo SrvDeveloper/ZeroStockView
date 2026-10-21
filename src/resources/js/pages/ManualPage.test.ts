@@ -222,7 +222,7 @@ describe("ManualPage", () => {
         const notes = mountManual("notes").get("#notes");
 
         expect(notes.text()).toContain("取込待ち（—）は在庫0ではありません");
-        expect(notes.findAll("[data-integration-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["Amazon SP-API", "CrossWalker", "保存ファイル"]);
+        expect(notes.findAll("[data-integration-statuses] tbody td:first-child").map((cell) => cell.text())).toEqual(["Amazon", "CrossWalker", "保存ファイル"]);
     });
 
     it("starts each section with its chapter, title, audience and key points", () => {

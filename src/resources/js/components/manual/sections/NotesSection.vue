@@ -5,7 +5,7 @@ import ManualTermTable from "@/components/manual/ManualTermTable.vue";
 
 /** サイドメニュー下の連携ステータス（IntegrationStatus.vue の表示） */
 const integrationStatuses = [
-    { term: "Amazon SP-API", meaning: "Amazon在庫の最新の取得結果です。成功は緑で在庫の基準時刻、失敗は赤、取得中・未取得は黄色で表示します。" },
+    { term: "Amazon", meaning: "Amazon在庫（SP-API）の最新の取得結果です。成功は緑で在庫の基準時刻、失敗は赤、取得中・未取得は黄色で表示します。" },
     { term: "CrossWalker", meaning: "CrossWalkerへの最新の接続結果です。成功は緑、失敗は赤で、確認した時刻を表示します。記録がないときは黄色です。失敗の理由は、マウスを重ねると表示されます。" },
     { term: "保存ファイル", meaning: "保存期限まで7日以内の取込ファイルがあると、黄色で「n件 期限間近」と表示します。" },
 ];

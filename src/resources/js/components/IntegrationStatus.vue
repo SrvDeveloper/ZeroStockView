@@ -90,15 +90,15 @@ onBeforeUnmount(() => clearInterval(refreshTimer));
         <p class="text-[10.5px] font-medium text-sidebar-dim">連携ステータス</p>
         <div class="flex items-center gap-1.5 text-sidebar-strong" data-integration="amazon">
             <template v-if="failed">
-                <span>Amazon SP-API</span>
+                <span>Amazon</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">状態を取得できません</span>
             </template>
             <template v-else-if="loaded">
-                <StatusLamp :state="amazonLamp.state" label="Amazon SP-API" />
+                <StatusLamp :state="amazonLamp.state" label="Amazon" />
                 <span class="ml-auto font-mono text-[10px] whitespace-nowrap text-sidebar-dim">{{ amazonLamp.detail }}</span>
             </template>
             <template v-else>
-                <span>Amazon SP-API</span>
+                <span>Amazon</span>
                 <span class="ml-auto text-[10px] text-sidebar-dim">確認中…</span>
             </template>
         </div>
