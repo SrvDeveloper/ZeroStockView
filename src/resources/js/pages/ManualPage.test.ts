@@ -202,12 +202,20 @@ describe("ManualPage", () => {
         expect(result.find('[role="alert"]').text()).toContain("旧方式（5ファイル）");
     });
 
-    it("explains the inventory trend views, summary and CSV export", () => {
+    it("explains the inventory trend list, detail, heatmap and CSV export", () => {
         const trend = mountManual("inventory-trend").get("#inventory-trend");
 
         expect(trend.findAll("[data-inventory-scopes] tbody td:first-child").map((cell) => cell.text())).toEqual(["モール全体", "Amazon", "BOSS", "フリー", "ストック", "総数"]);
         expect(trend.text()).toContain("全品番の日次CSV");
+        expect(trend.text()).toContain("この品番のCSV");
         expect(trend.findAll("[data-trend-csv-columns] tbody td:first-child").map((cell) => cell.text())).toContain("ecStock");
+        expect(trend.findAll("[data-trend-focus-options] tbody td:first-child").map((cell) => cell.text())).toEqual(["すべて", "欠品SKUあり", "欠品が増えた", "在庫が10%以上減った", "30日以上の欠品"]);
+        expect(trend.findAll("[data-trend-heatmap-levels] tbody td:first-child").map((cell) => cell.text())).toEqual(["黄色", "淡い灰色〜濃い灰色", "斜線", "枠だけ"]);
+        expect(trend.text()).toContain("前の品番");
+        // 削除した機能の説明は残さない
+        expect(trend.text()).not.toContain("対象品番を選択");
+        expect(trend.text()).not.toContain("品番全体");
+        expect(trend.text()).not.toContain("SKU別のグラフ");
     });
 
     it("explains the settings screens with their admin-only operations", () => {
