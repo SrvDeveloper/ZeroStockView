@@ -16,6 +16,13 @@ export function formatDate(iso: string): string {
     return `${y}/${m}/${day}`;
 }
 
+/** 例: 10/17 9:00（月・日・時はゼロで埋めない） */
+export function formatShortDateTime(iso: string): string {
+    const d = new Date(iso);
+    const mm = `${d.getMinutes()}`.padStart(2, "0");
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${mm}`;
+}
+
 export function formatFileTimestamp(iso: string): string {
     const d = new Date(iso);
     const y = d.getFullYear();

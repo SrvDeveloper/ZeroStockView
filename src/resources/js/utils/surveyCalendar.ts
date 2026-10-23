@@ -18,6 +18,8 @@ export interface CalendarDay {
     increased?: boolean;
     fileCount?: number;
     amazonLamp?: LampState;
+    /** BOSS 在庫を在庫変動履歴から再現した日 */
+    bossFromHistory?: boolean;
 }
 
 export function localDateKey(value: string | Date): string {
@@ -95,6 +97,7 @@ export function buildCalendar(year: number, month: number, surveys: SurveySummar
                 increased: previousKey !== undefined && allZeroCount > allZeroByKey.get(previousKey)!,
                 fileCount: uploadedFileCount(survey),
                 amazonLamp: amazonLampOf(survey),
+                bossFromHistory: survey.bossSource === "history",
             });
         } else {
             days.push({ ...base, kind: key > todayKey ? "future" : "none" });

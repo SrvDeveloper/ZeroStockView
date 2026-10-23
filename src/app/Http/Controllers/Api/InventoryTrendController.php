@@ -124,6 +124,8 @@ class InventoryTrendController extends Controller
                     ? $survey->amazonImport?->basis_at?->toIso8601String()
                     : ($survey->hasSavedAmazonInventory() ? $basisAt : null),
                 'amazonInventoryStatus' => $survey->amazonInventoryStatus(),
+                // BOSS 在庫の取得方式（history: 在庫変動履歴から再現。docs/BOSS在庫の休日補完 BHR-07）
+                'bossSource' => $survey->boss_source,
             ];
             $isSpApi = $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API;
             $warehouseTotals[$date] = $this->sumWarehouses($selectedProductSnapshot->skus->map(

@@ -15,6 +15,9 @@ class SurveyExcelExporter
         $hasSavedAmazonInventory = $survey->hasSavedAmazonInventory();
         $usesSpApi = $survey->amazon_source === Survey::AMAZON_SOURCE_SP_API;
         $hasAmazon = $hasSavedAmazonInventory || $usesSpApi;
+        // 在庫変動履歴から再現した BOSS 在庫は、Amazon と同じく取得元と基準日時の列で見分ける（docs/BOSS在庫の休日補完 BHR-07）
+        $bossFromHistory = $survey->boss_source === Survey::BOSS_SOURCE_HISTORY;
+        $bossBasisAt = $survey->boss_basis_at?->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s') ?? '';
         $allowedIds = $skuIds === null ? null : array_fill_keys($skuIds, true);
         $headers = [
             '品番', 'ブランド', 'カテゴリ', '親ASIN', 'SKU', 'ASIN', 'TQ品番', 'TQカラーNo', 'TQサイズ',
@@ -25,7 +28,11 @@ class SurveyExcelExporter
         if ($usesSpApi) {
             array_push($headers, 'Amazon取得元', 'Amazon基準日時');
         }
-        array_push($headers, 'BOSS:自社', 'BOSS:RFC', 'フリー在庫', 'ECストック', '品番メモ', 'SKUメモ');
+        array_push($headers, 'BOSS:自社', 'BOSS:RFC');
+        if ($bossFromHistory) {
+            array_push($headers, 'BOSS取得元', 'BOSS基準日時');
+        }
+        array_push($headers, 'フリー在庫', 'ECストック', '品番メモ', 'SKUメモ');
         $rows = [$headers];
 
         foreach ($survey->products as $product) {
@@ -50,9 +57,11 @@ class SurveyExcelExporter
                 if ($usesSpApi) {
                     array_push($row, 'SP-API', $survey->amazonImport?->basis_at?->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s') ?? '');
                 }
+                array_push($row, $sku->boss_own_stock ?? '', $sku->boss_rfc_stock ?? '');
+                if ($bossFromHistory) {
+                    array_push($row, '在庫変動履歴から再現', $bossBasisAt);
+                }
                 array_push($row,
-                    $sku->boss_own_stock ?? '',
-                    $sku->boss_rfc_stock ?? '',
                     $sku->free_stock ?? '',
                     $sku->ec_stock ?? '',
                     $product->memo ?? '',

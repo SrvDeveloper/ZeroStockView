@@ -35,6 +35,23 @@ class SurveyPresentationTest extends TestCase
         }
     }
 
+    public function test_excel_marks_boss_stock_reconstructed_from_the_history_with_its_source_and_basis_time(): void
+    {
+        $reconstructed = Survey::factory()->history()->create(['executed_at' => '2026-10-17 09:00:00']);
+        $this->sku(SurveyProduct::factory()->for($reconstructed)->create(), 'SKU-WEEKEND', 1, 2);
+        $reported = Survey::factory()->create(['boss_source' => Survey::BOSS_SOURCE_REPORT]);
+        $this->sku(SurveyProduct::factory()->for($reported)->create(), 'SKU-WEEKDAY', 1, 2);
+
+        $sheet = $this->sheet($reconstructed);
+        $this->assertMatchesRegularExpression('/BOSS:RFC.*BOSS取得元.*BOSS基準日時.*フリー在庫/s', $sheet);
+        $this->assertStringContainsString('在庫変動履歴から再現', $sheet);
+        $this->assertStringContainsString('2026-10-17 09:00:00', $sheet);
+
+        $sheet = $this->sheet($reported);
+        $this->assertStringNotContainsString('BOSS取得元', $sheet);
+        $this->assertStringNotContainsString('在庫変動履歴から再現', $sheet);
+    }
+
     public function test_result_history_and_excel_use_saved_values_for_partially_imported_survey(): void
     {
         $this->actingAs(User::factory()->create());

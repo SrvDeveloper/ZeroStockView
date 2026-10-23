@@ -6,6 +6,7 @@ import SurveyResultPage from "@/pages/SurveyResultPage.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useSurveysStore } from "@/stores/surveys";
 import type { Survey, SurveyProductResult } from "@/types";
+import { formatShortDateTime } from "@/utils/format";
 import { toSurveySummary } from "@/utils/stock";
 
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -134,5 +135,36 @@ describe("SurveyResultPage refreshing", () => {
         expect(cardRenders.get("A")).toBe(before.A);
         expect(cardRenders.get("B")).toBe(before.B! + 1);
         expect(wrapper.text()).toContain("B-M");
+    });
+});
+
+describe("SurveyResultPage BOSS 在庫の再現", () => {
+    beforeEach(() => {
+        setActivePinia(createPinia());
+        useAuthStore().user = { id: "1", loginId: "viewer", role: "viewer" };
+    });
+
+    afterEach(() => {
+        mounted.splice(0).forEach((wrapper) => wrapper.unmount());
+        vi.restoreAllMocks();
+    });
+
+    it("shows the basis time and marks the BOSS column only for a survey reconstructed from the history", async () => {
+        const { wrapper } = open({ ...survey("complete"), bossSource: "history", bossBasisAt: "2026-10-17T00:00:00Z" });
+        await flushPromises();
+
+        expect(wrapper.get("[data-boss-history-basis]").text()).toContain(`BOSS: 履歴から再現（${formatShortDateTime("2026-10-17T00:00:00Z")}時点）`);
+        const mark = wrapper.get("[data-boss-history-mark]");
+        expect(mark.attributes("title")).toBe("在庫変動履歴から再現した値です");
+        // 数値の表示は変えない
+        expect(wrapper.get('[data-stock-field="boss"]').text()).toContain("1");
+    });
+
+    it("shows neither for a survey imported from the BOSS report", async () => {
+        const { wrapper } = open({ ...survey("complete"), bossSource: "report", bossBasisAt: null });
+        await flushPromises();
+
+        expect(wrapper.find("[data-boss-history-basis]").exists()).toBe(false);
+        expect(wrapper.find("[data-boss-history-mark]").exists()).toBe(false);
     });
 });

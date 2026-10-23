@@ -185,6 +185,22 @@ class InventoryTrendApiTest extends TestCase
         ), false));
     }
 
+    public function test_daily_sources_include_the_boss_source_of_each_survey(): void
+    {
+        $this->actingAs(User::factory()->create());
+        $product = Product::factory()->create(['product_code' => 'A-1001']);
+        Sku::factory()->for($product)->create(['sku_code' => 'A-1001-M', 'sort_order' => 1]);
+        $this->snapshot('2026-09-27 10:00:00', 'A-1001', 'A-1001-M');
+        $this->snapshot('2026-09-28 09:00:00', 'A-1001', 'A-1001-M');
+        $this->snapshot('2026-09-29 10:00:00', 'A-1001', 'A-1001-M');
+        Survey::query()->whereDate('executed_at', '2026-09-27')->update(['boss_source' => Survey::BOSS_SOURCE_REPORT]);
+        Survey::query()->whereDate('executed_at', '2026-09-28')->update(['boss_source' => Survey::BOSS_SOURCE_HISTORY, 'boss_basis_at' => '2026-09-28 09:00:00']);
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-29&scope=boss')
+            ->assertOk()
+            ->assertJsonPath('data.dailySources.*.bossSource', [Survey::BOSS_SOURCE_REPORT, Survey::BOSS_SOURCE_HISTORY, null]);
+    }
+
     public function test_amazon_trends_use_only_surveys_and_leave_days_without_a_survey_empty(): void
     {
         $this->actingAs(User::factory()->create());

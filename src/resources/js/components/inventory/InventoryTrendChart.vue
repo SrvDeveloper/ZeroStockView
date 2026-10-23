@@ -64,10 +64,20 @@ interface HoveredBar {
     y: number;
 }
 
-const props = withDefaults(defineProps<{ series: TrendSeries[]; stockoutSeries?: StockoutSeries | null; pendingDates?: string[] }>(), {
-    stockoutSeries: null,
-    pendingDates: () => [],
-});
+const props = withDefaults(
+    defineProps<{
+        series: TrendSeries[];
+        stockoutSeries?: StockoutSeries | null;
+        pendingDates?: string[];
+        /** 段（skuCode） => 日付 => ツールチップでその段に添える注記（例: 履歴から再現） */
+        seriesNotes?: Record<string, Record<string, string>>;
+    }>(),
+    {
+        stockoutSeries: null,
+        pendingDates: () => [],
+        seriesNotes: () => ({}),
+    },
+);
 
 const width = 960;
 const height = 300;
@@ -302,7 +312,12 @@ function tooltipTop(y: number): number {
                 <p class="font-mono text-[11px] font-medium">{{ hovered.date.replaceAll("-", "/") }}</p>
                 <div class="mt-1 space-y-0.5" data-tooltip-breakdown>
                     <p v-for="row in hovered.breakdown" :key="row.series.skuCode" data-tooltip-breakdown-row class="flex items-center justify-between gap-4 text-ink-2">
-                        <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-xs" :style="{ backgroundColor: row.series.color }"></span>{{ row.series.label }}</span>
+                        <span class="flex items-center gap-1.5"
+                            ><span class="h-2 w-2 rounded-xs" :style="{ backgroundColor: row.series.color }"></span>{{ row.series.label
+                            }}<span v-if="seriesNotes[row.series.skuCode]?.[hovered.date]" data-tooltip-series-note class="-ml-1 text-[10px] text-muted"
+                                >（{{ seriesNotes[row.series.skuCode]![hovered.date] }}）</span
+                            ></span
+                        >
                         <span v-if="row.quantity === null" class="text-[10.5px] text-muted">未確定</span>
                         <span v-else class="font-num text-[13px] font-semibold text-ink">{{ row.quantity }}<span class="ml-0.5 font-sans text-[10.5px] font-normal text-muted">点</span></span>
                     </p>

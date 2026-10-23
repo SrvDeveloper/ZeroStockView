@@ -21,6 +21,22 @@ function warehouseSeries(dates: string[], quantities: Record<string, (number | n
 }
 
 describe("InventoryTrendChart", () => {
+    it("adds a note to the BOSS row only on the days the note is given for", async () => {
+        const dates = datesFrom("2026-10-16", 2);
+        const wrapper = mount(InventoryTrendChart, {
+            props: {
+                series: warehouseSeries(dates, { amazon: [1, 2], boss: [3, 4] }),
+                seriesNotes: { boss: { "2026-10-17": "履歴から再現" } },
+            },
+        });
+
+        await wrapper.findAll("[data-chart-bar]")[1]!.trigger("mouseenter");
+        expect(wrapper.findAll("[data-tooltip-breakdown-row]").map((row) => row.text())).toEqual(["amazon2点", "boss（履歴から再現）4点"]);
+
+        await wrapper.findAll("[data-chart-bar]")[0]!.trigger("mouseenter");
+        expect(wrapper.find("[data-tooltip-series-note]").exists()).toBe(false);
+    });
+
     it("stacks warehouses bottom-up with gaps and rounds only the top of each bar", () => {
         const dates = datesFrom("2026-10-03", 2);
         const wrapper = mount(InventoryTrendChart, {

@@ -25,6 +25,8 @@ export interface InventoryTrendDailySource {
     basisAt: string;
     amazonBasisAt?: string | null;
     amazonInventoryStatus: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";
+    /** BOSS 在庫の取得方式。history: 在庫変動履歴から再現（9:00時点） */
+    bossSource?: "report" | "history" | null;
 }
 
 /** 品番全体の倉庫別合計。null は取込待ち・未取得を含む未確定の倉庫、またはデータのない日 */

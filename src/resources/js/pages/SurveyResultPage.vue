@@ -23,7 +23,7 @@ import { useImportSettingsStore } from "@/stores/importSettings";
 import { useSurveysStore } from "@/stores/surveys";
 import { useUiStore } from "@/stores/ui";
 import { IMPORT_FILE_TYPES, type SelectOption, type StockQuantities, type Survey, type SurveyProductResult, type SurveySkuResult } from "@/types";
-import { formatDateTime } from "@/utils/format";
+import { formatDateTime, formatShortDateTime } from "@/utils/format";
 import { fileRemainingDays } from "@/utils/files";
 import { amazonStockState as amazonStockStateOf, amazonTotal, bossTotal, previousSurvey, skuTotal, stockState, summarizeSurvey, type StockState } from "@/utils/stock";
 
@@ -206,6 +206,9 @@ const amazonLamp = computed<{ state: LampState; label: string }>(() => {
             return { state: "warn", label: "判定不能" };
     }
 });
+
+/** BOSS 在庫を在庫変動履歴から再現した調査か（品番カードの v-memo に入れるため、真偽値にしておく） */
+const bossFromHistory = computed(() => survey.value?.bossSource === "history");
 
 const amazonMatchNote = computed(() => {
     const skus = survey.value?.products.flatMap((product) => product.skus) ?? [];
@@ -517,6 +520,9 @@ async function exportExcel(scope: "all" | "filtered") {
                 <p v-if="survey.updatedAt && survey.updatedAt !== survey.createdAt"
                     >結果更新日時: <span class="font-mono text-ink-2">{{ formatDateTime(survey.updatedAt) }}</span></p
                 >
+                <p v-if="bossFromHistory && survey.bossBasisAt" class="inline-flex items-center gap-1" data-boss-history-basis
+                    ><AppIcon name="history" :size="14" class="text-ink-2" />BOSS: <span class="text-ink-2">履歴から再現（{{ formatShortDateTime(survey.bossBasisAt) }}時点）</span></p
+                >
                 <p class="inline-flex items-center gap-1.5" data-survey-saved-files
                     >取込ファイル: <span class="font-mono text-ink-2">{{ savedFileTypeCount }}/{{ IMPORT_FILE_TYPES.length }}</span> <SurveyFilesZipButton :survey="survey" class="-my-1"
                 /></p>
@@ -630,7 +636,7 @@ async function exportExcel(scope: "all" | "filtered") {
             v-for="view in filteredProducts"
             :key="view.product.productCode"
             :data-product-code="view.product.productCode"
-            v-memo="[view, canEditMemo, hasAmazonStock]"
+            v-memo="[view, canEditMemo, hasAmazonStock, bossFromHistory]"
             :padded="false"
             class="survey-product-card"
         >
@@ -669,7 +675,17 @@ async function exportExcel(scope: "all" | "filtered") {
                         <tr class="align-bottom">
                             <th class="py-2 pr-3 pl-[18px] text-left font-semibold">SKU<small class="block text-[10px] font-normal text-faint">ASIN</small></th>
                             <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold"> <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-amazon" aria-hidden="true"></span>Amazon </th>
-                            <th class="px-3 py-2 font-semibold"> <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-boss" aria-hidden="true"></span>BOSS </th>
+                            <th class="px-3 py-2 font-semibold">
+                                <span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-boss" aria-hidden="true"></span>BOSS
+                                <span
+                                    v-if="bossFromHistory"
+                                    data-boss-history-mark
+                                    class="ml-0.5 inline-flex align-[-2px] text-ink-2"
+                                    title="在庫変動履歴から再現した値です"
+                                    aria-label="在庫変動履歴から再現した値です"
+                                    ><AppIcon name="history" :size="13"
+                                /></span>
+                            </th>
                             <th class="px-3 py-2 font-semibold"><span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-free" aria-hidden="true"></span>フリー在庫</th>
                             <th class="px-3 py-2 font-semibold"><span class="mr-1.5 inline-block h-2 w-2 rounded-xs bg-wh-ec" aria-hidden="true"></span>ECストック</th>
                             <th v-if="hasAmazonStock" class="px-3 py-2 font-semibold">総数</th>

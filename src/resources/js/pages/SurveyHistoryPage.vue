@@ -251,6 +251,9 @@ async function exportExcel(survey: SurveySummary) {
                         >全倉庫ゼロの SKU 数</span
                     >
                     <span class="inline-flex items-center gap-1.5"><span class="rounded-[3px] bg-signal px-1.5 text-[10px] text-ink">▲</span>前の調査日より増えた日</span>
+                    <span class="inline-flex items-center gap-1.5" data-legend-boss-history
+                        ><span class="rounded-[3px] border border-line px-1 text-[9.5px] leading-[14px] text-ink-2">BOSS 再現</span>BOSS 在庫を在庫変動履歴から再現した日（9:00時点）</span
+                    >
                 </div>
             </BaseCard>
 

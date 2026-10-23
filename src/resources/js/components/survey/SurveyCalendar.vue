@@ -18,6 +18,7 @@ function dayLabel(day: CalendarDay): string {
     if (day.increased) parts.push("前の調査日より増加");
     parts.push(`取込ファイル ${day.fileCount}／3`);
     if (day.amazonLamp) parts.push(LAMP_LABEL[day.amazonLamp]);
+    if (day.bossFromHistory) parts.push("BOSS在庫は在庫変動履歴から再現");
     return parts.join("、");
 }
 </script>
@@ -61,8 +62,16 @@ function dayLabel(day: CalendarDay): string {
                     >全ゼロ <b class="font-num text-sm font-bold text-ink">{{ day.allZeroCount }}</b
                     >{{ day.increased ? " ▲" : "" }}</span
                 >
-                <span class="inline-flex gap-[3px]" aria-hidden="true">
-                    <i v-for="slot in 3" :key="slot" class="block h-2.5 w-2.5 rounded-[3px]" :class="slot <= day.fileCount! ? 'bg-ink' : 'shadow-[inset_0_0_0_1.5px_var(--color-line-stronger)]'"></i>
+                <span class="flex flex-wrap items-center gap-x-1.5 gap-y-1" aria-hidden="true">
+                    <span class="inline-flex gap-[3px]">
+                        <i
+                            v-for="slot in 3"
+                            :key="slot"
+                            class="block h-2.5 w-2.5 rounded-[3px]"
+                            :class="slot <= day.fileCount! ? 'bg-ink' : 'shadow-[inset_0_0_0_1.5px_var(--color-line-stronger)]'"
+                        ></i>
+                    </span>
+                    <span v-if="day.bossFromHistory" data-boss-history class="rounded-[3px] border border-line px-1 text-[9.5px] leading-[14px] whitespace-nowrap text-ink-2">BOSS 再現</span>
                 </span>
             </button>
             <span

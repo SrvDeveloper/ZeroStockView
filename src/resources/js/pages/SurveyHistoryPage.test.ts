@@ -46,6 +46,20 @@ describe("SurveyHistoryPage", () => {
         expect(wrapper.get("[data-survey-detail]").text()).toContain("ファイルなし");
     });
 
+    it("marks only the days whose BOSS stock was reconstructed from the history and explains the mark in the legend", () => {
+        useSurveysStore().summaries = [
+            { ...survey("weekend", 17), files: [], bossSource: "history", bossBasisAt: new Date(2026, 9, 17, 9).toISOString() },
+            { ...survey("latest", 16), bossSource: "report", bossBasisAt: null },
+        ];
+        const wrapper = mount(SurveyHistoryPage);
+
+        const reconstructed = wrapper.get('[data-day="2026-10-17"]');
+        expect(reconstructed.get("[data-boss-history]").text()).toBe("BOSS 再現");
+        expect(reconstructed.attributes("aria-label")).toContain("BOSS在庫は在庫変動履歴から再現");
+        expect(wrapper.get('[data-day="2026-10-16"]').find("[data-boss-history]").exists()).toBe(false);
+        expect(wrapper.get("[data-legend-boss-history]").text()).toContain("BOSS 在庫を在庫変動履歴から再現した日");
+    });
+
     it("shows another day in the detail panel and opens its result", async () => {
         const wrapper = mount(SurveyHistoryPage);
 

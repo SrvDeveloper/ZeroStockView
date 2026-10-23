@@ -173,6 +173,10 @@ const productChartSeries = computed<TrendSeries[]>(() => {
         points: selectedDates.value.map((date) => ({ date, quantity: totalsByDate.get(date)?.[warehouse.key] ?? null })),
     }));
 });
+/** ツールチップの BOSS の段に「履歴から再現」を添える日（BOSS 在庫を在庫変動履歴から再現した日） */
+const productSeriesNotes = computed(() => ({
+    boss: Object.fromEntries(dailySources.value.filter((source) => source.bossSource === "history").map((source) => [source.date, "履歴から再現"])),
+}));
 /** データはあるが、在庫区分に含まれる倉庫のどれかが取込待ち・未取得の日 */
 const productPendingDates = computed(() => {
     const totalsByDate = new Map(warehouseTotals.value.map((total) => [total.date, total]));
@@ -671,7 +675,7 @@ async function exportCsv() {
                 <BaseButton variant="secondary" icon="chevron_left" @click="backToList">品番一覧に戻る</BaseButton>
             </BaseEmpty>
             <div v-else class="overflow-x-auto pb-1">
-                <InventoryTrendChart :series="productChartSeries" :stockout-series="productStockoutSeries" :pending-dates="productPendingDates" />
+                <InventoryTrendChart :series="productChartSeries" :stockout-series="productStockoutSeries" :pending-dates="productPendingDates" :series-notes="productSeriesNotes" />
             </div>
         </BaseCard>
 
