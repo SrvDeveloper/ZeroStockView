@@ -67,7 +67,7 @@ class BossInventoryReconstructor
 
         $usableBases = array_filter($reportTimes);
         if ($usableBases === []) {
-            return new BossInventoryReconstruction([], [], [], $reportTimes, $unusableBaseDates, [], 0,
+            return new BossInventoryReconstruction([], [], [], $reportTimes, $unusableBaseDates, [], 0, [], [],
                 '在庫変動履歴の期間に、使える BOSS のレポートを取り込んだ調査がありません。');
         }
 
@@ -88,6 +88,8 @@ class BossInventoryReconstructor
         $values = [];
         $dateSummaries = [];
         $unavailableDates = [];
+        /** @var array<string, array<string, string>> $emptied SKUコード => 倉庫 => つながりの切れ目・マイナスで NULL にした理由 */
+        $emptied = [];
         foreach ($dates as $date) {
             $basis = CarbonImmutable::parse("{$date} ".self::BASIS_TIME, self::TIMEZONE);
             if ($basis->lt($history->from) || $basis->gt($history->to)) {
@@ -104,6 +106,9 @@ class BossInventoryReconstructor
                     [$stock[$warehouse], $reason] = $this->valueOnDate($history, $baseSurveys, $nearestBases, $mismatched, $skuCode, $warehouse, $basis);
                     if ($reason !== null) {
                         $reasons[$reason] = true;
+                    }
+                    if ($reason === BossInventoryReconstruction::REASON_BREAK || $reason === BossInventoryReconstruction::REASON_NEGATIVE) {
+                        $emptied[$skuCode][$warehouse] ??= $reason;
                     }
                 }
                 $values[$date][$skuCode] = $stock;
@@ -122,10 +127,20 @@ class BossInventoryReconstructor
         }
 
         $mismatches = [];
+        $mismatchCounts = array_fill_keys(array_keys($usableBases), 0);
         ksort($mismatched, SORT_STRING);
         foreach ($mismatched as $skuCode => $warehouses) {
             foreach ($warehouses as $warehouse => $baseDate) {
                 $mismatches[] = ['skuCode' => (string) $skuCode, 'warehouse' => $warehouse, 'baseDate' => $baseDate];
+                $mismatchCounts[$baseDate]++;
+            }
+        }
+        $emptiedCells = [];
+        ksort($emptied, SORT_STRING);
+        foreach ($emptied as $skuCode => $warehouses) {
+            ksort($warehouses);
+            foreach ($warehouses as $warehouse => $reason) {
+                $emptiedCells[] = ['skuCode' => (string) $skuCode, 'warehouse' => $warehouse, 'reason' => $reason];
             }
         }
 
@@ -137,6 +152,8 @@ class BossInventoryReconstructor
             $unusableBaseDates,
             array_slice($mismatches, 0, self::MISMATCH_LIMIT),
             count($mismatches),
+            $mismatchCounts,
+            $emptiedCells,
             null,
         );
     }
