@@ -11,8 +11,29 @@ export interface InventoryTrendQuery {
     to: string | null;
 }
 
-const SCOPES: readonly InventoryScope[] = ["mallTotal", "amazon", "boss", "free", "stock", "grandTotal"];
-const PERIODS: readonly PeriodPreset[] = ["14", "30", "90", "custom"];
+/** 在庫区分の選択肢（一覧と詳細で共通） */
+export const INVENTORY_SCOPE_OPTIONS: { value: InventoryScope; label: string }[] = [
+    { value: "mallTotal", label: "モール全体" },
+    { value: "amazon", label: "Amazon" },
+    { value: "boss", label: "BOSS" },
+    { value: "free", label: "フリー" },
+    { value: "stock", label: "ストック" },
+    { value: "grandTotal", label: "総数" },
+];
+
+/** 表示期間の選択肢（一覧と詳細で共通）。1年は「期間指定」で選ぶ */
+export const PERIOD_OPTIONS: { value: PeriodPreset; label: string }[] = [
+    { value: "14", label: "2週間" },
+    { value: "30", label: "1か月" },
+    { value: "90", label: "3か月" },
+    { value: "custom", label: "期間指定" },
+];
+
+/** 期間指定で選べる最大の日数（API の上限と同じ） */
+export const MAXIMUM_PERIOD_DAYS = 365;
+
+const SCOPES: readonly InventoryScope[] = INVENTORY_SCOPE_OPTIONS.map((option) => option.value);
+const PERIODS: readonly PeriodPreset[] = PERIOD_OPTIONS.map((option) => option.value);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function single(value: LocationQuery[string] | undefined): string {
@@ -51,4 +72,11 @@ export function buildInventoryTrendQuery(state: InventoryTrendQuery): Record<str
 export function replaceInventoryTrendQuery(current: LocationQuery, state: InventoryTrendQuery): LocationQueryRaw {
     const rest = Object.fromEntries(Object.entries(current).filter(([key]) => !["scope", "period", "from", "to"].includes(key)));
     return { ...rest, ...buildInventoryTrendQuery(state) };
+}
+
+/** 日付（YYYY-MM-DD）を日数だけずらす */
+export function addDays(date: string, amount: number): string {
+    const value = new Date(`${date}T00:00:00Z`);
+    value.setUTCDate(value.getUTCDate() + amount);
+    return value.toISOString().slice(0, 10);
 }

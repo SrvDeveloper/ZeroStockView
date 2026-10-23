@@ -22,7 +22,16 @@ import BaseSelect from "@/components/ui/BaseSelect.vue";
 import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import { warehousesOfScope } from "@/constants/warehouses";
 import type { SelectOption } from "@/types";
-import { parseInventoryTrendQuery, replaceInventoryTrendQuery, type InventoryTrendQuery, type PeriodPreset } from "@/utils/inventoryTrendQuery";
+import {
+    addDays,
+    INVENTORY_SCOPE_OPTIONS,
+    MAXIMUM_PERIOD_DAYS,
+    parseInventoryTrendQuery,
+    PERIOD_OPTIONS,
+    replaceInventoryTrendQuery,
+    type InventoryTrendQuery,
+    type PeriodPreset,
+} from "@/utils/inventoryTrendQuery";
 
 const props = defineProps<{ productCode: string }>();
 
@@ -67,7 +76,6 @@ const availableRange = ref<{ from: string; to: string } | null>(null);
 const productCode = computed(() => props.productCode);
 const inventoryScope = ref<InventoryScope>("mallTotal");
 const trendView = ref<TrendView>("product");
-const MAXIMUM_PERIOD_DAYS = 365;
 const activePreset = ref<PeriodPreset>("30");
 const targetStart = ref("");
 const targetEnd = ref("");
@@ -89,20 +97,8 @@ let trendRequestId = 0;
 const selectedProduct = computed(() => products.value.find((product) => product.productCode === productCode.value));
 /** 品番の一覧を読み込めたのに、表示する品番の調査がない（存在しない品番を URL で開いたときなど） */
 const productMissing = computed(() => productsLoaded.value && !selectedProduct.value);
-const periodOptions: { value: PeriodPreset; label: string }[] = [
-    { value: "14", label: "2週間" },
-    { value: "30", label: "1か月" },
-    { value: "90", label: "3か月" },
-    { value: "custom", label: "期間指定" },
-];
-const inventoryScopeOptions: SelectOption[] = [
-    { value: "mallTotal", label: "モール全体" },
-    { value: "amazon", label: "Amazon" },
-    { value: "boss", label: "BOSS" },
-    { value: "free", label: "フリー" },
-    { value: "stock", label: "ストック" },
-    { value: "grandTotal", label: "総数" },
-];
+const periodOptions = PERIOD_OPTIONS;
+const inventoryScopeOptions: SelectOption[] = INVENTORY_SCOPE_OPTIONS;
 const selectedInventoryScopeLabel = computed(() => inventoryScopeOptions.find((option) => option.value === inventoryScope.value)?.label ?? "");
 const earliestTargetStart = computed(() => {
     const availableFrom = availableRange.value?.from ?? "";
@@ -319,7 +315,8 @@ function syncQuery() {
 }
 
 function backToList() {
-    void router.push({ name: "inventory-trends", query: replaceInventoryTrendQuery({}, currentQuery()) });
+    // 一覧から開いたときは、一覧の条件（グループ・並び順・ページなど）もクエリに入っている
+    void router.push({ name: "inventory-trends", query: replaceInventoryTrendQuery(route.query, currentQuery()) });
 }
 
 watch(
@@ -335,12 +332,6 @@ watch(
         warehouseTotals.value = [];
     },
 );
-
-function addDays(date: string, amount: number): string {
-    const value = new Date(`${date}T00:00:00Z`);
-    value.setUTCDate(value.getUTCDate() + amount);
-    return value.toISOString().slice(0, 10);
-}
 
 function formatSummaryQuantity(quantity: number | null): string {
     return quantity === null ? "—" : `${quantity}点`;
