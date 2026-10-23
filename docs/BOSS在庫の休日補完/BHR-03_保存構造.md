@@ -60,3 +60,9 @@ php artisan test --compact --filter=BossInventoryHistory
 php artisan test --compact tests/Feature/SurveyHistoryLimitTest.php
 vendor/bin/pint --dirty --format agent
 ```
+
+**実装状況（2026-10-23）:** `boss_inventory_histories` テーブルと `BossInventoryHistory` モデル・ファクトリ、`surveys` の `boss_source`・`boss_basis_at`・`boss_inventory_history_id` と `Survey::BOSS_SOURCE_REPORT`・`BOSS_SOURCE_HISTORY`、ファクトリの `history()` を追加した。BOSS のレポートを取り込むと（再照合を含む）`boss_source = report` にし、`boss_basis_at` と `boss_inventory_history_id` を空にする。`survey-files:prune` は、期限の来た履歴ファイルを消して、記録の行の `disk`・`stored_path` を空にする（`original_name` などは残す）。開発の MySQL でマイグレーション・2段のロールバック・再マイグレーションを確かめた。チケットから変えた点は次のとおり。
+
+- 既存の調査の `boss_source` は、BOSS のレポートの `SurveyFile` がある調査に加えて、BOSS の在庫（`boss_own_stock`・`boss_rfc_stock`）が1つでも保存されている調査も `report` にした。期限の来た取込ファイルは `SurveyFile` の行ごと消しているので、ファイルだけでは古い調査を見分けられないため。
+- マイグレーションのテスト（`BossSourceMigrationTest`）は `RefreshDatabase` ではなく `DatabaseMigrations` を使った。SQLite は外部キーの列を足すときに表を作り直し、テストのトランザクションの中では外部キーを止められずに子の行（取込ファイル・調査の品番）が消えるため。トランザクションの外の SQLite のファイルでは子の行が消えないことも確かめた。
+- 在庫変動履歴のファイルの保存先（`boss-inventory-histories/`）への保存は、BHR-04 の取込の API で行う。
