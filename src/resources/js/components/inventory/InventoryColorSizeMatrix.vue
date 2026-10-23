@@ -64,7 +64,12 @@ const CELL_CLASS: Record<CellState, string> = {
 
 <template>
     <div class="overflow-x-auto">
-        <table class="w-full border-separate border-spacing-1 tabular-nums" data-color-size-matrix>
+        <table class="w-full table-fixed border-separate border-spacing-1 tabular-nums" :style="{ minWidth: `${sizes.length * 96 + 176}px` }" data-color-size-matrix>
+            <colgroup>
+                <col class="w-28" />
+                <col v-for="size in sizes" :key="size" />
+                <col class="w-12" />
+            </colgroup>
             <thead>
                 <tr class="text-[11px] text-muted">
                     <th scope="col" class="px-1 text-left font-semibold"><span class="sr-only">カラー</span></th>
