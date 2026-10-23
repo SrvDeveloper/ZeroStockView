@@ -39,7 +39,7 @@ class SurveyDifferentialWriteTest extends TestCase
             'services.crosswalker.api_key' => 'test-api-key',
         ]);
         Http::fake(fn (ClientRequest $request) => Http::response([
-            'data' => array_values(array_intersect_key($this->items, array_flip($request['item_nos'] ?? []))),
+            'data' => array_values($request->method() === 'GET' ? $this->items : array_intersect_key($this->items, array_flip($request['item_nos'] ?? []))),
         ]));
         $this->items = [
             'A' => $this->item('A', [$this->sku('A-1', 'BA1', 'TA', '01', 'M'), $this->sku('A-2', 'BA2', 'TA', '01', 'L')]),

@@ -29,7 +29,7 @@ const activeAmazonImport = computed(() => amazonImports.value.find((item) => ite
 const latestAmazonImport = computed(() => activeAmazonImport.value ?? amazonImports.value[0]);
 const canUseImport = computed(() => canAccess(auth.role, EDITOR_ROLES));
 const canManageAmazon = computed(() => canAccess(auth.role, ADMIN_ROLES));
-const canStartAmazon = computed(() => canManageAmazon.value && importSettings.settings.length > 0 && !amazonStarting.value && !activeAmazonImport.value && !amazonLoading.value);
+const canStartAmazon = computed(() => canManageAmazon.value && !amazonStarting.value && !activeAmazonImport.value && !amazonLoading.value);
 const amazonStatus: Record<AmazonImportStatus, { label: string; lamp: LampState }> = {
     queued: { label: "受付", lamp: "warn" },
     running: { label: "処理中", lamp: "warn" },
@@ -83,7 +83,7 @@ onUnmounted(() => {
 
 const files = ref<File[]>([]);
 const running = ref(false);
-const canRun = computed(() => canUseImport.value && importSettings.settings.some((setting) => setting.productCodes.length > 0) && files.value.length > 0 && !running.value);
+const canRun = computed(() => canUseImport.value && files.value.length > 0 && !running.value);
 const errorMessage = ref("");
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const folderInputRef = ref<HTMLInputElement | null>(null);
@@ -160,7 +160,7 @@ async function runImport() {
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
                 <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">データ取込</h1>
-                <p class="mt-1 text-[12.5px] text-ink-2">BOSS・ECストック・フリー在庫のCSVを1〜3件添付すると、全品番グループの対象品番を取り込みます。Amazon 在庫は自動で取得します。</p>
+                <p class="mt-1 text-[12.5px] text-ink-2">BOSS・ECストック・フリー在庫のCSVを1〜3件添付すると、CrossWalkerで有効な全品番を取り込みます。Amazon 在庫は自動で取得します。</p>
             </div>
             <BaseButton
                 v-if="importSettings.settings.length > 0"
@@ -173,13 +173,6 @@ async function runImport() {
                 >グループを編集</BaseButton
             >
         </div>
-
-        <BaseAlert v-if="importSettings.settings.length === 0" tone="warning">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span>品番グループがありません。先に名前と対象品番を設定してください。</span>
-                <BaseButton variant="primary" size="sm" @click="router.push({ name: 'import-settings' })">品番グループへ</BaseButton>
-            </div>
-        </BaseAlert>
 
         <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start">
             <div class="flex min-w-0 flex-col gap-4">

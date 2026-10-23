@@ -27,7 +27,7 @@ const amazonSurveyStatuses = [
     <div>
         <ManualHeading id="scheduled-fetch">毎朝9:00の自動取得</ManualHeading>
         <p class="mt-3">
-            毎朝9:00に、品番グループに登録した品番のAmazon在庫を自動で取得します。Amazon側で在庫レポートを作成するため、完了までに時間がかかることがあります。取得が成功すると、その日の在庫調査に反映されます。
+            毎朝9:00に、CrossWalkerで有効な全品番のAmazon在庫を自動で取得します。Amazon側で在庫レポートを作成するため、完了までに時間がかかることがあります。取得が成功すると、その日の在庫調査に反映されます。
         </p>
         <ul class="mt-3 list-disc space-y-1 pl-5">
             <li>その日の在庫調査がすでにあるときは、その調査に反映します。</li>
@@ -50,7 +50,7 @@ const amazonSurveyStatuses = [
     <div>
         <ManualHeading id="manual-fetch">手動で取得する（特権管理者のみ）</ManualHeading>
         <p class="mt-3">
-            自動取得が失敗したときや、9:00以降に品番グループへ品番を追加したときは、「Amazon 在庫」欄の<ManualUi icon="refresh">Amazon 在庫を取得</ManualUi
+            自動取得が失敗したときや、9:00以降にCrossWalkerへ品番を登録したときは、「Amazon 在庫」欄の<ManualUi icon="refresh">Amazon 在庫を取得</ManualUi
             >を押下して取り直します。完了するまで、画面は自動で更新されます。受付・処理中の取得があるあいだは押せません。同じ日に何回取得しても、調査にはその日に成功した最新の在庫が反映されます。
         </p>
     </div>

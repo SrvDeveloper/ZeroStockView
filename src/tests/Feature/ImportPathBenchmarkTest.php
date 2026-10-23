@@ -73,7 +73,7 @@ class ImportPathBenchmarkTest extends TestCase
         ]);
         $this->items = $this->buildItems();
         Http::fake(fn (ClientRequest $request) => Http::response([
-            'data' => array_values(array_intersect_key($this->items, array_flip($request['item_nos'] ?? []))),
+            'data' => array_values($request->method() === 'GET' ? $this->items : array_intersect_key($this->items, array_flip($request['item_nos'] ?? []))),
         ]));
         $this->listenToDatabase();
         // 大きいファイルの経路で、変更前のコードでもメモリ上限で止まらずに計測できるようにする

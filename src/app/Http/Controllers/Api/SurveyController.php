@@ -53,9 +53,9 @@ class SurveyController extends Controller
     public function rerun(Request $request, Survey $survey, InventoryImportService $importer): SurveyResource
     {
         $data = $request->validate([
-            'import_setting_id' => ['required', 'integer', 'exists:import_settings,id'],
+            'import_setting_id' => ['nullable', 'integer', 'exists:import_settings,id'],
         ]);
-        $setting = ImportSetting::query()->findOrFail($data['import_setting_id']);
+        $setting = isset($data['import_setting_id']) ? ImportSetting::query()->findOrFail($data['import_setting_id']) : null;
 
         return new SurveyResource($importer->reimport($survey, $setting));
     }

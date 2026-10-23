@@ -664,9 +664,8 @@ describe("survey import setting display", () => {
         const select = wrapper.get('[data-testid="rerun-setting-select"] select');
         const button = wrapper.get('[data-testid="rerun-button"]');
         expect(select.attributes("disabled")).toBeUndefined();
-        expect(button.attributes("disabled")).toBeDefined();
-        await select.setValue("2");
         expect(button.attributes("disabled")).toBeUndefined();
+        await select.setValue("2");
         await button.trigger("click");
         await flushPromises();
         expect(rerunImport).toHaveBeenCalledWith("1", "2");
@@ -679,6 +678,29 @@ describe("survey import setting display", () => {
         await nextTick();
         expect(wrapper.text()).toContain("再照合に使える取込ファイルがないため、再照合機能は利用できません。");
         expect(menuButton.attributes("disabled")).toBeDefined();
+    });
+
+    it("reruns a survey without choosing a group and shows all groups afterwards", async () => {
+        const surveys = useSurveysStore();
+        fixture[0].includesAmazonInventory = false;
+        fixture[0].amazonSource = "sp_api";
+        fixture[0].files = [{ id: "3", type: "倉庫毎の在庫数レポート", fileName: "倉庫毎の在庫数レポート.csv", uploadedAt: new Date().toISOString(), sizeKb: 1 }];
+        useImportSettingsStore().settings = [];
+        const rerunImport = vi
+            .spyOn(surveys, "rerunImport")
+            .mockResolvedValue({ id: "1", executedAt: "2026-09-16T01:00:00Z", createdAt: "2026-09-18T00:00:00Z", products: [], importSettingName: null, files: [] });
+        const wrapper = mountSeeded(SurveyResultPage, { props: { id: "1" }, global: { stubs: { RouterLink: true, Teleport: true } } });
+        await wrapper.get('[data-testid="rerun-menu-button"]').trigger("click");
+
+        // 品番グループが1件もなくても、グループを選ばずに再照合できる
+        expect(wrapper.get('[data-testid="rerun-setting-select"] select').attributes("disabled")).toBeDefined();
+        const button = wrapper.get('[data-testid="rerun-button"]');
+        expect(button.attributes("disabled")).toBeUndefined();
+        await button.trigger("click");
+        await flushPromises();
+
+        expect(rerunImport).toHaveBeenCalledWith("1", null);
+        expect(push).toHaveBeenCalledWith({ name: "survey-result", params: { id: "1" }, query: {} });
     });
 
     it("does not offer a rerun for a legacy five-file survey even when its files remain", async () => {

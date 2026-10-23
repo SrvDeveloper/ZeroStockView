@@ -2,15 +2,12 @@
 
 namespace Tests\Feature;
 
-use App\Models\ImportSetting;
-use App\Models\ImportTarget;
 use App\Models\Product;
 use App\Models\Sku;
 use App\Services\CrossWalkerClient;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -27,6 +24,9 @@ class CrossWalkerSyncTest extends TestCase
     /** @var array<string, array<string, mixed>> */
     private array $items = [];
 
+    /** @var list<string> CrossWalker の有効な品番の一覧に載せる品番 */
+    private array $listed = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -35,7 +35,8 @@ class CrossWalkerSyncTest extends TestCase
             'services.crosswalker.api_key' => 'test-api-key',
         ]);
         Http::fake(fn (ClientRequest $request) => Http::response([
-            'data' => array_values(array_intersect_key($this->items, array_flip($request['item_nos'] ?? []))),
+            'data' => array_values(array_intersect_key($this->items, array_flip($this->listed))),
+            'meta' => ['current_page' => 1, 'last_page' => 1],
         ]));
     }
 
@@ -112,24 +113,19 @@ class CrossWalkerSyncTest extends TestCase
         });
         $this->refresh(['A', 'B']);
 
-        // 品番の同期日時をまとめて1回更新するだけで、SKUは消さず・入れ直さない
-        $this->assertCount(1, $writes);
-        $this->assertStringContainsString('update "products"', $writes[0]);
+        // 品番の同期日時をまとめて1回更新し、一覧から無くなった品番を無効にする（ここでは該当なし）だけで、SKUは消さず・入れ直さない
+        $this->assertCount(2, $writes);
+        $this->assertStringContainsString('update "products" set "synced_at"', $writes[0]);
+        $this->assertStringContainsString('update "products" set "status"', $writes[1]);
         $this->assertSame($skuIds, Sku::query()->orderBy('id')->pluck('id')->all());
         $this->assertEquals(now()->startOfSecond(), Product::query()->where('product_code', 'A')->first()->synced_at);
     }
 
-    /** @param list<string> $codes 品番グループの対象にして、CrossWalker から同期する */
+    /** @param list<string> $codes CrossWalker の有効な品番の一覧に載せて、全品番を同期する */
     private function refresh(array $codes): void
     {
-        $setting = ImportSetting::query()->firstOrCreate(['name' => 'G']);
-        foreach ($codes as $index => $code) {
-            $product = Product::query()->firstOrCreate(['product_code' => $code], ['brand' => '', 'category' => '', 'status' => 'active', 'synced_at' => now()]);
-            ImportTarget::query()->firstOrCreate(['product_id' => $product->id], ['import_setting_id' => $setting->id, 'sort_order' => $index + 1]);
-        }
-        /** @var Collection<int, ImportTarget> $targets */
-        $targets = ImportTarget::query()->with('product')->orderBy('sort_order')->get();
-        app(CrossWalkerClient::class)->refresh($targets);
+        $this->listed = $codes;
+        app(CrossWalkerClient::class)->refreshActiveProducts();
     }
 
     /** @return list<array{0: string, 1: string|null, 2: string, 3: string, 4: string, 5: int}> */

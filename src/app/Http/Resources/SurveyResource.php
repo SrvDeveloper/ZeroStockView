@@ -8,6 +8,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class SurveyResource extends JsonResource
 {
+    /** どの品番グループにも入っていない品番の分類のキー */
+    public const UNGROUPED_KEY = 'ungrouped';
+
     /** @var array<string, string>|null グループ名 => `setting:ID`（調査に保存されている現在のグループ） */
     private ?array $settingKeysByName = null;
 
@@ -22,7 +25,9 @@ class SurveyResource extends JsonResource
 
         return SurveySummaryResource::sharedFields($this->resource, $hasSavedAmazonInventory, $this->amazonInventoryStatus()) + [
             'groups' => $this->products->flatMap(fn (SurveyProduct $product): array => $this->memberships($product))
-                ->unique('key')->map(fn (array $group): array => ['key' => $group['key'], 'name' => $group['name']])->values(),
+                ->unique('key')
+                ->sortBy(fn (array $group): int => $group['key'] === self::UNGROUPED_KEY ? 1 : 0)
+                ->map(fn (array $group): array => ['key' => $group['key'], 'name' => $group['name']])->values(),
             'products' => $this->products->map(fn ($product): array => [
                 'id' => (string) $product->getKey(),
                 'productCode' => $product->product_code,
@@ -66,7 +71,14 @@ class SurveyResource extends JsonResource
     {
         if ($product->group_memberships !== null) {
             // 再照合前の重複（`legacy:名前` と同名の `setting:ID`）が保存済みの調査も、1 つのグループとして返す
-            return SurveyProduct::mergeGroupMemberships($product->group_memberships, $this->settingKeysByName());
+            $memberships = SurveyProduct::mergeGroupMemberships($product->group_memberships, $this->settingKeysByName());
+
+            // CrossWalker の全品番を対象にしてからは、どの品番グループにも入っていない品番がある
+            return $memberships !== [] ? $memberships : [[
+                'key' => self::UNGROUPED_KEY,
+                'name' => 'グループなし',
+                'sortOrder' => $product->sort_order,
+            ]];
         }
 
         return $this->import_setting_name === null ? [] : [[

@@ -6,6 +6,7 @@ use App\Models\AmazonInventoryImport;
 use App\Models\ImportSetting;
 use App\Models\ImportTarget;
 use App\Models\Product;
+use App\Models\Sku;
 use App\Models\Survey;
 use App\Models\SurveyFile;
 use App\Models\SurveyProduct;
@@ -35,13 +36,14 @@ class SurveyHistoryLimitTest extends TestCase
             'services.crosswalker.base_url' => 'https://crosswalker.test/api/v1',
             'services.crosswalker.api_key' => 'test-api-key',
         ]);
-        Http::fake(fn (ClientRequest $request) => Http::response(['data' => in_array('A', $request['item_nos'] ?? [], true) ? [[
+        Http::fake(fn (ClientRequest $request) => Http::response(['data' => $request->method() === 'GET' || in_array('A', $request['item_nos'] ?? [], true) ? [[
             'item_no' => 'A', 'brand' => 'BRAND', 'category' => 'CATEGORY', 'parent_asin' => null, 'status' => 'active',
             'skus' => [['sku_code' => 'A-1', 'child_asin' => 'BA1', 'status' => 'active', 'tq_item_no' => 'TA', 'tq_color_no' => '01', 'tq_size' => 'M']],
             'updated_at' => '2026-10-01T00:00:00.000000Z',
         ]] : []]));
         $setting = ImportSetting::query()->create(['name' => 'G']);
         $product = Product::query()->create(['product_code' => 'A', 'brand' => '', 'category' => '', 'status' => 'active', 'synced_at' => now()]);
+        Sku::query()->create(['product_id' => $product->id, 'sku_code' => 'A-1', 'child_asin' => 'BA1', 'status' => 'active', 'tq_item_no' => 'TA', 'tq_color_no' => '01', 'tq_size' => 'M', 'sort_order' => 1]);
         ImportTarget::query()->create(['import_setting_id' => $setting->id, 'product_id' => $product->id, 'sort_order' => 1]);
     }
 

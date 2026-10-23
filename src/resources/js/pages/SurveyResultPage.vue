@@ -114,7 +114,7 @@ const rerunSettingOptions = computed<SelectOption[]>(() => importSettingsStore.s
 /** 旧5ファイル調査・取得方式が未確定の調査は、Amazon在庫の保存値を守るため再照合できない（API も断る） */
 const isRerunnableSource = computed(() => survey.value?.amazonSource === "sp_api");
 const rerunAvailable = computed(() => hasReusableFiles.value && isRerunnableSource.value);
-const canRerun = computed(() => canRerunSurvey.value && rerunAvailable.value && rerunSettingId.value !== null && !rerunRunning.value);
+const canRerun = computed(() => canRerunSurvey.value && rerunAvailable.value && !rerunRunning.value);
 
 const selectedGroupKey = ref(props.initialGroup ?? "");
 watch(
@@ -409,7 +409,7 @@ function closeRerunMenu() {
 async function rerunSurvey() {
     const currentSurvey = survey.value;
     const settingId = rerunSettingId.value;
-    if (!currentSurvey || !settingId || !canRerun.value) return;
+    if (!currentSurvey || !canRerun.value) return;
 
     rerunError.value = "";
     rerunRunning.value = true;
@@ -418,7 +418,7 @@ async function rerunSurvey() {
         toast.push("調査結果を再照合しました");
         rerunSettingId.value = null;
         rerunMenuOpen.value = false;
-        await router.push({ name: "survey-result", params: { id: rerunSurveyResult.id }, query: { group: `setting:${settingId}` } });
+        await router.push({ name: "survey-result", params: { id: rerunSurveyResult.id }, query: settingId ? { group: `setting:${settingId}` } : {} });
     } catch (error) {
         if (axios.isAxiosError(error)) {
             const errors = error.response?.data?.errors as Record<string, string[]> | undefined;
@@ -549,18 +549,17 @@ async function exportExcel(scope: "all" | "filtered") {
             v-if="canRerunSurvey"
             :open="rerunMenuOpen"
             title="差異照合メニュー"
-            description="現在残っている取込ファイルと全品番グループの対象品番を再照合し、同じ日の調査結果を更新します（初回取込日時は変わりません）。ファイルがない種類は取込待ちになります。"
+            description="現在残っている取込ファイルを、CrossWalkerで有効な全品番と照合し直し、同じ日の調査結果を更新します（初回取込日時は変わりません）。ファイルがない種類は取込待ちになります。"
             width="md"
             @close="closeRerunMenu"
         >
             <div class="flex flex-col gap-4">
-                <p v-if="rerunSettingOptions.length === 0" class="text-[12.5px] text-muted">利用できる品番グループがありません。</p>
                 <BaseSelect
                     data-testid="rerun-setting-select"
                     :model-value="rerunSettingId"
                     :options="rerunSettingOptions"
                     label="再照合後に表示する品番グループ"
-                    placeholder="品番グループを選択してください"
+                    placeholder="すべての品番グループ"
                     :disabled="rerunSettingOptions.length === 0 || rerunRunning"
                     @update:model-value="(value) => (rerunSettingId = value === null ? null : String(value))"
                 />

@@ -56,7 +56,7 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "role-permissions", title: "権限ごとにできること" },
                 ],
                 points: [
-                    "在庫調査は1日1件です。品番グループの品番について、4つの倉庫の在庫をSKUごとにまとめて保存します。",
+                    "在庫調査は1日1件です。CrossWalkerで有効な全品番について、4つの倉庫の在庫をSKUごとにまとめて保存します。",
                     "Amazon在庫は毎朝9:00に自動で取得し、ほかの3種類はファイルを取り込みます。",
                     "使える操作は、権限（閲覧者・編集者・特権管理者）で決まります。",
                 ],
@@ -188,7 +188,11 @@ export const MANUAL_CHAPTERS: ManualChapterMeta[] = [
                     { id: "refresh", title: "最新の在庫を再読込" },
                     { id: "rerun", title: "保存ファイルで再照合（編集者・特権管理者）" },
                 ],
-                points: ["「—」は取込待ち、色付きの「0」は在庫0の確定です。", "品番グループや在庫の条件で絞り込み、Excelに出力できます。", "ファイルを添付し直さずに、保存ファイルで再照合できます。"],
+                points: [
+                    "「—」は取込待ちかデータなし、色付きの「0」は在庫0の確定です。",
+                    "品番グループや在庫の条件で絞り込み、Excelに出力できます。",
+                    "ファイルを添付し直さずに、保存ファイルで再照合できます。",
+                ],
                 keywords: ["全倉庫ゼロ", "一部の倉庫でゼロ", "在庫ゼロ", "絞込", "Excel出力", "メモ", "再照合", "差異照合メニュー", "内訳", "Ctrl", "取込待ち", "対象外", "総数"],
                 related: ["survey-history", "inventory-trend", "notes"],
                 screen: { routeName: "survey-history", label: "在庫調査履歴を開く", roles: ALL_ROLES },

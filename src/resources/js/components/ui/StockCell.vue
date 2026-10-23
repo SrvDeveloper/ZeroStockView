@@ -24,7 +24,7 @@ withDefaults(
             <span v-if="pendingLabel" data-stock-value class="rounded-chip border border-dashed border-line-stronger px-2 py-px text-[10.5px] font-semibold whitespace-nowrap text-ink-2">{{
                 pendingLabel
             }}</span>
-            <span v-else data-stock-value class="font-num text-lg text-muted" title="取込待ち・未取得">—</span>
+            <span v-else data-stock-value class="font-num text-lg text-muted" title="取込待ち・データなし">—</span>
         </template>
         <span
             v-else-if="state === 'zero'"

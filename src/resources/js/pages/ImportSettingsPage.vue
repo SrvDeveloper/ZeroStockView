@@ -175,7 +175,7 @@ async function save() {
         return;
     }
     if (workingCodes.value.length === 0) {
-        toast.push("取込対象品番を1件以上選択してください。", "error");
+        toast.push("品番を1件以上選択してください。", "error");
         return;
     }
     saving.value = true;
@@ -200,7 +200,7 @@ async function save() {
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div>
                 <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">{{ isNew ? "品番グループを新規作成" : "品番グループを編集" }}</h1>
-                <p class="mt-1 text-[12.5px] text-ink-2">用途ごとに名前を付けて、表示する品番と並び順を設定します。登録した品番はすべて取込対象になります。</p>
+                <p class="mt-1 text-[12.5px] text-ink-2">用途ごとに名前を付けて、表示する品番と並び順を設定します。取込の対象は、グループに関係なくCrossWalkerで有効な全品番です。</p>
             </div>
             <div class="flex flex-wrap items-center gap-2 lg:ml-auto">
                 <StatusLamp v-if="dirty" state="warn" label="未保存の変更があります" class="mr-1 text-[11.5px] text-ink-2" data-dirty-indicator />
@@ -214,7 +214,7 @@ async function save() {
         </BaseCard>
 
         <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-            <BaseCard title="取込対象品番" description="ドラッグして表示順を並び替えられます。" :padded="false" class="lg:order-2">
+            <BaseCard title="グループの品番" description="ドラッグして表示順を並び替えられます。" :padded="false" class="lg:order-2">
                 <template #actions>
                     <span class="flex items-center gap-2 font-mono text-[11px] text-ink-2" data-target-capacity>
                         <span class="inline-block h-[5px] w-[110px] overflow-hidden rounded-xs bg-ink/8" aria-hidden="true"

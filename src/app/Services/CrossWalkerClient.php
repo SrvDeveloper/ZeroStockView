@@ -3,10 +3,8 @@
 namespace App\Services;
 
 use App\Exceptions\CrossWalkerException;
-use App\Models\ImportTarget;
 use App\Models\Product;
 use App\Models\Sku;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -16,6 +14,12 @@ use Illuminate\Support\Facades\Http;
 
 class CrossWalkerClient
 {
+    /** 有効な品番の一覧を取るときの1ページの件数（CrossWalker の上限） */
+    private const PAGE_SIZE = 100;
+
+    /** 有効な品番の一覧のページ数の上限（品番が増えすぎたときに止める） */
+    private const MAX_PAGES = 100;
+
     public function __construct(private CrossWalkerConnectionStatus $connectionStatus) {}
 
     /**
@@ -41,25 +45,24 @@ class CrossWalkerClient
         return $this->recordConnection(fn (): array => $this->fetchLookupItems($itemNos));
     }
 
-    /** @param Collection<int, ImportTarget> $targets */
-    public function refresh(Collection $targets): void
+    /**
+     * CrossWalker の有効な全品番を取得して品番マスタへ反映する（在庫調査の対象になる）。
+     * 有効な品番の一覧から無くなった品番は、無効にして在庫調査の対象から外す。
+     */
+    public function refreshActiveProducts(): void
     {
-        $itemNos = $targets->pluck('product.product_code')->values()->all();
-        $items = collect();
-        foreach (array_chunk($itemNos, 50) as $batch) {
-            $items = $items->concat($this->lookupItems($batch));
-        }
-        $items = $items->keyBy('item_no');
-
-        $missingCodes = collect($itemNos)->diff($items->keys());
-        if ($missingCodes->isNotEmpty()) {
-            throw new CrossWalkerException('CrossWalkerから取込対象の品番を取得できませんでした: '.$missingCodes->implode(', '));
+        $items = collect($this->recordConnection(fn (): array => $this->fetchAllActiveItems()))->keyBy('item_no');
+        if ($items->isEmpty()) {
+            // 一時的な不具合で空の一覧が返ったときに、全品番を無効にしてしまわないようにする
+            throw new CrossWalkerException('CrossWalkerに有効な品番がありません。');
         }
 
-        DB::transaction(fn () => $this->syncProducts(
-            $targets->mapWithKeys(fn (ImportTarget $target): array => [$target->product->product_code => $target->product]),
-            $items,
-        ));
+        DB::transaction(function () use ($items): void {
+            $codes = array_map(strval(...), $items->keys()->all());
+            $existing = Product::query()->whereIn('product_code', $codes)->get()->keyBy('product_code');
+            $this->syncProducts($items->map(fn (array $item, int|string $code): Product => $existing->get($code) ?? new Product), $items);
+            Product::query()->whereNotIn('product_code', $codes)->where('status', 'active')->update(['status' => 'inactive']);
+        });
     }
 
     /**
@@ -169,6 +172,39 @@ class CrossWalkerClient
      */
     private function fetchItems(?string $keyword, int $page, int $perPage): array
     {
+        [$items, $meta] = $this->fetchItemPage($keyword, $page, $perPage);
+
+        return [
+            'products' => array_map(fn (array $item): array => $this->toProduct($item), $items),
+            'page' => max(1, (int) ($meta['current_page'] ?? $page)),
+            'perPage' => max(1, (int) ($meta['per_page'] ?? $perPage)),
+            'total' => max(0, (int) ($meta['total'] ?? count($items))),
+            'totalPages' => max(1, (int) ($meta['last_page'] ?? 1)),
+        ];
+    }
+
+    /** @return list<array<string, mixed>> CrossWalker の有効な全品番（SKUを含む） */
+    private function fetchAllActiveItems(): array
+    {
+        $items = [];
+        for ($page = 1; $page <= self::MAX_PAGES; $page++) {
+            [$pageItems, $meta] = $this->fetchItemPage(null, $page, self::PAGE_SIZE);
+            array_push($items, ...$pageItems);
+            if ($page >= (int) ($meta['last_page'] ?? 1)) {
+                return $items;
+            }
+        }
+
+        throw new CrossWalkerException('CrossWalkerの品番が多すぎるため、取得できませんでした。');
+    }
+
+    /**
+     * 有効な品番の一覧の1ページを取得する。
+     *
+     * @return array{0: list<array<string, mixed>>, 1: array<string, mixed>} 品番と、ページ送りの情報（meta）
+     */
+    private function fetchItemPage(?string $keyword, int $page, int $perPage): array
+    {
         try {
             $response = $this->request()->get('/items', array_filter([
                 'keyword' => $keyword,
@@ -181,16 +217,8 @@ class CrossWalkerClient
         }
 
         $payload = $this->payload($response);
-        $items = $this->items($payload);
-        $meta = is_array($payload['meta'] ?? null) ? $payload['meta'] : [];
 
-        return [
-            'products' => array_map(fn (array $item): array => $this->toProduct($item), $items),
-            'page' => max(1, (int) ($meta['current_page'] ?? $page)),
-            'perPage' => max(1, (int) ($meta['per_page'] ?? $perPage)),
-            'total' => max(0, (int) ($meta['total'] ?? count($items))),
-            'totalPages' => max(1, (int) ($meta['last_page'] ?? 1)),
-        ];
+        return [$this->items($payload), is_array($payload['meta'] ?? null) ? $payload['meta'] : []];
     }
 
     /**

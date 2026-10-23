@@ -115,8 +115,8 @@ describe("ImportSettingsListPage", () => {
 
         const summary = wrapper.get("[data-target-summary]").text();
         expect(summary).toContain("グループ 2");
-        expect(summary).toContain("取込対象の品番（重複を除く） 3");
-        expect(summary).toContain("取込対象の SKU 4");
+        expect(summary).toContain("グループに入っている品番（重複を除く） 3");
+        expect(summary).toContain("グループに入っている SKU 4");
         expect(wrapper.get('[data-setting-id="1"] [data-last-synced]').text()).not.toBe("—");
         expect(wrapper.get('[data-setting-id="2"] [data-last-synced]').text()).toBe("—");
     });
