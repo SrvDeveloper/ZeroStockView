@@ -6,6 +6,7 @@ use App\Models\AmazonInventoryImport;
 use App\Models\AmazonInventorySnapshot;
 use App\Models\ImportSetting;
 use App\Models\ImportTarget;
+use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
@@ -42,7 +43,8 @@ class InventoryImportService
         private SurveyHistoryPruner $historyPruner,
     ) {}
 
-    public function reimport(Survey $source, ImportSetting $setting): Survey
+    /** @param  ImportSetting|null  $setting  再照合後に表示する品番グループ。指定しなければ、すべての品番グループを表示する */
+    public function reimport(Survey $source, ?ImportSetting $setting = null): Survey
     {
         if (! $source->usesSpApiAmazonInventory()) {
             throw ValidationException::withMessages([
@@ -86,18 +88,14 @@ class InventoryImportService
         $basisAt = $executedAt ?? now();
         $classifiedFiles = $this->classifyFiles($files);
 
-        $allTargets = ImportTarget::query()->with('setting', 'product.skus')
-            ->orderBy('import_setting_id')->orderBy('sort_order')->get();
-        $targets = $allTargets->unique('product_id')->values();
-
+        // CrossWalker で有効な全品番を、在庫調査の対象にする
+        $this->crossWalker->refreshActiveProducts();
+        [$targets, $groupMemberships] = $this->loadTargets();
         if ($targets->isEmpty()) {
             throw ValidationException::withMessages([
-                'targets' => ['品番グループに取込対象品番を設定してください。'],
+                'targets' => ['CrossWalkerに有効な品番がありません。'],
             ]);
         }
-
-        $this->crossWalker->refresh($targets);
-        [$targets, $groupMemberships] = $this->loadTargets();
 
         $storedFiles = [];
         $replacedFiles = [];
@@ -154,11 +152,13 @@ class InventoryImportService
                         }
                     }
 
-                    $skus = $targets->pluck('product.skus')->flatten();
+                    $skus = $targets->pluck('skus')->flatten();
+                    // 0 は在庫数が0と確認できたことだけを表す。BOSSは全SKUを載せるので、載っていないSKUは在庫が分からず null のままにする。
+                    // KEEP一覧表・フリー在庫（ゼロ在庫を出力しない）は、載っていなければ0
                     $stocks = $skus->mapWithKeys(fn ($sku): array => [
                         $sku->sku_code => [
-                            'boss_own_stock' => isset($allFiles['boss']) ? 0 : null,
-                            'boss_rfc_stock' => isset($allFiles['boss']) ? 0 : null,
+                            'boss_own_stock' => null,
+                            'boss_rfc_stock' => null,
                             'free_stock' => isset($allFiles['free_stock']) ? 0 : null,
                             'ec_stock' => isset($allFiles['ec_stock']) ? 0 : null,
                         ],
@@ -298,7 +298,7 @@ class InventoryImportService
                     'amazon_inventory_import_id' => null,
                 ]);
 
-                $stocks = $targets->pluck('product.skus')->flatten()->mapWithKeys(fn ($sku): array => [
+                $stocks = $targets->pluck('skus')->flatten()->mapWithKeys(fn ($sku): array => [
                     $sku->sku_code => [
                         'boss_own_stock' => null,
                         'boss_rfc_stock' => null,
@@ -348,20 +348,22 @@ class InventoryImportService
     }
 
     /**
-     * 全品番グループの対象品番を重複なく集め、有効なSKUと各品番のグループ所属を読み込む。
+     * 在庫調査の対象の品番（CrossWalker で有効な全品番）と、有効なSKU・各品番の品番グループの所属を読み込む。
+     * どの品番グループにも入っていない品番は、所属なしになる（画面では「グループなし」）。
      *
-     * @return array{0: Collection<int, ImportTarget>, 1: Collection<int, list<array{key: string, name: string, sortOrder: int}>>}
+     * @return array{0: Collection<int, Product>, 1: Collection<int, list<array{key: string, name: string, sortOrder: int}>>}
      */
     private function loadTargets(): array
     {
-        $allTargets = ImportTarget::query()->with(['setting', 'product.skus' => fn ($query) => $query->where('status', 'active')])
-            ->orderBy('import_setting_id')->orderBy('sort_order')->get();
-        $targets = $allTargets->unique('product_id')->sortBy('product.product_code')->values();
-        $groupMemberships = $allTargets->groupBy('product_id')->map(fn ($members): array => $members->map(fn ($member): array => [
-            'key' => 'setting:'.$member->import_setting_id,
-            'name' => $member->setting->name,
-            'sortOrder' => $member->sort_order,
-        ])->all());
+        $targets = Product::surveyTargets();
+        $groupMemberships = ImportTarget::query()->with('setting')
+            ->whereIn('product_id', $targets->modelKeys())
+            ->orderBy('import_setting_id')->orderBy('sort_order')->get()
+            ->groupBy('product_id')->map(fn ($members): array => $members->map(fn ($member): array => [
+                'key' => 'setting:'.$member->import_setting_id,
+                'name' => $member->setting->name,
+                'sortOrder' => $member->sort_order,
+            ])->all());
 
         return [$targets, $groupMemberships];
     }
@@ -371,7 +373,7 @@ class InventoryImportService
      * 品番は品番コード、SKUは品番コードとSKUコードで突き合わせ、なくなったものは消して新しいものを追加する。
      * 別の品番へ移ったSKUは入れ直し、メモはSKUコードで引き継ぐ。グループ所属は以前の所属と合わせる。
      *
-     * @param  Collection<int, ImportTarget>  $targets
+     * @param  Collection<int, Product>  $targets
      * @param  Collection<int, list<array{key: string, name: string, sortOrder: int}>>  $groupMemberships
      * @param  array<string, array<string, int|null>>  $stocks  SKUコード => Amazon 以外の在庫
      * @param  EloquentCollection<string, AmazonInventorySnapshot>|null  $snapshots  SKUコード => その日の Amazon 在庫。
@@ -384,8 +386,7 @@ class InventoryImportService
         $settingKeysByName = $groupMemberships->flatten(1)->pluck('key', 'name')->all();
 
         $desiredProducts = [];
-        foreach ($targets as $index => $target) {
-            $product = $target->product;
+        foreach ($targets as $index => $product) {
             $priorProduct = $existingProducts->get($product->product_code);
             $priorMemberships = collect($priorProduct?->group_memberships ?? []);
             if ($priorProduct !== null && $priorMemberships->isEmpty() && $previousSettingName !== null) {
@@ -427,9 +428,9 @@ class InventoryImportService
         }
         $desiredSkus = [];
         $skuCodes = [];
-        foreach ($targets as $target) {
-            $productCode = $target->product->product_code;
-            foreach ($target->product->skus as $sku) {
+        foreach ($targets as $product) {
+            $productCode = $product->product_code;
+            foreach ($product->skus as $sku) {
                 $key = $productCode."\x1f".$sku->sku_code;
                 $skuCodes[$key] = $sku->sku_code;
                 $desiredSkus[$key] = [
@@ -575,12 +576,19 @@ class InventoryImportService
     {
         $seen = [];
         foreach ($this->rows($file, ['倉庫', 'SKUコード', '実在庫 (倉庫毎)', '引当済 (倉庫毎)']) as $rowNumber => $row) {
+            if (! isset($skuLookup[$row['SKUコード']])) {
+                continue;
+            }
+            $skuCode = $skuLookup[$row['SKUコード']];
+            // BOSSは登録されている全SKUを載せるので、載っているSKUは、片方の倉庫の行が無くてもその倉庫を0とする
+            $stocks[$skuCode]['boss_own_stock'] ??= 0;
+            $stocks[$skuCode]['boss_rfc_stock'] ??= 0;
             $stockField = match ($row['倉庫']) {
                 '自社倉庫' => 'boss_own_stock',
                 'RFC倉庫' => 'boss_rfc_stock',
                 default => null,
             };
-            if ($stockField === null || ! isset($skuLookup[$row['SKUコード']])) {
+            if ($stockField === null) {
                 continue;
             }
 
@@ -595,7 +603,6 @@ class InventoryImportService
                 throw ValidationException::withMessages(['files' => ["{$file->getClientOriginalName()}の{$rowNumber}行目の数量がマイナスです。"]]);
             }
 
-            $skuCode = $skuLookup[$row['SKUコード']];
             $this->ensureNotDuplicate($seen, $stockField.':'.$skuCode, $file, $rowNumber);
             $stocks[$skuCode][$stockField] = $quantity;
         }

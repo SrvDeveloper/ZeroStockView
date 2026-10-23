@@ -6,9 +6,7 @@ use App\Exceptions\AmazonInventoryImportException;
 use App\Exceptions\AmazonReportException;
 use App\Exceptions\CrossWalkerException;
 use App\Models\AmazonInventoryImport;
-use App\Models\ImportTarget;
 use App\Models\Product;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -168,19 +166,11 @@ class AmazonInventoryImportService
      */
     private function targetsAtStart(): array
     {
-        /** @var Collection<int, ImportTarget> $targets */
-        $targets = ImportTarget::query()->with('product')->get()->unique('product_id')->values();
-        if ($targets->isEmpty()) {
-            throw new AmazonInventoryImportException('取込対象品番が設定されていません。');
-        }
-
-        $this->crossWalker->refresh($targets);
-        $products = Product::query()
-            ->whereIn('id', $targets->pluck('product_id'))
-            ->with(['skus' => fn ($query) => $query->where('status', 'active')])
-            ->get();
-        if ($products->count() !== $targets->count()) {
-            throw new AmazonInventoryImportException('取込対象品番を取得できませんでした。');
+        // 在庫調査と同じく、CrossWalker で有効な全品番を対象にする
+        $this->crossWalker->refreshActiveProducts();
+        $products = Product::surveyTargets();
+        if ($products->isEmpty()) {
+            throw new AmazonInventoryImportException('CrossWalkerに有効な品番がありません。');
         }
 
         $stocks = [];

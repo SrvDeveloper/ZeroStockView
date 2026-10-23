@@ -11,7 +11,7 @@ import ManualTermTable from "@/components/manual/ManualTermTable.vue";
 const stockDisplays = [
     { term: "数字", meaning: "在庫数です。Amazon・BOSSは、5以下のときに色を変えて表示します。" },
     { term: "0（色付き）", meaning: "取込済みで、在庫が0と確定しています。" },
-    { term: "—", meaning: "取込待ちです。その種類のファイルを、その日にまだ取り込んでいません。在庫0ではありません。" },
+    { term: "—", meaning: "取込待ち、またはデータなしです。その種類のファイルをその日にまだ取り込んでいないか、BOSSのファイルにそのSKUが載っていませんでした。在庫0ではありません。" },
     { term: "取込待ち（札）", meaning: "Amazon在庫がまだ反映されていないか、Amazonの在庫レポートに含まれていなかったSKUです。" },
     { term: "対象外", meaning: "ASINが登録されていないため、Amazon在庫を取得しないSKUです。" },
     { term: "総数", meaning: "全倉庫の合計です。どれかの倉庫が未確定のときは「—」になり、0としては数えません。" },
@@ -56,7 +56,9 @@ const stockDisplays = [
     <div>
         <ManualHeading id="filters">絞り込む</ManualHeading>
         <ul class="mt-3 list-disc space-y-1 pl-5">
-            <li>品番グループ・ブランド・カテゴリを選ぶか、品番・SKU・ASINの一部を入力して絞り込みます。SKUやASINで絞り込むと、該当するSKUの行に印が付きます。</li>
+            <li
+                >品番グループ・ブランド・カテゴリを選ぶか、品番・SKU・ASINの一部を入力して絞り込みます。SKUやASINで絞り込むと、該当するSKUの行に印が付きます。どの品番グループにも入っていない品番は「グループなし」で選べます。</li
+            >
             <li>
                 「在庫ゼロ」「在庫あり」のボタン（Amazon・BOSS・フリー・ECストック）を押下すると、在庫の条件で絞り込みます。複数押下したときは、「結合」で<ManualUi>AND</ManualUi>（すべて満たす）か<ManualUi>OR</ManualUi>（どれかを満たす）を選びます。取込待ち（「—」）の倉庫は、在庫ゼロの条件に該当しません。
             </li>
@@ -90,22 +92,22 @@ const stockDisplays = [
     <div>
         <ManualHeading id="rerun">保存ファイルで再照合（編集者・特権管理者）</ManualHeading>
         <p class="mt-3">
-            その日に取り込んで保存されているファイルを使い、現在の品番グループの品番で照合し直して、この調査を更新します。ファイルを添付し直す必要はありません。次のようなときに使います。
+            その日に取り込んで保存されているファイルを使い、CrossWalkerで有効な全品番と照合し直して、この調査を更新します。ファイルを添付し直す必要はありません。次のようなときに使います。
         </p>
         <ul class="mt-3 list-disc space-y-1 pl-5">
-            <li>品番グループに品番を追加・削除したあと、取込済みの日の結果にも反映したいとき</li>
+            <li>CrossWalkerで品番を追加したり無効にしたりしたあと、取込済みの日の結果にも反映したいとき</li>
             <li>CrossWalkerでSKUの情報（ASIN、ターコイズの品番・カラー・サイズ）を直したあと、結果に反映したいとき</li>
         </ul>
     </div>
     <ManualStep :number="1" title="差異照合メニューを開きます。">
         <p>画面右上の<ManualUi icon="compare_arrows">保存ファイルで再照合</ManualUi>を押下すると、「差異照合メニュー」が開きます。</p>
     </ManualStep>
-    <ManualStep :number="2" title="表示する品番グループを選んで、再照合を実行します。">
+    <ManualStep :number="2" title="再照合を実行します。">
         <p>
-            「再照合後に表示する品番グループ」を選び、<ManualUi variant="primary" icon="refresh">再照合を実行</ManualUi
-            >を押下します。照合の対象は、選んだグループに関係なく、すべての品番グループの品番です。
+            必要に応じて「再照合後に表示する品番グループ」を選び、<ManualUi variant="primary" icon="refresh">再照合を実行</ManualUi
+            >を押下します。選ばないときは、すべての品番グループを表示します。照合の対象は、選んだグループに関係なく、CrossWalkerで有効な全品番です。
         </p>
-        <ManualResult>「調査結果を再照合しました」と表示され、選んだグループの結果が表示されます。</ManualResult>
+        <ManualResult>「調査結果を再照合しました」と表示され、選んだグループ（選ばなかったときはすべてのグループ）の結果が表示されます。</ManualResult>
         <p> 初回取込日時は変わりません。保存期限（30日）を過ぎたファイルの種類は、取込待ちになります。Amazon在庫は、その日に取得した最新の在庫で反映し直します。 </p>
     </ManualStep>
     <ManualCallout title="再照合できない調査" tone="warning">

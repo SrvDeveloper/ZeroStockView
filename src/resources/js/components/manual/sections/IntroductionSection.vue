@@ -20,7 +20,7 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
 
 <template>
     <p>
-        ZeroStockView（在庫状況調査システム）は、品番グループに登録した品番のSKUごとに、Amazon（自社発送・FBA）、BOSS（自社倉庫・RFC倉庫）、フリー在庫、ECストックの在庫数をまとめて確認するシステムです。在庫数は1日1件の「在庫調査」として保存され、過去の日の在庫を見比べたり、在庫推移として確認したりできます。
+        ZeroStockView（在庫状況調査システム）は、CrossWalkerで有効な全品番のSKUごとに、Amazon（自社発送・FBA）、BOSS（自社倉庫・RFC倉庫）、フリー在庫、ECストックの在庫数をまとめて確認するシステムです。在庫数は1日1件の「在庫調査」として保存され、過去の日の在庫を見比べたり、在庫推移として確認したりできます。
     </p>
 
     <div>
@@ -63,6 +63,6 @@ const rolePermissions: { feature: string; viewer: boolean; editor: boolean; admi
     </div>
 
     <ManualCallout id="crosswalker" class="scroll-mt-32 lg:scroll-mt-20" title="品番は先にCrossWalkerへ登録してください" tone="warning"
-        >取込対象の品番は、商品識別子管理システム「CrossWalker」に登録されている必要があります。登録されていない品番は品番グループに追加できず、取込もできません。新しい品番を調べるときは、先にCrossWalkerへ登録してください。</ManualCallout
+        >取込の対象は、商品識別子管理システム「CrossWalker」で有効な全品番です。CrossWalkerに登録されていない品番は取り込めず、品番グループにも追加できません。新しい品番を調べるときは、先にCrossWalkerへ登録してください。</ManualCallout
     >
 </template>

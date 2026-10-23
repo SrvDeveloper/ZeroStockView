@@ -43,9 +43,8 @@ class ApiBackendTest extends TestCase
             'services.crosswalker.api_key' => 'test-api-key',
         ]);
 
-        $item = $this->crossWalkerItem();
-        $this->crossWalkerItems = [$item];
-        Http::fake(function (ClientRequest $request) use ($item) {
+        $this->crossWalkerItems = [$this->crossWalkerItem()];
+        Http::fake(function (ClientRequest $request) {
             if ($this->crossWalkerResponseStatus !== 200) {
                 return Http::response(['message' => 'CrossWalker error'], $this->crossWalkerResponseStatus);
             }
@@ -55,14 +54,20 @@ class ApiBackendTest extends TestCase
                     fn (array $candidate): bool => in_array($candidate['item_no'], $request['item_nos'] ?? [], true)))]);
             }
 
+            // 有効な品番の一覧は、$crossWalkerItems をキーワードで絞り込んでページ送りして返す
+            $items = array_values(array_filter($this->crossWalkerItems,
+                fn (array $candidate): bool => ! isset($request['keyword']) || str_contains($candidate['item_no'], $request['keyword'])));
+            $page = (int) ($request['page'] ?? 1);
+            $perPage = (int) ($request['per_page'] ?? 20);
+
             return Http::response([
-                'data' => [$item],
+                'data' => array_slice($items, ($page - 1) * $perPage, $perPage),
                 'links' => [],
                 'meta' => [
-                    'current_page' => 1,
-                    'per_page' => 20,
-                    'total' => 1,
-                    'last_page' => 1,
+                    'current_page' => $page,
+                    'per_page' => $perPage,
+                    'total' => count($items),
+                    'last_page' => max(1, (int) ceil(count($items) / $perPage)),
                 ],
             ]);
         });
@@ -143,7 +148,7 @@ class ApiBackendTest extends TestCase
             ->assertJsonCount(2, 'settings');
     }
 
-    public function test_import_uses_the_union_of_all_product_groups_and_keeps_both_products_on_same_day(): void
+    public function test_import_covers_every_active_crosswalker_product_and_keeps_them_on_same_day(): void
     {
         Storage::fake('local');
         $this->actingAs(User::factory()->create());
@@ -158,33 +163,48 @@ class ApiBackendTest extends TestCase
             'tq_color_no' => '01',
             'tq_size' => 'M',
         ]];
-        $this->crossWalkerItems = [$firstItem, $secondItem];
+        // どの品番グループにも入っていない品番も、CrossWalker で有効なら調査の対象になる
+        $ungroupedItem = $this->crossWalkerItem();
+        $ungroupedItem['item_no'] = 'C-3001';
+        $ungroupedItem['skus'] = [[
+            'sku_code' => 'C-3001-01-M',
+            'child_asin' => 'B000000004',
+            'status' => 'active',
+            'tq_item_no' => 'C3001',
+            'tq_color_no' => '01',
+            'tq_size' => 'M',
+        ]];
+        $this->crossWalkerItems = [$firstItem, $secondItem, $ungroupedItem];
         $groupA = $this->postJson('/api/import-settings', ['name' => 'Aグループ', 'product_codes' => ['A-1001']])->assertCreated()->json('id');
         $groupB = $this->postJson('/api/import-settings', ['name' => 'Bグループ', 'product_codes' => ['B-2001']])->assertCreated()->json('id');
         $overlap = $this->postJson('/api/import-settings', ['name' => '共通', 'product_codes' => ['A-1001']])->assertCreated()->json('id');
 
         $first = $this->post('/api/surveys', [
             'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,5,1\n自社倉庫,B-2001-01-M,8,2\n自社倉庫,OUTSIDE,9,0\n")],
-        ])->assertCreated()->assertJsonCount(2, 'data.products');
+        ])->assertCreated()->assertJsonCount(3, 'data.products');
         $this->assertNull($first->json('data.importSettingName'));
-        $this->assertSame(['A-1001', 'B-2001'], collect($first->json('data.products'))->pluck('productCode')->all());
+        $this->assertSame(['A-1001', 'B-2001', 'C-3001'], collect($first->json('data.products'))->pluck('productCode')->all());
         $this->assertSame(4, $first->json('data.products.0.skus.0.stock.bossOwn'));
         $this->assertSame(6, $first->json('data.products.1.skus.0.stock.bossOwn'));
+        // BOSSに載っていないSKUは、在庫0ではなく「データなし」
+        $this->assertNull($first->json('data.products.2.skus.0.stock.bossOwn'));
         $this->assertSame(['setting:'.$groupA, 'setting:'.$overlap], collect($first->json('data.products.0.groups'))->pluck('key')->all());
         $this->assertSame(['setting:'.$groupB], collect($first->json('data.products.1.groups'))->pluck('key')->all());
+        $this->assertSame(['ungrouped'], collect($first->json('data.products.2.groups'))->pluck('key')->all());
+        $this->assertSame(['グループなし'], collect($first->json('data.groups'))->pluck('name')->take(-1)->values()->all());
 
         $second = $this->post('/api/surveys', [
             'import_setting_id' => $groupB,
             'files' => [UploadedFile::fake()->createWithContent('ec.csv', "品番,カラーNo,サイズ,キープ残数\nA1001,01,M,3\nB2001,01,M,7\n")],
-        ])->assertOk()->assertJsonCount(2, 'data.products');
+        ])->assertOk()->assertJsonCount(3, 'data.products');
         $this->assertSame($first->json('data.id'), $second->json('data.id'));
         $this->assertSame(4, $second->json('data.products.0.skus.0.stock.bossOwn'));
         $this->assertSame(6, $second->json('data.products.1.skus.0.stock.bossOwn'));
         $this->assertSame(3, $second->json('data.products.0.skus.0.stock.ecStock'));
         $this->assertSame(7, $second->json('data.products.1.skus.0.stock.ecStock'));
         $this->assertDatabaseCount('surveys', 1);
-        $this->assertDatabaseCount('survey_products', 2);
-        $this->assertDatabaseCount('survey_skus', 2);
+        $this->assertDatabaseCount('survey_products', 3);
+        $this->assertDatabaseCount('survey_skus', 3);
         $this->deleteJson('/api/import-settings/'.$groupB)->assertNoContent();
         $this->getJson('/api/surveys/'.$second->json('data.id'))
             ->assertOk()->assertJsonPath('data.products.1.productCode', 'B-2001')
@@ -301,6 +321,69 @@ class ApiBackendTest extends TestCase
         $this->assertSame([['key' => 'setting:'.$settingId, 'name' => '売上TOP20', 'sortOrder' => 1]], SurveyProduct::query()->sole()->group_memberships);
     }
 
+    public function test_a_sku_missing_from_the_boss_file_is_unknown_but_missing_from_the_free_stock_file_is_zero(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $listedItem = $this->crossWalkerItem();
+        $unlistedItem = $this->crossWalkerItem();
+        $unlistedItem['item_no'] = 'B-2001';
+        $unlistedItem['skus'] = [[
+            'sku_code' => 'B-2001-01-M',
+            'child_asin' => 'B000000003',
+            'status' => 'active',
+            'tq_item_no' => 'B2001',
+            'tq_color_no' => '01',
+            'tq_size' => 'M',
+        ]];
+        $this->crossWalkerItems = [$listedItem, $unlistedItem];
+
+        // BOSSは在庫0のSKUも載せるので、載っていなければ在庫が分からない。フリー在庫はゼロ在庫を出力しないので、載っていなければ0
+        $this->post('/api/surveys', [
+            'files' => [
+                UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,0,0\n"),
+                UploadedFile::fake()->createWithContent('free.csv', "品番,カラーNo,ｻｲｽﾞ,可能在庫数\nA1001,01,M,8\n"),
+            ],
+        ])->assertCreated()
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 0)
+            ->assertJsonPath('data.products.0.skus.0.stock.bossRfc', 0)
+            ->assertJsonPath('data.products.0.skus.0.stock.freeStock', 8)
+            ->assertJsonPath('data.products.1.skus.0.stock.bossOwn', null)
+            ->assertJsonPath('data.products.1.skus.0.stock.bossRfc', null)
+            ->assertJsonPath('data.products.1.skus.0.stock.freeStock', 0)
+            ->assertJsonPath('data.products.1.skus.0.stock.ecStock', null);
+    }
+
+    public function test_rerun_without_a_product_group_rematches_every_active_product(): void
+    {
+        Storage::fake('local');
+        $this->actingAs(User::factory()->create());
+        $surveyId = $this->post('/api/surveys', [
+            'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1001-01-M,5,1\n自社倉庫,B-2001-01-M,8,2\n")],
+        ])->assertCreated()->assertJsonCount(1, 'data.products')->json('data.id');
+        // 取込のあとに CrossWalker へ追加された品番も、品番グループに入れずに再照合の対象になる
+        $addedItem = $this->crossWalkerItem();
+        $addedItem['item_no'] = 'B-2001';
+        $addedItem['skus'] = [[
+            'sku_code' => 'B-2001-01-M',
+            'child_asin' => 'B000000003',
+            'status' => 'active',
+            'tq_item_no' => 'B2001',
+            'tq_color_no' => '01',
+            'tq_size' => 'M',
+        ]];
+        $this->crossWalkerItems[] = $addedItem;
+
+        $this->postJson('/api/surveys/'.$surveyId.'/rerun', [])
+            ->assertOk()
+            ->assertJsonPath('data.id', $surveyId)
+            ->assertJsonPath('data.importSettingName', null)
+            ->assertJsonPath('data.groups', [['key' => 'ungrouped', 'name' => 'グループなし']])
+            ->assertJsonPath('data.products.0.skus.0.stock.bossOwn', 4)
+            ->assertJsonPath('data.products.1.productCode', 'B-2001')
+            ->assertJsonPath('data.products.1.skus.0.stock.bossOwn', 6);
+    }
+
     public function test_survey_groups_merge_a_saved_legacy_group_with_the_current_group_of_the_same_name(): void
     {
         $this->actingAs(User::factory()->create());
@@ -329,11 +412,11 @@ class ApiBackendTest extends TestCase
             ->assertJsonPath('data.products.1.groups', [['key' => 'setting:7', 'name' => '売上TOP20', 'sortOrder' => 2]]);
     }
 
-    public function test_import_can_refresh_more_than_fifty_distinct_products_across_groups(): void
+    public function test_import_fetches_every_page_of_active_crosswalker_products(): void
     {
         Storage::fake('local');
         $this->actingAs(User::factory()->create());
-        $this->crossWalkerItems = collect(range(1, 51))->map(function (int $number): array {
+        $this->crossWalkerItems = collect(range(1, 101))->map(function (int $number): array {
             $code = sprintf('P-%04d', $number);
 
             return [
@@ -353,20 +436,19 @@ class ApiBackendTest extends TestCase
                 'updated_at' => '2026-09-02T00:00:00.000000Z',
             ];
         })->all();
-        $codes = collect($this->crossWalkerItems)->pluck('item_no')->all();
-        $groupA = $this->postJson('/api/import-settings', ['name' => 'Aグループ', 'product_codes' => array_slice($codes, 0, 50)])->assertCreated()->json('id');
-        $this->postJson('/api/import-settings', ['name' => 'Bグループ', 'product_codes' => array_slice($codes, 50)])->assertCreated();
 
+        // 1ページ100件を超える品番も、全ページを取得して調査の対象にする
         $this->post('/api/surveys', [
-            'import_setting_id' => $groupA,
             'files' => [UploadedFile::fake()->createWithContent('boss.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n")],
-        ])->assertCreated()->assertJsonCount(51, 'data.products')
-            ->assertJsonPath('data.products.50.productCode', 'P-0051');
-        $this->assertDatabaseHas('survey_products', ['product_code' => 'P-0051', 'sort_order' => 51]);
-        $lookupRequests = Http::recorded(fn ($request): bool => str_ends_with(parse_url($request->url(), PHP_URL_PATH) ?: '', '/items/lookup'));
-        $this->assertCount(4, $lookupRequests);
-        foreach ($lookupRequests as [$request]) {
-            $this->assertLessThanOrEqual(50, count($request['item_nos']));
+        ])->assertCreated()->assertJsonCount(101, 'data.products')
+            ->assertJsonPath('data.products.100.productCode', 'P-0101');
+        $this->assertDatabaseHas('survey_products', ['product_code' => 'P-0101', 'sort_order' => 101]);
+        $listRequests = Http::recorded(fn ($request): bool => $request->method() === 'GET'
+            && str_ends_with(parse_url($request->url(), PHP_URL_PATH) ?: '', '/items'));
+        $this->assertSame([1, 2], $listRequests->map(fn (array $pair): int => $pair[0]['page'])->all());
+        foreach ($listRequests as [$request]) {
+            $this->assertSame(100, $request['per_page']);
+            $this->assertSame('active', $request['status']);
         }
     }
 

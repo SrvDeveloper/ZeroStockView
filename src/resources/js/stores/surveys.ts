@@ -54,7 +54,7 @@ export const useSurveysStore = defineStore("surveys", {
             this.storeDetail(data.data);
             return data.data;
         },
-        async rerunImport(surveyId: string, importSettingId: string): Promise<Survey> {
+        async rerunImport(surveyId: string, importSettingId: string | null): Promise<Survey> {
             const { data } = await axios.post<{ data: Survey }>(`/api/surveys/${surveyId}/rerun`, {
                 import_setting_id: importSettingId,
             });

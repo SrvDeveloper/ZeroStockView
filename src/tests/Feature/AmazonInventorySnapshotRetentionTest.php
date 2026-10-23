@@ -34,7 +34,7 @@ class AmazonInventorySnapshotRetentionTest extends TestCase
             'services.crosswalker.base_url' => 'https://crosswalker.test/api/v1',
             'services.crosswalker.api_key' => 'test-api-key',
         ]);
-        Http::fake(fn (ClientRequest $request) => Http::response(['data' => in_array('A', $request['item_nos'] ?? [], true) ? [[
+        Http::fake(fn (ClientRequest $request) => Http::response(['data' => $request->method() === 'GET' || in_array('A', $request['item_nos'] ?? [], true) ? [[
             'item_no' => 'A', 'brand' => 'BRAND', 'category' => 'CATEGORY', 'parent_asin' => null, 'status' => 'active',
             'skus' => [
                 ['sku_code' => 'A-1', 'child_asin' => 'BA1', 'status' => 'active', 'tq_item_no' => 'TA', 'tq_color_no' => '01', 'tq_size' => 'M'],

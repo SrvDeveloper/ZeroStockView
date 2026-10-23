@@ -264,6 +264,18 @@ describe("DataImportPage", () => {
         expect(formData.has("amazon_fba")).toBe(false);
     });
 
+    it("imports files and fetches Amazon stock even when there is no product group", async () => {
+        const wrapper = mountPage();
+        useImportSettingsStore().settings = [];
+        await flushPromises();
+
+        // 取込の対象は CrossWalker で有効な全品番なので、品番グループは無くてもよい
+        expect(wrapper.text()).not.toContain("品番グループがありません");
+        expect(wrapper.get('[data-testid="amazon-import-start"]').attributes("disabled")).toBeUndefined();
+        await selectFolder(wrapper, validImportFiles());
+        expect(wrapper.get('[data-testid="run-import"]').attributes("disabled")).toBeUndefined();
+    });
+
     it("can run with one file and lets the user remove it", async () => {
         const wrapper = mountPage();
         await selectFolder(wrapper, [new File([""], "renamed.csv")]);

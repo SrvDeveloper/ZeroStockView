@@ -64,7 +64,7 @@ class ImportSettingController extends Controller
             ->filter(fn (string $productCode): bool => $items->get($productCode)['status'] !== 'active');
         if ($inactiveCodes->isNotEmpty()) {
             throw ValidationException::withMessages([
-                'product_codes' => ['無効な品番は取込対象に設定できません: '.$inactiveCodes->implode(', ')],
+                'product_codes' => ['無効な品番は品番グループに追加できません: '.$inactiveCodes->implode(', ')],
             ]);
         }
 

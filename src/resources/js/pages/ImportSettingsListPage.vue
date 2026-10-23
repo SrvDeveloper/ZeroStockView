@@ -25,7 +25,7 @@ function productCodeSummary(productCodes: string[]): string[] {
     return productCodes.slice(0, 5);
 }
 
-/** 全グループを合わせた取込対象（同じ品番・SKU が複数のグループにあっても 1 件と数える） */
+/** 全グループに入っている品番・SKU（同じ品番・SKU が複数のグループにあっても 1 件と数える） */
 const targetSummary = computed(() => {
     const productCodes = new Set(store.settings.flatMap((setting) => setting.productCodes));
     const skuCodes = new Set(
@@ -55,7 +55,9 @@ async function confirmDelete() {
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div>
                 <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">品番グループ</h1>
-                <p class="mt-1 text-[12.5px] text-ink-2">用途ごとに品番をまとめます。登録された全品番が取込対象です。全{{ store.settings.length }}件。</p>
+                <p class="mt-1 text-[12.5px] text-ink-2"
+                    >用途ごとに品番をまとめ、在庫調査結果の絞り込みと並び順に使います。取込の対象は、グループに関係なくCrossWalkerで有効な全品番です。全{{ store.settings.length }}件。</p
+                >
             </div>
             <BaseButton class="sm:ml-auto" variant="primary" icon="add" @click="router.push({ name: 'import-setting-new' })">新しいグループを作成</BaseButton>
         </div>
@@ -65,10 +67,10 @@ async function confirmDelete() {
                 >グループ <b class="font-mono font-medium text-ink-2">{{ store.settings.length }}</b></span
             >
             <span
-                >取込対象の品番（重複を除く） <b class="font-mono font-medium text-ink-2">{{ targetSummary.productCount }}</b></span
+                >グループに入っている品番（重複を除く） <b class="font-mono font-medium text-ink-2">{{ targetSummary.productCount }}</b></span
             >
             <span
-                >取込対象の SKU <b class="font-mono font-medium text-ink-2">{{ targetSummary.skuCount }}</b></span
+                >グループに入っている SKU <b class="font-mono font-medium text-ink-2">{{ targetSummary.skuCount }}</b></span
             >
         </div>
 

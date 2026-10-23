@@ -392,8 +392,8 @@ class AmazonInventoryImportServiceTest extends TestCase
     {
         $this->target('P-1', 'OLD-SKU', 'B000000001');
         $crossWalker = Mockery::mock(CrossWalkerClient::class);
-        $crossWalker->shouldReceive('refresh')->once()->andReturnUsing(function ($targets): void {
-            $product = $targets->first()->product;
+        $crossWalker->shouldReceive('refreshActiveProducts')->once()->andReturnUsing(function (): void {
+            $product = Product::query()->where('product_code', 'P-1')->sole();
             $product->skus()->delete();
             Sku::factory()->for($product)->create([
                 'sku_code' => 'NEW-SKU',
@@ -480,7 +480,8 @@ class AmazonInventoryImportServiceTest extends TestCase
     private function fakeCrossWalker(int $targetCount, int $times = 1): void
     {
         $client = Mockery::mock(CrossWalkerClient::class);
-        $client->shouldReceive('refresh')->times($times)->withArgs(fn ($targets): bool => $targets->count() === $targetCount);
+        // 同期は行わず、手元の品番（有効な品番）がそのまま CrossWalker の有効な全品番だとみなす
+        $client->shouldReceive('refreshActiveProducts')->times($times)->andReturnUsing(fn () => $this->assertCount($targetCount, Product::surveyTargets()));
         $this->app->instance(CrossWalkerClient::class, $client);
     }
 
