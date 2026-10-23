@@ -344,6 +344,14 @@ function tooltipTop(y: number): number {
 </template>
 
 <style scoped>
+[data-chart-bar]:focus {
+    outline: none;
+}
+
+[data-chart-bar]:focus-visible {
+    fill: rgb(17 22 26 / 0.08);
+}
+
 .chart-tooltip-enter-active {
     transition: opacity 140ms ease-out;
 }
