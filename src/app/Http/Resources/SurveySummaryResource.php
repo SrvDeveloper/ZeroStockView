@@ -55,6 +55,9 @@ class SurveySummaryResource extends JsonResource
             'amazonInventoryStatus' => $amazonInventoryStatus,
             'amazonInventoryImportId' => $usesSpApi && $survey->amazon_inventory_import_id !== null ? (string) $survey->amazon_inventory_import_id : null,
             'amazonBasisAt' => $hasSavedAmazonInventory ? $survey->executed_at->toISOString() : $survey->amazonImport?->basis_at?->toISOString(),
+            // BOSS 在庫の取得方式（report: BOSS のレポート、history: 在庫変動履歴から再現、null: 未取込）と、再現した時点
+            'bossSource' => $survey->boss_source,
+            'bossBasisAt' => $survey->boss_basis_at?->toISOString(),
             'files' => $survey->files->map(fn (SurveyFile $file): array => [
                 'id' => (string) $file->getKey(),
                 'type' => $file->file_type,

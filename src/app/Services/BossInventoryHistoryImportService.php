@@ -151,6 +151,43 @@ class BossInventoryHistoryImportService
         ];
     }
 
+    /**
+     * 再照合した調査の BOSS 在庫を、補完に使った在庫変動履歴のファイルで再現し直す（docs/BOSS在庫の休日補完 BHR-05）。
+     * ファイルの期限が過ぎているか、今の調査で再現できないときは、再照合で引き継いだ値のままにする。
+     *
+     * @return bool 再現し直したか
+     */
+    public function reapply(Survey $survey): bool
+    {
+        $record = $survey->bossInventoryHistory;
+        if ($survey->boss_source !== Survey::BOSS_SOURCE_HISTORY || $record === null || $record->stored_path === null
+            || $record->expires_at?->isPast() !== false || ! Storage::disk($record->disk)->exists($record->stored_path)) {
+            return false;
+        }
+
+        try {
+            $history = $this->parse(new UploadedFile(Storage::disk($record->disk)->path($record->stored_path), $record->original_name, $record->mime_type, null, true));
+
+            return DB::transaction(function () use ($history, $survey): bool {
+                $plan = $this->plan($history, true);
+                $date = $survey->boss_basis_at?->setTimezone(self::TIMEZONE)->toDateString();
+                if ($date === null || ! in_array($date, $plan['fillDates'], true) || $plan['surveys'][$date]?->getKey() !== $survey->getKey()) {
+                    return false;
+                }
+                $this->writeBossStocks($plan['skuRows'][$survey->getKey()] ?? [], $plan['reconstruction']->values[$date]);
+
+                return true;
+            });
+        } catch (ValidationException $exception) {
+            Log::warning('再照合した調査のBOSS在庫を在庫変動履歴で再現し直せなかったため、再照合前の値を残しました。', [
+                'survey_id' => $survey->getKey(),
+                'reason' => Arr::flatten($exception->errors()),
+            ]);
+
+            return false;
+        }
+    }
+
     /** 読込の検証メッセージは、アップロードの項目（file）に出す */
     private function parse(UploadedFile $file): BossInventoryHistory
     {

@@ -98,6 +98,9 @@ export interface SurveyBase {
     amazonInventoryStatus?: "pending" | "partial" | "complete" | "legacy_file" | "unclassified";
     amazonInventoryImportId?: string | null;
     amazonBasisAt?: string | null;
+    /** BOSS 在庫の取得方式。report: BOSS のレポート、history: 在庫変動履歴から再現（bossBasisAt の時点）、null: 未取込 */
+    bossSource?: "report" | "history" | null;
+    bossBasisAt?: string | null;
     files: SurveyFile[];
 }
 
