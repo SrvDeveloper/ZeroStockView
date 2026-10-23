@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InventoryTrendDailySource, InventoryTrendSeries, InventoryTrendWarehouseTotal } from "@/api/inventoryTrends";
-import { changeRate, formatRate, productMetrics, weekAgoDate } from "@/utils/inventoryTrendMetrics";
+import { changeRate, formatRate, formatStreakDays, productMetrics, stockoutStreak, weekAgoDate } from "@/utils/inventoryTrendMetrics";
 
 function source(date: string): InventoryTrendDailySource {
     return { date, source: "survey", basisAt: `${date}T10:00:00+09:00`, amazonInventoryStatus: "complete" };
@@ -82,5 +82,31 @@ describe("changeRate and formatRate", () => {
         expect(formatRate(changeRate(5, 5))).toBe("±0.0%");
         expect(formatRate(changeRate(null, 5))).toBe("—");
         expect(formatRate(changeRate(5, 0))).toBe("—");
+    });
+});
+
+describe("stockoutStreak", () => {
+    it("does not break on unconfirmed days or days without a survey after the stockout started", () => {
+        const streak = stockoutStreak(sku("A", { "2026-10-16": 4, "2026-10-17": 0, "2026-10-20": null, "2026-10-23": 0 }), "2026-10-23");
+        expect(streak).toEqual({ days: 7, startDate: "2026-10-17", lastInStockDate: "2026-10-16", previousQuantity: 4, openEnded: false });
+        expect(formatStreakDays(streak!)).toBe("7日目");
+    });
+
+    it("counts from the first confirmed stockout of the period when there is no in-stock day", () => {
+        const streak = stockoutStreak(sku("A", { "2026-10-18": null, "2026-10-20": 0, "2026-10-23": 0 }), "2026-10-23");
+        expect(streak).toEqual({ days: 4, startDate: "2026-10-20", lastInStockDate: null, previousQuantity: null, openEnded: true });
+        expect(formatStreakDays(streak!)).toBe("4日目以上");
+    });
+
+    it("starts on the first confirmed stockout, not on days without a survey or unconfirmed days after the last in-stock day", () => {
+        // 10/20 に在庫 1、10/21 は調査なし、10/22 は取込待ち、10/23 に欠品
+        const streak = stockoutStreak(sku("A", { "2026-10-19": 2, "2026-10-20": 1, "2026-10-22": null, "2026-10-23": 0 }), "2026-10-23");
+        expect(streak).toEqual({ days: 1, startDate: "2026-10-23", lastInStockDate: "2026-10-20", previousQuantity: 1, openEnded: false });
+    });
+
+    it("returns null unless the SKU is a confirmed zero on the latest survey", () => {
+        expect(stockoutStreak(sku("A", { "2026-10-22": 0, "2026-10-23": 2 }), "2026-10-23")).toBeNull();
+        expect(stockoutStreak(sku("A", { "2026-10-22": 0, "2026-10-23": null }), "2026-10-23")).toBeNull();
+        expect(stockoutStreak(sku("A", { "2026-10-22": 0 }), "2026-10-23")).toBeNull();
     });
 });

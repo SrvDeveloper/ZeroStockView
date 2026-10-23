@@ -119,3 +119,45 @@ export function latestSurveyLamp(survey: Pick<InventoryTrendDailySource, "date" 
     if (survey.amazonInventoryStatus === "pending") return { state: "warn", label, detail: "Amazon 取込待ち" };
     return { state: "ok", label, detail: "" };
 }
+
+/** 最新の調査日まで続いている SKU の欠品 */
+export interface StockoutStreak {
+    /** 欠品が始まった日から最新の調査日までの日数（その間の調査のない日・未確定の日も数える） */
+    days: number;
+    /** 欠品が始まった日。最後に在庫があった日の後で、最初に欠品（確定した 0）と確定した日 */
+    startDate: string;
+    /** 欠品の前に最後に在庫があった日とその在庫。期間内に在庫のあった日がなければ null */
+    lastInStockDate: string | null;
+    previousQuantity: number | null;
+    /** 期間内に在庫のあった日がなく、期間より前から続いているかもしれないとき true（「◯日目以上」） */
+    openEnded: boolean;
+}
+
+function daysBetween(from: string, to: string): number {
+    return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * 一覧の集計 API と同じ規則で、最新の調査日に欠品（確定した 0）している SKU の連続欠品を数える。欠品していなければ null。
+ * 欠品は、最後に在庫があった日の後で最初に欠品と確定した日から始まったとみなす。その前の調査のない日・未確定の日は数えず、
+ * 欠品が始まったあとの調査のない日・未確定の日では途切れない。
+ */
+export function stockoutStreak(series: InventoryTrendSeries, latestDate: string): StockoutStreak | null {
+    const surveyed = series.points.filter((point) => point.source !== null && point.date <= latestDate);
+    if (surveyed.find((point) => point.date === latestDate)?.quantity !== 0) return null;
+
+    const lastInStock = surveyed.findLast((point) => point.quantity !== null && point.quantity > 0) ?? null;
+    const startDate = surveyed.find((point) => point.quantity === 0 && (!lastInStock || point.date > lastInStock.date))!.date;
+    return {
+        days: daysBetween(startDate, latestDate) + 1,
+        startDate,
+        lastInStockDate: lastInStock?.date ?? null,
+        previousQuantity: lastInStock?.quantity ?? null,
+        openEnded: lastInStock === null,
+    };
+}
+
+/** 例: 26日目、期間より前から続いているかもしれないときは 26日目以上 */
+export function formatStreakDays(streak: StockoutStreak): string {
+    return `${streak.days}日目${streak.openEnded ? "以上" : ""}`;
+}
