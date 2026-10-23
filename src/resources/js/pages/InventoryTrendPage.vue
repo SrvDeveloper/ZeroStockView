@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import {
     exportInventoryTrend,
     fetchInventoryTrend,
@@ -17,12 +18,13 @@ import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
-import BaseInput from "@/components/ui/BaseInput.vue";
-import BaseModal from "@/components/ui/BaseModal.vue";
 import BaseSelect from "@/components/ui/BaseSelect.vue";
 import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import { warehousesOfScope } from "@/constants/warehouses";
 import type { SelectOption } from "@/types";
+import { parseInventoryTrendQuery, replaceInventoryTrendQuery, type InventoryTrendQuery, type PeriodPreset } from "@/utils/inventoryTrendQuery";
+
+const props = defineProps<{ productCode: string }>();
 
 interface TrendSeries {
     skuCode: string;
@@ -32,7 +34,6 @@ interface TrendSeries {
 }
 
 type TrendView = "sku" | "product";
-type PeriodPreset = "14" | "30" | "90" | "custom";
 
 interface StockoutSeries {
     label: string;
@@ -58,10 +59,12 @@ interface SkuCard {
 
 /** 欠品SKU数は日付の下に黄色の四角と件数で出す。品番全体の棒は倉庫色で積み上げる */
 const STOCKOUT_COLOR = "#f5c400";
+const route = useRoute();
+const router = useRouter();
 const products = ref<InventoryTrendProduct[]>([]);
-const availableBrands = ref<string[]>([]);
+const productsLoaded = ref(false);
 const availableRange = ref<{ from: string; to: string } | null>(null);
-const productCode = ref("");
+const productCode = computed(() => props.productCode);
 const inventoryScope = ref<InventoryScope>("mallTotal");
 const trendView = ref<TrendView>("product");
 const MAXIMUM_PERIOD_DAYS = 365;
@@ -73,10 +76,6 @@ const dailySources = ref<InventoryTrendDailySource[]>([]);
 const warehouseTotals = ref<InventoryTrendWarehouseTotal[]>([]);
 /** 表示中のデータを取得したときの在庫区分（選択を変えてから応答が届くまでの食い違いを防ぐ） */
 const loadedScope = ref<InventoryScope>("mallTotal");
-const productPickerOpen = ref(false);
-const pendingProductCode = ref("");
-const productBrandFilter = ref<string | null>(null);
-const productQuery = ref("");
 const productsLoading = ref(false);
 const trendLoading = ref(false);
 const productsError = ref("");
@@ -88,13 +87,8 @@ const exportMenuRef = ref<HTMLElement | null>(null);
 let trendRequestId = 0;
 
 const selectedProduct = computed(() => products.value.find((product) => product.productCode === productCode.value));
-const brandOptions = computed<SelectOption[]>(() => availableBrands.value.map((brand) => ({ value: brand, label: brand })));
-const filteredProductOptions = computed(() => {
-    const query = productQuery.value.trim().toLowerCase();
-    return products.value
-        .filter((product) => !productBrandFilter.value || product.brand === productBrandFilter.value)
-        .filter((product) => !query || product.productCode.toLowerCase().includes(query) || product.brand.toLowerCase().includes(query) || product.category.toLowerCase().includes(query));
-});
+/** 品番の一覧を読み込めたのに、表示する品番の調査がない（存在しない品番を URL で開いたときなど） */
+const productMissing = computed(() => productsLoaded.value && !selectedProduct.value);
 const periodOptions: { value: PeriodPreset; label: string }[] = [
     { value: "14", label: "2週間" },
     { value: "30", label: "1か月" },
@@ -247,21 +241,11 @@ async function loadProducts() {
     try {
         const response = await fetchInventoryTrendProducts();
         products.value = response.data;
-        availableBrands.value = response.brands;
         availableRange.value = response.dateRange;
+        applyQuery(parseInventoryTrendQuery(route.query));
+        productsLoaded.value = true;
 
-        if (response.dateRange) {
-            targetEnd.value = response.dateRange.to;
-            const candidateStart = addDays(response.dateRange.to, -29);
-            targetStart.value = candidateStart < response.dateRange.from ? response.dateRange.from : candidateStart;
-            activePreset.value = selectedDates.value.length === 30 ? "30" : "custom";
-        }
-
-        if (products.value.length > 0) {
-            productCode.value = products.value[0]!.productCode;
-            pendingProductCode.value = productCode.value;
-            await loadTrend();
-        }
+        if (selectedProduct.value) await loadTrend();
     } catch {
         productsError.value = "対象品番の読み込みに失敗しました。時間をおいて再度お試しください。";
     } finally {
@@ -297,23 +281,60 @@ async function loadTrend() {
     }
 }
 
-function openProductPicker() {
-    pendingProductCode.value = productCode.value;
-    productBrandFilter.value = null;
-    productQuery.value = "";
-    productPickerOpen.value = true;
+/** URL のクエリの在庫区分と期間を画面に入れる。期間指定でないときは、最新の調査日までの期間にする */
+function applyQuery(query: InventoryTrendQuery) {
+    inventoryScope.value = query.scope;
+    const range = availableRange.value;
+    if (!range) return;
+
+    if (query.period === "custom" && query.from && query.to) {
+        targetStart.value = query.from < range.from ? range.from : query.from;
+        targetEnd.value = query.to > range.to ? range.to : query.to;
+        if (targetStart.value > targetEnd.value) targetStart.value = targetEnd.value;
+        const minimumStart = addDays(targetEnd.value, -(MAXIMUM_PERIOD_DAYS - 1));
+        if (targetStart.value < minimumStart) targetStart.value = minimumStart;
+        activePreset.value = "custom";
+        return;
+    }
+
+    const days = query.period === "custom" ? 30 : Number(query.period);
+    targetEnd.value = range.to;
+    const candidateStart = addDays(range.to, -(days - 1));
+    targetStart.value = candidateStart < range.from ? range.from : candidateStart;
+    activePreset.value = query.period === "custom" ? "30" : query.period;
 }
 
-function closeProductPicker() {
-    productPickerOpen.value = false;
+function currentQuery(): InventoryTrendQuery {
+    return {
+        scope: inventoryScope.value,
+        period: activePreset.value,
+        from: activePreset.value === "custom" ? targetStart.value : null,
+        to: activePreset.value === "custom" ? targetEnd.value : null,
+    };
 }
 
-function applyProductSelection() {
-    const changed = productCode.value !== pendingProductCode.value;
-    productCode.value = pendingProductCode.value;
-    productPickerOpen.value = false;
-    if (changed) void loadTrend();
+/** 在庫区分と期間を URL のクエリに残す（一覧と行き来しても、再読み込みしても保つ） */
+function syncQuery() {
+    void router.replace({ query: replaceInventoryTrendQuery(route.query, currentQuery()) });
 }
+
+function backToList() {
+    void router.push({ name: "inventory-trends", query: replaceInventoryTrendQuery({}, currentQuery()) });
+}
+
+watch(
+    () => props.productCode,
+    () => {
+        if (!productsLoaded.value) return;
+        if (selectedProduct.value) {
+            void loadTrend();
+            return;
+        }
+        rawSeries.value = [];
+        dailySources.value = [];
+        warehouseTotals.value = [];
+    },
+);
 
 function addDays(date: string, amount: number): string {
     const value = new Date(`${date}T00:00:00Z`);
@@ -353,17 +374,21 @@ function selectPreset(preset: "14" | "30" | "90") {
     const days = Number(preset);
     const start = addDays(targetEnd.value, -(days - 1));
     targetStart.value = availableRange.value && start < availableRange.value.from ? availableRange.value.from : start;
+    syncQuery();
     void loadTrend();
 }
 
 function updatePeriodPreset(value: PeriodPreset) {
-    if (value === "custom") activePreset.value = "custom";
-    else selectPreset(value);
+    if (value === "custom") {
+        activePreset.value = "custom";
+        syncQuery();
+    } else selectPreset(value);
 }
 
 function updateInventoryScope(value: string | number | null) {
     if (value !== "mallTotal" && value !== "amazon" && value !== "boss" && value !== "free" && value !== "stock" && value !== "grandTotal") return;
     inventoryScope.value = value;
+    syncQuery();
     void loadTrend();
 }
 
@@ -381,6 +406,7 @@ function updateTargetStart(event: Event) {
         if (targetEnd.value > maximumEnd) targetEnd.value = maximumEnd;
     }
     activePreset.value = "custom";
+    syncQuery();
     void loadTrend();
 }
 
@@ -398,6 +424,7 @@ function updateTargetEnd(event: Event) {
         if (targetStart.value < minimumStart) targetStart.value = minimumStart;
     }
     activePreset.value = "custom";
+    syncQuery();
     void loadTrend();
 }
 
@@ -429,8 +456,12 @@ async function exportCsv(scope: "selected" | "all") {
 
 <template>
     <div class="flex flex-col gap-4">
+        <BaseButton data-testid="back-to-list" class="self-start" variant="ghost" size="sm" icon="chevron_left" @click="backToList">品番一覧に戻る</BaseButton>
         <div class="flex flex-wrap items-center justify-between gap-3">
-            <h1 class="text-[22px] leading-tight font-extrabold tracking-[0.04em]">在庫推移</h1>
+            <div class="min-w-0">
+                <h1 class="font-mono text-[22px] leading-tight font-semibold uppercase">{{ productCode }}</h1>
+                <p v-if="selectedProduct" class="mt-1 text-[12.5px] text-ink-2">{{ selectedProduct.brand }} ・ {{ selectedProduct.category }} ・ {{ selectedProduct.skuCount }} SKU</p>
+            </div>
             <div ref="exportMenuRef" class="relative">
                 <BaseButton
                     data-testid="inventory-trend-export-button"
@@ -480,21 +511,12 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
         </BaseAlert>
 
-        <BaseCard>
-            <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto_minmax(0,1.2fr)] lg:items-end">
-                <div class="min-w-0">
-                    <span class="mb-1 block text-[11px] font-medium text-ink-2">対象品番</span>
-                    <div class="flex gap-1.5">
-                        <div class="flex h-8 min-w-0 flex-1 items-center rounded-control border border-line-strong bg-surface px-2.5 text-[12px] shadow-field" data-testid="selected-product">
-                            <span v-if="selectedProduct" class="min-w-0 truncate">
-                                <span class="font-mono font-semibold text-ink uppercase">{{ selectedProduct.productCode }}</span>
-                                <span class="text-muted"> ・ {{ selectedProduct.brand }} ・ {{ selectedProduct.category }}</span>
-                            </span>
-                            <span v-else class="text-muted">{{ productsLoading ? "読み込み中..." : "対象品番がありません" }}</span>
-                        </div>
-                        <BaseButton data-testid="product-picker-button" aria-haspopup="dialog" :disabled="productsLoading || !selectedProduct" @click="openProductPicker">変更</BaseButton>
-                    </div>
-                </div>
+        <BaseEmpty v-if="productMissing" icon="search_off" title="この品番の在庫推移はありません" description="品番一覧から、調査のある品番を選んでください。">
+            <BaseButton variant="primary" icon="chevron_left" @click="backToList">品番一覧に戻る</BaseButton>
+        </BaseEmpty>
+
+        <BaseCard v-if="!productMissing">
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.2fr)] lg:items-end">
                 <BaseSelect
                     :model-value="inventoryScope"
                     data-testid="inventory-scope-select"
@@ -541,49 +563,7 @@ async function exportCsv(scope: "selected" | "all") {
             </div>
         </BaseCard>
 
-        <BaseModal :open="productPickerOpen" title="対象品番を選択" description="ブランドやキーワードで対象品番を絞り込めます。" width="lg" @close="closeProductPicker">
-            <div class="flex flex-col gap-4">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-[200px_minmax(0,1fr)]">
-                    <BaseSelect v-model="productBrandFilter" data-testid="product-brand-filter" :options="brandOptions" label="ブランド" placeholder="すべてのブランド" />
-                    <BaseInput v-model="productQuery" label="検索" placeholder="品番・ブランド・カテゴリを入力" clearable clear-label="品番検索をクリア" />
-                </div>
-
-                <div class="flex items-center justify-between border-b border-line-2 pb-2 text-[11px] text-muted">
-                    <span>候補一覧</span>
-                    <span>{{ filteredProductOptions.length }}件</span>
-                </div>
-
-                <div v-if="filteredProductOptions.length > 0" class="max-h-72 space-y-2 overflow-y-auto pr-1">
-                    <button
-                        v-for="product in filteredProductOptions"
-                        :key="product.productCode"
-                        type="button"
-                        :data-product-code="product.productCode"
-                        class="flex w-full items-center justify-between gap-4 rounded-card border px-3.5 py-2.5 text-left transition-colors"
-                        :class="pendingProductCode === product.productCode ? 'border-ink bg-surface-2 ring-1 ring-ink/20' : 'border-line bg-surface hover:border-line-stronger hover:bg-surface-2'"
-                        :aria-pressed="pendingProductCode === product.productCode"
-                        @click="pendingProductCode = product.productCode"
-                    >
-                        <span class="min-w-0">
-                            <span class="block font-mono font-semibold text-ink uppercase">{{ product.productCode }}</span>
-                            <span class="mt-1 block text-[11px] text-muted">{{ product.brand }} ／ {{ product.category }} ／ {{ product.skuCount }} SKU</span>
-                        </span>
-                        <AppIcon v-if="pendingProductCode === product.productCode" name="check_circle" :size="22" filled class="shrink-0 text-ink" />
-                    </button>
-                </div>
-                <div v-else class="rounded-card border border-dashed border-line-stronger py-10 text-center">
-                    <AppIcon name="search_off" :size="28" class="mx-auto text-faint" />
-                    <p class="mt-2 text-[12.5px] text-muted">条件に一致する品番がありません</p>
-                </div>
-            </div>
-
-            <template #footer>
-                <BaseButton variant="secondary" @click="closeProductPicker">キャンセル</BaseButton>
-                <BaseButton data-testid="apply-product-selection" variant="primary" :disabled="!pendingProductCode" @click="applyProductSelection">この品番を表示</BaseButton>
-            </template>
-        </BaseModal>
-
-        <BaseCard :title="chartTitle" :description="chartDescription">
+        <BaseCard v-if="!productMissing" :title="chartTitle" :description="chartDescription">
             <template #actions>
                 <BaseButton data-testid="refresh-trend" size="sm" variant="ghost" icon="refresh" :loading="trendLoading" @click="() => loadTrend()">再読込</BaseButton>
                 <div class="inline-flex gap-0.5 rounded-control bg-tint p-0.5" role="group" aria-label="在庫推移の確認単位">
@@ -638,7 +618,9 @@ async function exportCsv(scope: "selected" | "all") {
                     <BaseButton size="sm" variant="secondary" icon="refresh" @click="() => loadTrend()">再試行</BaseButton>
                 </div>
             </BaseAlert>
-            <BaseEmpty v-else-if="rawSeries.length === 0" icon="show_chart" title="対象期間の在庫データがありません" description="対象品番または対象期間を変更してください。" />
+            <BaseEmpty v-else-if="rawSeries.length === 0" icon="show_chart" title="対象期間の在庫データがありません" description="対象期間を変更するか、品番一覧から別の品番を選んでください。">
+                <BaseButton variant="secondary" icon="chevron_left" @click="backToList">品番一覧に戻る</BaseButton>
+            </BaseEmpty>
             <div v-else-if="trendView === 'sku'" data-testid="sku-chart-grid" class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,230px),1fr))] gap-3">
                 <article
                     v-for="sku in skuCards"

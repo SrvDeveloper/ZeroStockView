@@ -33,6 +33,12 @@ describe("navigation", () => {
 
         expect(isNavItemActive(history, "survey-result")).toBe(true);
         expect(isNavItemActive(groups, "import-setting-edit")).toBe(true);
+        expect(
+            isNavItemActive(
+                NAV_ITEMS.find((item) => item.name === "inventory-trends")!,
+                "inventory-trend",
+            ),
+        ).toBe(true);
         expect(isNavItemActive(groups, "survey-result")).toBe(false);
         expect(isNavItemActive(history, undefined)).toBe(false);
     });
@@ -105,6 +111,13 @@ describe("AppTopBar", () => {
         const wrapper = mount(AppTopBar, { props: { menuOpen: false }, global: { stubs: { RouterLink: RouterLinkStub } } });
 
         expect(wrapper.get("[data-breadcrumb]").text()).toBe("設定/品番グループ/秋冬アウター");
+    });
+
+    it("adds the product code on the inventory trend detail screen", () => {
+        setRoute("inventory-trend", ["在庫推移"], { productCode: "ZS-2408-01" });
+        const wrapper = mount(AppTopBar, { props: { menuOpen: false }, global: { stubs: { RouterLink: RouterLinkStub } } });
+
+        expect(wrapper.get("[data-breadcrumb]").text()).toBe("在庫推移/ZS-2408-01");
     });
 
     it.each(["admin", "editor", "viewer"] as UserRole[])("keeps the account menu for %s", async (role) => {

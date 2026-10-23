@@ -8,7 +8,7 @@ declare module "vue-router" {
     interface RouteMeta {
         public?: boolean;
         roles?: readonly UserRole[];
-        /** 上部バーに出す現在地。調査結果と品番グループの編集は、画面側で末尾に名前を足す */
+        /** 上部バーに出す現在地。調査結果・品番グループの編集・在庫推移の詳細は、画面側で末尾に名前を足す */
         breadcrumb?: string[];
     }
 }
@@ -64,8 +64,15 @@ const router = createRouter({
         {
             path: "/inventory-trends",
             name: "inventory-trends",
+            component: () => import("@/pages/InventoryTrendListPage.vue"),
+            meta: { roles: ALL_ROLES, breadcrumb: ["在庫推移"] },
+        },
+        {
+            path: "/inventory-trends/:productCode",
+            name: "inventory-trend",
             component: () => import("@/pages/InventoryTrendPage.vue"),
             meta: { roles: ALL_ROLES, breadcrumb: ["在庫推移"] },
+            props: true,
         },
         {
             path: "/surveys/:id",

@@ -36,6 +36,9 @@ const breadcrumb = computed<string[]>(() => {
         const section = findManualSection(String(route.params.section ?? ""));
         if (section) trail.push(section.shortTitle);
     }
+    if (route.name === "inventory-trend") {
+        trail.push(String(route.params.productCode ?? ""));
+    }
     if (route.name === "import-setting-edit") {
         const setting = importSettings.settings.find((item) => item.id === String(route.params.id));
         trail.push(setting?.name ?? "編集");
