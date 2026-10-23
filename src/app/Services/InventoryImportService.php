@@ -170,6 +170,8 @@ class InventoryImportService
                     ])->all();
                     if (isset($allFiles['boss'])) {
                         $this->applyBoss($stocks, $skuLookup, $allFiles['boss']);
+                        // BOSS のレポートの値にする（在庫変動履歴から再現した日でも、レポートで上書きする）
+                        $survey->forceFill(['boss_source' => Survey::BOSS_SOURCE_REPORT, 'boss_basis_at' => null, 'boss_inventory_history_id' => null])->save();
                     }
                     if (isset($allFiles['ec_stock'])) {
                         $this->applyTq($stocks, $tqLookup, $allFiles['ec_stock'], 'キープ残数', 'ec_stock', true);

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['executed_at', 'survey_date', 'import_setting_name', 'includes_amazon_inventory', 'amazon_source', 'amazon_inventory_import_id'])]
+#[Fillable(['executed_at', 'survey_date', 'import_setting_name', 'includes_amazon_inventory', 'amazon_source', 'amazon_inventory_import_id', 'boss_source', 'boss_basis_at', 'boss_inventory_history_id'])]
 class Survey extends Model
 {
     /** @use HasFactory<SurveyFactory> */
@@ -18,6 +18,12 @@ class Survey extends Model
     public const AMAZON_SOURCE_LEGACY_FILE = 'legacy_file';
 
     public const AMAZON_SOURCE_SP_API = 'sp_api';
+
+    /** BOSS 在庫を、BOSS のレポート（倉庫毎の在庫数レポート）から取り込んだ */
+    public const BOSS_SOURCE_REPORT = 'report';
+
+    /** BOSS 在庫を、在庫変動履歴から再現した（boss_basis_at の時点。docs/BOSS在庫の休日補完） */
+    public const BOSS_SOURCE_HISTORY = 'history';
 
     /** @return HasMany<SurveyProduct, $this> */
     public function products(): HasMany
@@ -35,6 +41,12 @@ class Survey extends Model
     public function amazonImport(): BelongsTo
     {
         return $this->belongsTo(AmazonInventoryImport::class, 'amazon_inventory_import_id');
+    }
+
+    /** @return BelongsTo<BossInventoryHistory, $this> BOSS 在庫を再現した在庫変動履歴 */
+    public function bossInventoryHistory(): BelongsTo
+    {
+        return $this->belongsTo(BossInventoryHistory::class);
     }
 
     /**
@@ -111,6 +123,7 @@ class Survey extends Model
         return [
             'executed_at' => 'datetime',
             'includes_amazon_inventory' => 'boolean',
+            'boss_basis_at' => 'datetime',
         ];
     }
 }
