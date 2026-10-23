@@ -73,6 +73,49 @@ class InventoryTrendApiTest extends TestCase
         }
     }
 
+    public function test_inventory_trend_product_includes_the_latest_groups_and_sku_color_size_counts(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        Product::factory()->create(['product_code' => 'B-2002']);
+        $older = Survey::factory()->create(['executed_at' => '2026-09-27 10:00:00', 'import_setting_name' => null]);
+        SurveyProduct::factory()->for($older)->create([
+            'product_code' => 'A-1001',
+            'group_memberships' => [['key' => 'setting:9', 'name' => '旧グループ', 'sortOrder' => 1]],
+        ]);
+        $latest = Survey::factory()->create(['executed_at' => '2026-09-28 10:00:00', 'import_setting_name' => null]);
+        $grouped = SurveyProduct::factory()->for($latest)->create([
+            'product_code' => 'A-1001',
+            'sort_order' => 1,
+            'group_memberships' => [
+                ['key' => 'setting:1', 'name' => '売上TOP20', 'sortOrder' => 1],
+                ['key' => 'setting:5', 'name' => '秋冬新作', 'sortOrder' => 1],
+            ],
+        ]);
+        foreach ([['01', 'S'], ['01', 'M'], ['02', 'S'], ['02', 'M'], ['03', 'M']] as $order => [$color, $size]) {
+            SurveySku::factory()->for($grouped, 'product')->create(['sku_code' => "A-1001-{$color}-{$size}", 'tq_color_no' => $color, 'tq_size' => $size, 'sort_order' => $order + 1]);
+        }
+        $ungrouped = SurveyProduct::factory()->for($latest)->create(['product_code' => 'B-2002', 'sort_order' => 2, 'group_memberships' => []]);
+        SurveySku::factory()->for($ungrouped, 'product')->create(['sku_code' => 'B-2002-F', 'tq_color_no' => '01', 'tq_size' => '', 'sort_order' => 1]);
+
+        $this->getJson('/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-28&scope=mallTotal')
+            ->assertOk()
+            ->assertJsonPath('data.product.groups', [
+                ['key' => 'setting:1', 'name' => '売上TOP20'],
+                ['key' => 'setting:5', 'name' => '秋冬新作'],
+            ])
+            ->assertJsonPath('data.product.skuCount', 5)
+            ->assertJsonPath('data.product.colorCount', 3)
+            ->assertJsonPath('data.product.sizeCount', 2);
+
+        $this->getJson('/api/inventory-trends?product_code=B-2002&from=2026-09-27&to=2026-09-28&scope=mallTotal')
+            ->assertOk()
+            ->assertJsonPath('data.product.groups', [['key' => 'ungrouped', 'name' => 'グループなし']])
+            ->assertJsonPath('data.product.skuCount', 1)
+            ->assertJsonPath('data.product.colorCount', 1)
+            ->assertJsonPath('data.product.sizeCount', 0);
+    }
+
     public function test_inventory_trends_prefer_the_newest_result_when_inventory_basis_times_match(): void
     {
         $this->actingAs(User::factory()->create());

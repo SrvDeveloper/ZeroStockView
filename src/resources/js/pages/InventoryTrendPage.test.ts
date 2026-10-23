@@ -1,8 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InventoryScope, InventoryTrendData, InventoryTrendProductList } from "@/api/inventoryTrends";
 import { warehousesOfScope } from "@/constants/warehouses";
 import InventoryTrendPage from "@/pages/InventoryTrendPage.vue";
+import { useInventoryTrendListStore } from "@/stores/inventoryTrendList";
 
 const apiMocks = vi.hoisted(() => ({
     fetchInventoryTrendProducts: vi.fn(),
@@ -39,7 +41,8 @@ function datesBetween(from: string, to: string): string[] {
 }
 
 function trendResponse(params: { productCode: string; from: string; to: string; scope: InventoryScope }): InventoryTrendData {
-    const product = productsResponse.data.find((item) => item.productCode === params.productCode)!;
+    const { productCode, brand, category, skuCount } = productsResponse.data.find((item) => item.productCode === params.productCode)!;
+    const product = { productCode, brand, category, skuCount, groups: [{ key: "ungrouped", name: "グループなし" }], colorCount: 2, sizeCount: 3 };
     const skuCodes = params.productCode === "ZS-2501-03" ? ["ZS-2501-03-NT-F", "ZS-2501-03-BK-F", "ZS-2501-03-KH-F"] : ["ZS-2408-01-NV-S", "ZS-2408-01-NV-M", "ZS-2408-01-WH-M", "ZS-2408-01-WH-L"];
     const dates = datesBetween(params.from, params.to);
 
@@ -83,10 +86,6 @@ function withDailyTotals(response: InventoryTrendData): InventoryTrendData {
     return { ...response, dailySources: response.dailySources.length > 0 ? response.dailySources : dailySources, warehouseTotals };
 }
 
-async function openExportMenu(wrapper: ReturnType<typeof mountPage>) {
-    await wrapper.get('[data-testid="inventory-trend-export-button"]').trigger("click");
-}
-
 function mountPage(buildTrend: typeof trendResponse = trendResponse, productCode = "ZS-2408-01") {
     apiMocks.fetchInventoryTrendProducts.mockResolvedValue(productsResponse);
     apiMocks.fetchInventoryTrend.mockImplementation((params) => Promise.resolve(withDailyTotals(buildTrend(params))));
@@ -96,6 +95,7 @@ function mountPage(buildTrend: typeof trendResponse = trendResponse, productCode
 
 describe("InventoryTrendPage", () => {
     beforeEach(() => {
+        setActivePinia(createPinia());
         vi.restoreAllMocks();
         vi.clearAllMocks();
         apiMocks.exportInventoryTrend.mockResolvedValue(new Blob(["csv"]));
@@ -107,10 +107,69 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
 
         expect(wrapper.get("h1").text()).toBe("ZS-2408-01");
-        expect(wrapper.text()).toContain("NORTH HARBOR ・ トップス ・ 4 SKU");
+        expect(wrapper.get('[data-testid="product-detail"]').text()).toBe("NORTH HARBOR · トップス · 4 SKU（2カラー × 3サイズ）");
+        expect(wrapper.findAll("[data-product-group]").map((chip) => chip.text())).toEqual(["グループなし"]);
         expect(wrapper.find('[data-testid="product-picker-button"]').exists()).toBe(false);
         expect(wrapper.find('[data-testid="selected-product"]').exists()).toBe(false);
         expect(apiMocks.fetchInventoryTrend).toHaveBeenCalledWith({ productCode: "ZS-2408-01", from: "2026-08-30", to: "2026-09-28", scope: "mallTotal" });
+    });
+
+    it("shows the latest survey and the four product metrics", async () => {
+        const wrapper = mountPage();
+        await flushPromises();
+
+        // 最新日（9/28）は各SKUが 0。7日前（9/21）は 32+37+42+47。期間の欠品は 9/28 の 4 SKU
+        expect(wrapper.get('[data-testid="latest-survey-status"]').text()).toContain("最新の調査 9/28（月）");
+        const card = (metric: string) => wrapper.get(`[data-metric="${metric}"]`).text();
+        expect(card("total")).toContain("在庫総数（9/28（月））");
+        expect(card("total")).toContain("0点");
+        expect(card("total")).toContain("前週比 ▼ 100.0%（158点から）");
+        expect(card("average")).toContain("確定した 30日の平均");
+        expect(card("stockout")).toContain("欠品SKU（9/28（月））");
+        expect(card("stockout")).toContain("4/ 4");
+        expect(card("stockout")).toContain("1週間前は 0 SKU");
+        expect(card("stockout-days")).toContain("4SKU・日");
+        expect(card("stockout-days")).toContain("欠品したSKU 4件");
+    });
+
+    it("shows a dash for the totals when every day has an unconfirmed warehouse", async () => {
+        const wrapper = mountPage((params) => {
+            const response = trendResponse(params);
+            response.series[0]!.points.forEach((point) => (point.quantity = null));
+            return response;
+        });
+        await flushPromises();
+
+        expect(wrapper.get('[data-metric="total"]').text()).toContain("—");
+        expect(wrapper.get('[data-metric="total"]').text()).toContain("未確定の倉庫があります");
+        expect(wrapper.get('[data-metric="average"]').text()).toContain("未確定の倉庫があります");
+        expect(wrapper.get('[data-metric="stockout"]').text()).toContain("3/ 4");
+    });
+
+    it("moves to the previous and next product of the list it was opened from, keeping the scope and period", async () => {
+        routerMocks.route.query = { scope: "boss", period: "14", focus: "stockout" };
+        useInventoryTrendListStore().remember(["ZS-2501-03", "ZS-2408-01", "ZS-2411-07"], { focus: "stockout" });
+        const wrapper = mountPage();
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="previous-product"]').text()).toContain("ZS-2501-03");
+        await wrapper.get('[data-testid="next-product"]').trigger("click");
+        expect(routerMocks.push).toHaveBeenLastCalledWith({ name: "inventory-trend", params: { productCode: "ZS-2411-07" }, query: { scope: "boss", period: "14", focus: "stockout" } });
+        await wrapper.get('[data-testid="previous-product"]').trigger("click");
+        expect(routerMocks.push).toHaveBeenLastCalledWith({ name: "inventory-trend", params: { productCode: "ZS-2501-03" }, query: { scope: "boss", period: "14", focus: "stockout" } });
+
+        await wrapper.setProps({ productCode: "ZS-2411-07" });
+        expect(wrapper.get('[data-testid="next-product"]').attributes("disabled")).toBeDefined();
+        expect(wrapper.get('[data-testid="previous-product"]').attributes("disabled")).toBeUndefined();
+    });
+
+    it("uses the product code order for the previous and next product when opened directly", async () => {
+        useInventoryTrendListStore().remember(["ZS-2501-03", "ZS-2408-01"], { focus: "stockout" });
+        const wrapper = mountPage();
+        await flushPromises();
+
+        expect(wrapper.get('[data-testid="previous-product"]').attributes("disabled")).toBeDefined();
+        expect(wrapper.get('[data-testid="next-product"]').text()).toContain("ZS-2411-07");
     });
 
     it("shows an empty state for a product without a survey and leads back to the list", async () => {
@@ -141,7 +200,7 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenCalledWith({ productCode: "ZS-2408-01", from: "2026-09-01", to: "2026-09-10", scope: "boss" });
         expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("期間指定");
 
-        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
+        await wrapper.get('[data-testid="inventory-scope-select"] [data-value="amazon"]').trigger("click");
         expect(routerMocks.replace).toHaveBeenLastCalledWith({ query: { scope: "amazon", period: "custom", from: "2026-09-01", to: "2026-09-10" } });
         const twoWeeks = wrapper.findAll('[data-testid="period-select"] [role="radio"]').find((option) => option.text() === "2週間")!;
         await twoWeeks.trigger("click");
@@ -151,36 +210,20 @@ describe("InventoryTrendPage", () => {
         expect(routerMocks.push).toHaveBeenCalledWith({ name: "inventory-trends", query: { scope: "amazon", period: "14" } });
     });
 
-    it("exports daily inventory CSV by SKU and warehouse for the selected product", async () => {
+    it("exports the daily inventory CSV of this product", async () => {
         const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
         const wrapper = mountPage();
         await flushPromises();
 
-        expect(wrapper.find('[data-testid="inventory-trend-export"]').exists()).toBe(false);
-        await openExportMenu(wrapper);
-        expect(wrapper.get('[role="menu"]').text()).toContain("調査がない日のAmazon取得結果を出力します");
-        await wrapper.get('[data-testid="inventory-trend-export"]').trigger("click");
-        await flushPromises();
-
-        expect(wrapper.find('[role="menu"]').exists()).toBe(false);
-        expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({
-            productCode: "ZS-2408-01",
-            from: "2026-08-30",
-            to: "2026-09-28",
-        });
-        expect(click).toHaveBeenCalledOnce();
-    });
-
-    it("exports daily inventory CSV for all products in the selected period", async () => {
-        const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
-        const wrapper = mountPage();
-        await flushPromises();
-
-        await openExportMenu(wrapper);
-        await wrapper.get('[data-testid="inventory-trend-export-all"]').trigger("click");
+        const button = wrapper.get('[data-testid="inventory-trend-export"]');
+        expect(button.text()).toContain("この品番のCSV");
+        expect(button.attributes("title")).toContain("調査がない日のAmazon取得結果を出力します");
+        expect(wrapper.find('[data-testid="inventory-trend-export-all"]').exists()).toBe(false);
+        await button.trigger("click");
         await flushPromises();
 
         expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({
+            productCode: "ZS-2408-01",
             from: "2026-08-30",
             to: "2026-09-28",
         });
@@ -210,12 +253,11 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
 
         expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("確定した倉庫だけを積み上げ");
-        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
+        await wrapper.get('[data-testid="inventory-scope-select"] [data-value="amazon"]').trigger("click");
         await flushPromises();
 
         expect(wrapper.find('[data-testid="amazon-daily-sources"]').exists()).toBe(false);
         expect(wrapper.text()).not.toContain("Amazon在庫の取得元");
-        await openExportMenu(wrapper);
         expect(wrapper.get('[data-testid="inventory-trend-export"]').attributes("disabled")).toBeUndefined();
         await wrapper.get('[data-testid="inventory-trend-export"]').trigger("click");
         await flushPromises();
@@ -235,7 +277,7 @@ describe("InventoryTrendPage", () => {
             return response;
         });
         await flushPromises();
-        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
+        await wrapper.get('[data-testid="inventory-scope-select"] [data-value="amazon"]').trigger("click");
         await flushPromises();
 
         expect(wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"] [data-summary-field="latest"]').text()).not.toBe("8");
@@ -262,7 +304,7 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-S"]').text()).toContain("最新 0点");
         expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-M"]').text()).toContain("期間平均 28.5点");
         expect(wrapper.text()).toContain("SKU別サマリー");
-        expect(wrapper.findAll('[data-testid="inventory-scope-select"] option')).toHaveLength(6);
+        expect(wrapper.findAll('[data-testid="inventory-scope-select"] [role="radio"]')).toHaveLength(6);
         expect(wrapper.findAll('[data-testid="period-select"] [role="radio"]').map((option) => option.text())).toEqual(["2週間", "1か月", "3か月", "期間指定"]);
         expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("1か月");
         expect(wrapper.text()).not.toContain("選択してください");
@@ -325,6 +367,8 @@ describe("InventoryTrendPage", () => {
     it("updates the daily chart when a custom target period is selected", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        expect(wrapper.find('input[aria-label="対象期間の開始日"]').exists()).toBe(false);
+        await wrapper.get('[data-testid="period-select"] [data-value="custom"]').trigger("click");
         const startInput = wrapper.get('input[aria-label="対象期間の開始日"]');
 
         await startInput.setValue("2026-09-25");
@@ -340,6 +384,7 @@ describe("InventoryTrendPage", () => {
     it("limits a custom target period to 365 days", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        await wrapper.get('[data-testid="period-select"] [data-value="custom"]').trigger("click");
 
         await wrapper.get('input[aria-label="対象期間の開始日"]').setValue("2025-01-01");
         await flushPromises();
@@ -355,8 +400,7 @@ describe("InventoryTrendPage", () => {
         await wrapper.get('[data-testid="period-select"] [data-value="14"]').trigger("click");
         await flushPromises();
 
-        expect((wrapper.get('input[aria-label="対象期間の開始日"]').element as HTMLInputElement).value).toBe("2026-09-15");
-        expect((wrapper.get('input[aria-label="対象期間の終了日"]').element as HTMLInputElement).value).toBe("2026-09-28");
+        expect(wrapper.get('[data-testid="target-period"]').text()).toBe("2026/09/15 〜 2026/09/28（14日）");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(14);
         expect(wrapper.findAll("[data-chart-date]")).toHaveLength(14);
 
@@ -375,9 +419,7 @@ describe("InventoryTrendPage", () => {
     it("requests and displays the selected inventory scope", async () => {
         const wrapper = mountPage();
         await flushPromises();
-        const inventoryScopeSelect = wrapper.get('[data-testid="inventory-scope-select"] select');
-
-        await inventoryScopeSelect.setValue("boss");
+        await wrapper.get('[data-testid="inventory-scope-select"] [data-value="boss"]').trigger("click");
         await flushPromises();
 
         expect(wrapper.findAll("[data-legend-warehouse]").map((item) => item.text())).toEqual(["BOSS"]);
@@ -471,7 +513,7 @@ describe("InventoryTrendPage", () => {
             return response;
         });
         await flushPromises();
-        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("grandTotal");
+        await wrapper.get('[data-testid="inventory-scope-select"] [data-value="grandTotal"]').trigger("click");
         await flushPromises();
 
         expect(wrapper.findAll("[data-legend-warehouse]").map((item) => item.attributes("data-legend-warehouse"))).toEqual(["amazon", "boss", "free", "stock"]);

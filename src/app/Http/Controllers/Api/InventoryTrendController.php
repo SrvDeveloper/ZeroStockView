@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ListInventoryTrendOverviewRequest;
 use App\Http\Requests\ListInventoryTrendProductsRequest;
 use App\Http\Requests\ShowInventoryTrendRequest;
+use App\Http\Resources\SurveyResource;
 use App\Models\Product;
 use App\Models\Survey;
 use App\Models\SurveyProduct;
@@ -17,6 +18,7 @@ use App\Services\InventoryTrendOverviewService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class InventoryTrendController extends Controller
@@ -96,6 +98,7 @@ class InventoryTrendController extends Controller
         $skuMetadata = [];
         $quantities = [];
         $productSnapshot = null;
+        $snapshotSurvey = null;
         $dailySources = [];
         $warehouseTotals = [];
 
@@ -106,6 +109,7 @@ class InventoryTrendController extends Controller
                 continue;
             }
             $productSnapshot = $selectedProductSnapshot;
+            $snapshotSurvey = $survey;
             $basisAt = $survey->executed_at->toIso8601String();
             $dailySources[] = [
                 'date' => $date,
@@ -139,6 +143,8 @@ class InventoryTrendController extends Controller
         }
 
         uasort($skuMetadata, fn (array $left, array $right): int => $left['sortOrder'] <=> $right['sortOrder']);
+        // SKU・カラー・サイズの数は、期間内で最新の調査の品番（なければ今のマスタ）で数える
+        $countedSkus = $productSnapshot?->skus ?? $currentProduct?->skus ?? collect();
 
         return response()->json([
             'data' => [
@@ -146,6 +152,10 @@ class InventoryTrendController extends Controller
                     'productCode' => $productCode,
                     'brand' => $productSnapshot?->brand ?? $currentProduct?->brand,
                     'category' => $productSnapshot?->category ?? $currentProduct?->category,
+                    'groups' => $productSnapshot !== null ? $this->productGroups($productSnapshot, $snapshotSurvey) : [],
+                    'skuCount' => $countedSkus->count(),
+                    'colorCount' => $this->distinctCount($countedSkus->pluck('tq_color_no')),
+                    'sizeCount' => $this->distinctCount($countedSkus->pluck('tq_size')),
                 ] : null,
                 'scope' => $scope,
                 'from' => $data['from'],
@@ -189,6 +199,37 @@ class InventoryTrendController extends Controller
         return response()->download($path, $fileName, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ])->deleteFileAfterSend();
+    }
+
+    /**
+     * 品番グループの所属。調査結果画面（SurveyResource）と同じく、どのグループにも入っていなければ「グループなし」。
+     *
+     * @return list<array{key: string, name: string}>
+     */
+    private function productGroups(SurveyProduct $snapshot, Survey $survey): array
+    {
+        if ($snapshot->group_memberships !== null) {
+            // 再照合前の重複（`legacy:名前` と同名の `setting:ID`）は、同じ調査の品番グループのキーで1つにまとめる
+            $settingKeysByName = SurveyProduct::query()->where('survey_id', $survey->id)->pluck('group_memberships')
+                ->flatMap(fn (?array $memberships): array => $memberships ?? [])
+                ->filter(fn (array $membership): bool => str_starts_with($membership['key'], 'setting:'))
+                ->pluck('key', 'name')
+                ->all();
+            $memberships = SurveyProduct::mergeGroupMemberships($snapshot->group_memberships, $settingKeysByName);
+        } else {
+            $memberships = $survey->import_setting_name === null ? [] : [['key' => 'legacy:'.$survey->import_setting_name, 'name' => $survey->import_setting_name]];
+        }
+        if ($memberships === []) {
+            return [['key' => SurveyResource::UNGROUPED_KEY, 'name' => 'グループなし']];
+        }
+
+        return array_map(fn (array $membership): array => ['key' => $membership['key'], 'name' => $membership['name']], $memberships);
+    }
+
+    /** 空欄を除いた値の種類の数 */
+    private function distinctCount(Collection $values): int
+    {
+        return $values->map(fn (?string $value): string => trim((string) $value))->filter(fn (string $value): bool => $value !== '')->unique()->count();
     }
 
     private function quantity(SurveySku $sku, string $scope, bool $isSpApi): ?int
