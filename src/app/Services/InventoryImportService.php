@@ -292,28 +292,7 @@ class InventoryImportService
                     return null;
                 }
 
-                $survey = Survey::query()->create([
-                    'executed_at' => $executedAt,
-                    'survey_date' => $date,
-                    'import_setting_name' => null,
-                    'includes_amazon_inventory' => false,
-                    'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
-                    'amazon_inventory_import_id' => null,
-                ]);
-
-                $stocks = $targets->pluck('skus')->flatten()->mapWithKeys(fn ($sku): array => [
-                    $sku->sku_code => [
-                        'boss_own_stock' => null,
-                        'boss_rfc_stock' => null,
-                        'free_stock' => null,
-                        'ec_stock' => null,
-                    ],
-                ])->all();
-                $amazonImport = $this->amazonSync->importFor($survey);
-                $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $this->amazonSync->snapshotsOf($amazonImport), null);
-                $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
-
-                return $survey;
+                return $this->createWithoutFiles($targets, $groupMemberships, $date, $executedAt, []);
             });
         } catch (UniqueConstraintViolationException $exception) {
             if (str_contains($exception->getMessage(), 'survey_date')) {
@@ -328,6 +307,54 @@ class InventoryImportService
         }
 
         return $created;
+    }
+
+    /**
+     * 在庫変動履歴で BOSS 在庫を補完する日に、調査がなければファイルなしの調査を作る（docs/BOSS在庫の休日補完 BHR-04）。
+     * 形は createFromAmazonImport() と同じで、BOSS は再現した値、フリー在庫・ECストックは取込待ち（null）、Amazon 数量は同日の最新成功分。
+     * 呼び出し側のトランザクションの中で呼ぶ。調査履歴の上限の処理と、コミット後の Amazon 在庫の再同期は呼び出し側で行う。
+     *
+     * @param  array<string, array{own: int|null, rfc: int|null}>  $bossStocks  SKUコード => 再現した BOSS 在庫。ない SKU は null
+     * @param  array<string, mixed>  $attributes  調査に書く BOSS の取得方式など
+     */
+    public function createWithBossStocks(string $date, CarbonInterface $executedAt, array $bossStocks, array $attributes): Survey
+    {
+        [$targets, $groupMemberships] = $this->loadTargets();
+
+        return $this->createWithoutFiles($targets, $groupMemberships, $date, $executedAt, $bossStocks, $attributes);
+    }
+
+    /**
+     * @param  Collection<int, Product>  $targets
+     * @param  Collection<int, list<array{key: string, name: string, sortOrder: int}>>  $groupMemberships
+     * @param  array<string, array{own: int|null, rfc: int|null}>  $bossStocks
+     * @param  array<string, mixed>  $attributes
+     */
+    private function createWithoutFiles(Collection $targets, Collection $groupMemberships, string $date, CarbonInterface $executedAt, array $bossStocks, array $attributes = []): Survey
+    {
+        $survey = Survey::query()->create([
+            'executed_at' => $executedAt,
+            'survey_date' => $date,
+            'import_setting_name' => null,
+            'includes_amazon_inventory' => false,
+            'amazon_source' => Survey::AMAZON_SOURCE_SP_API,
+            'amazon_inventory_import_id' => null,
+            ...$attributes,
+        ]);
+
+        $stocks = $targets->pluck('skus')->flatten()->mapWithKeys(fn ($sku): array => [
+            $sku->sku_code => [
+                'boss_own_stock' => $bossStocks[$sku->sku_code]['own'] ?? null,
+                'boss_rfc_stock' => $bossStocks[$sku->sku_code]['rfc'] ?? null,
+                'free_stock' => null,
+                'ec_stock' => null,
+            ],
+        ])->all();
+        $amazonImport = $this->amazonSync->importFor($survey);
+        $this->writeProducts($survey, $targets, $groupMemberships, $stocks, $this->amazonSync->snapshotsOf($amazonImport), null);
+        $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
+
+        return $survey;
     }
 
     /**

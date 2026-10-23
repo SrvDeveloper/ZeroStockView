@@ -22,6 +22,8 @@ final readonly class BossInventoryReconstruction
      * @param  array<string, CarbonImmutable|null>  $reportTimes  基準の調査の日 => レポートを出力した時刻（推定）。使えない基準の調査は null
      * @param  array<string, string>  $unusableBaseDates  使えない基準の調査の日 => 理由
      * @param  list<array{skuCode: string, warehouse: string, baseDate: string}>  $mismatches  基準の調査と履歴が合わない SKU・倉庫（最大 100件）
+     * @param  array<string, int>  $mismatchCounts  使える基準の調査の日 => その日に合わなかった SKU・倉庫の数
+     * @param  list<array{skuCode: string, warehouse: string, reason: string}>  $emptiedCells  つながりの切れ目・マイナスで、補完する日のいずれかで NULL にした SKU・倉庫
      */
     public function __construct(
         public array $values,
@@ -31,6 +33,8 @@ final readonly class BossInventoryReconstruction
         public array $unusableBaseDates,
         public array $mismatches,
         public int $mismatchCount,
+        public array $mismatchCounts,
+        public array $emptiedCells,
         /** 補完できないときの理由（使える基準の調査がない、など）。補完できるときは null */
         public ?string $failure,
     ) {}

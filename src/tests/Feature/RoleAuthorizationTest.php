@@ -38,6 +38,8 @@ class RoleAuthorizationTest extends TestCase
         'GET api/integrations/status' => 'role:admin,editor',
         'POST api/surveys' => 'role:admin,editor',
         'POST api/surveys/{survey}/rerun' => 'role:admin,editor',
+        'POST api/boss-inventory-histories/preview' => 'role:admin,editor',
+        'POST api/boss-inventory-histories' => 'role:admin,editor',
         'GET api/api-connection-settings' => 'role:admin',
         'PUT api/api-connection-settings' => 'role:admin',
         'POST api/api-connection-settings/rotate-key' => 'role:admin',

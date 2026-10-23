@@ -79,3 +79,12 @@ php artisan test --compact tests/Feature/BossInventoryHistoryApiTest.php
 php artisan test --compact tests/Feature/RoleAuthorizationTest.php
 vendor/bin/pint --dirty --format agent
 ```
+
+**実装状況（2026-10-23）:** `POST /api/boss-inventory-histories/preview`（確認）と `POST /api/boss-inventory-histories`（適用。201）を追加した。計算と保存は `BossInventoryHistoryImportService`、ファイルのない調査の作成は `InventoryImportService::createWithBossStocks()`（`createFromAmazonImport()` と共通の処理）で行う。チケットから決めた点は次のとおり。
+
+- 応答には、例の項目に加えて、基準の調査の `surveyId`・`unusableReason`（使えない基準の調査の理由）、補完する日の `surveyId`、合わない SKU・倉庫の総数 `mismatchCount` を入れた。`nullReasons` のキーは `mismatch`・`chainBreak`・`negative`・`noData`（基準の調査にもない SKU）。
+- `mismatches` には、照合で合わない SKU・倉庫（`mismatch`）に加えて、つながりの切れ目・マイナスで補完する日のどこかが `NULL` になった SKU・倉庫（`chainBreak`・`negative`）も入れる（最大 100件）。そのため、BHR-02 の計算の結果に、基準の調査ごとの不一致の件数と、切れ目・マイナスで `NULL` にした SKU・倉庫を足した。
+- `unfillableDates` は `{ date, reason }` の配列。9:00 が履歴の期間の外の日と、旧5ファイル調査（SP-API で Amazon 在庫を取る調査でないもの）の日を入れる。
+- その日の調査は、取込（`import()`）と同じく、調査日（`survey_date`）で探し、なければ実行日時がその日の最新の調査とする。適用では、期間内の日を古い順にロックしてから計算し直す。同じ日の調査を取込が先に作った（`survey_date` の一意制約）ときは、1回だけやり直す。
+- 再現する SKU は、調査の対象の品番の SKU と、補完する既存の調査の SKU を合わせたもの。既存の調査は BOSS の2列だけを更新し、品番・SKU の構成は変えない。補完する日の SKU 数は、この合わせた SKU で数える。
+- 検証メッセージは、アップロードの項目（`file`）に出す。在庫変動履歴でないファイル（ヘッダーで判別）と、自社倉庫・RFC倉庫の行がない履歴も 422 にする。

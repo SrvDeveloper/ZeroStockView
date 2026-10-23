@@ -89,6 +89,7 @@ class BossInventoryReconstructorTest extends TestCase
         $this->assertSame(['own' => null, 'rfc' => 0], $result->values['2026-10-18']['A']);
         $this->assertSame([['skuCode' => 'A', 'warehouse' => 'own', 'baseDate' => '2026-10-16']], $result->mismatches);
         $this->assertSame(1, $result->mismatchCount);
+        $this->assertSame(['2026-10-16' => 1], $result->mismatchCounts);
         $this->assertSame([BossInventoryReconstruction::REASON_MISMATCH => 1, BossInventoryReconstruction::REASON_NO_DATA => 1], $result->dateSummaries['2026-10-17']['reasons']);
     }
 
@@ -129,6 +130,11 @@ class BossInventoryReconstructorTest extends TestCase
         $this->assertSame(['own' => 0, 'rfc' => null], $result->values['2026-10-17']['F']);
         $this->assertSame([BossInventoryReconstruction::REASON_NEGATIVE => 1], $result->dateSummaries['2026-10-17']['reasons']);
         $this->assertSame([BossInventoryReconstruction::REASON_BREAK => 1, BossInventoryReconstruction::REASON_NEGATIVE => 1], $result->dateSummaries['2026-10-18']['reasons']);
+        // 確認画面に出す、つながりの切れ目・マイナスで NULL にした SKU・倉庫
+        $this->assertSame([
+            ['skuCode' => 'E', 'warehouse' => 'own', 'reason' => BossInventoryReconstruction::REASON_BREAK],
+            ['skuCode' => 'F', 'warehouse' => 'rfc', 'reason' => BossInventoryReconstruction::REASON_NEGATIVE],
+        ], $result->emptiedCells);
     }
 
     public function test_days_whose_nine_oclock_is_outside_the_history_cannot_be_filled(): void

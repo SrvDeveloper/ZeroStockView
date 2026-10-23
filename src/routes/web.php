@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AmazonInventoryImportController;
 use App\Http\Controllers\Api\ApiConnectionSettingController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BossInventoryHistoryController;
 use App\Http\Controllers\Api\CrossWalkerController;
 use App\Http\Controllers\Api\ExternalInventoryController;
 use App\Http\Controllers\Api\ImportSettingController;
@@ -48,6 +49,8 @@ Route::prefix('api')->group(function (): void {
             Route::get('/integrations/status', [IntegrationStatusController::class, 'show']);
             Route::post('/surveys', [SurveyController::class, 'store']);
             Route::post('/surveys/{survey}/rerun', [SurveyController::class, 'rerun']);
+            Route::post('/boss-inventory-histories/preview', [BossInventoryHistoryController::class, 'preview']);
+            Route::post('/boss-inventory-histories', [BossInventoryHistoryController::class, 'store']);
         });
 
         Route::middleware('role:'.User::ROLE_ADMIN)->group(function (): void {
