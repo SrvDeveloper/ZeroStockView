@@ -41,3 +41,5 @@ npx vitest run resources/js/pages/InventoryTrendPage.test.ts resources/js/pages/
 npm run check
 npm run build
 ```
+
+**実装状況（2026-10-23）:** `/inventory-trends` を仮の一覧（`InventoryTrendListPage.vue`、品番コード順の一覧で、品番を押すと詳細を開く）にし、`/inventory-trends/:productCode`（ルート名 `inventory-trend`）で今の在庫推移画面を開くようにした。詳細画面は品番を props で受け取り、「対象品番を選択」ダイアログと「変更」ボタン、それに関わる状態を削除した。代わりに、見出しを品番（等幅）と「ブランド ・ カテゴリ ・ ◯ SKU」にし、左上に「品番一覧に戻る」（`back-to-list`）を置いた（見出しの作り込みは TRD-04）。在庫区分と表示期間は URL のクエリ（`scope`・`period`、期間指定のときだけ `from`・`to`）に持たせ、初期値（モール全体・1か月）は書かない。期間指定でないときに日付を書かないのは、あとで開いたときに最新の調査日までの期間になるようにするため。クエリの読み書きは一覧と詳細で共通の `utils/inventoryTrendQuery.ts` にまとめ、ほかのキー（TRD-03 の一覧の条件）は残す。存在しない品番（調査のない品番）は「この品番の在庫推移はありません」の空の状態にし、期間内にデータがないときの空の状態にも「品番一覧に戻る」を足した。上部バーの現在地は「在庫推移 / {品番}」、サイドバーは詳細でも「在庫推移」を選択中にする。`product-picker-button`、`apply-product-selection`、`product-brand-filter`、`selected-product` の `data-testid` は削除した。

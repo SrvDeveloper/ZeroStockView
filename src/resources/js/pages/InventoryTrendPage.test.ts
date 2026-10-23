@@ -10,7 +10,10 @@ const apiMocks = vi.hoisted(() => ({
     exportInventoryTrend: vi.fn(),
 }));
 
+const routerMocks = vi.hoisted(() => ({ route: { query: {} as Record<string, string> }, push: vi.fn(), replace: vi.fn() }));
+
 vi.mock("@/api/inventoryTrends", () => apiMocks);
+vi.mock("vue-router", () => ({ useRoute: () => routerMocks.route, useRouter: () => ({ push: routerMocks.push, replace: routerMocks.replace }) }));
 
 const productsResponse: InventoryTrendProductList = {
     data: [
@@ -84,11 +87,11 @@ async function openExportMenu(wrapper: ReturnType<typeof mountPage>) {
     await wrapper.get('[data-testid="inventory-trend-export-button"]').trigger("click");
 }
 
-function mountPage(buildTrend: typeof trendResponse = trendResponse) {
+function mountPage(buildTrend: typeof trendResponse = trendResponse, productCode = "ZS-2408-01") {
     apiMocks.fetchInventoryTrendProducts.mockResolvedValue(productsResponse);
     apiMocks.fetchInventoryTrend.mockImplementation((params) => Promise.resolve(withDailyTotals(buildTrend(params))));
 
-    return mount(InventoryTrendPage, { global: { stubs: { Teleport: true } } });
+    return mount(InventoryTrendPage, { props: { productCode }, global: { stubs: { Teleport: true } } });
 }
 
 describe("InventoryTrendPage", () => {
@@ -96,6 +99,47 @@ describe("InventoryTrendPage", () => {
         vi.restoreAllMocks();
         vi.clearAllMocks();
         apiMocks.exportInventoryTrend.mockResolvedValue(new Blob(["csv"]));
+        routerMocks.route.query = {};
+    });
+
+    it("opens the product of the route without a product picker", async () => {
+        const wrapper = mountPage();
+        await flushPromises();
+
+        expect(wrapper.get("h1").text()).toBe("ZS-2408-01");
+        expect(wrapper.text()).toContain("NORTH HARBOR ・ トップス ・ 4 SKU");
+        expect(wrapper.find('[data-testid="product-picker-button"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="selected-product"]').exists()).toBe(false);
+        expect(apiMocks.fetchInventoryTrend).toHaveBeenCalledWith({ productCode: "ZS-2408-01", from: "2026-08-30", to: "2026-09-28", scope: "mallTotal" });
+    });
+
+    it("shows an empty state for a product without a survey and leads back to the list", async () => {
+        const wrapper = mountPage(trendResponse, "UNKNOWN-01");
+        await flushPromises();
+
+        expect(wrapper.text()).toContain("この品番の在庫推移はありません");
+        expect(wrapper.find('[data-testid="inventory-scope-select"]').exists()).toBe(false);
+        expect(apiMocks.fetchInventoryTrend).not.toHaveBeenCalled();
+        await wrapper.get('[data-testid="back-to-list"]').trigger("click");
+        expect(routerMocks.push).toHaveBeenCalledWith({ name: "inventory-trends", query: {} });
+    });
+
+    it("restores the scope and period from the URL and keeps changes in the URL", async () => {
+        routerMocks.route.query = { scope: "boss", period: "custom", from: "2026-09-01", to: "2026-09-10" };
+        const wrapper = mountPage();
+        await flushPromises();
+
+        expect(apiMocks.fetchInventoryTrend).toHaveBeenCalledWith({ productCode: "ZS-2408-01", from: "2026-09-01", to: "2026-09-10", scope: "boss" });
+        expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("期間指定");
+
+        await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
+        expect(routerMocks.replace).toHaveBeenLastCalledWith({ query: { scope: "amazon", period: "custom", from: "2026-09-01", to: "2026-09-10" } });
+        const twoWeeks = wrapper.findAll('[data-testid="period-select"] [role="radio"]').find((option) => option.text() === "2週間")!;
+        await twoWeeks.trigger("click");
+        expect(routerMocks.replace).toHaveBeenLastCalledWith({ query: { scope: "amazon", period: "14" } });
+
+        await wrapper.get('[data-testid="back-to-list"]').trigger("click");
+        expect(routerMocks.push).toHaveBeenCalledWith({ name: "inventory-trends", query: { scope: "amazon", period: "14" } });
     });
 
     it("exports daily inventory CSV by SKU and warehouse for the selected product", async () => {
@@ -153,13 +197,10 @@ describe("InventoryTrendPage", () => {
                 ];
             }
             return response;
-        });
+        }, "API-ONLY");
         await flushPromises();
 
         expect(wrapper.get('[data-testid="survey-scope-note"]').text()).toContain("確定した倉庫だけを積み上げ");
-        await wrapper.get('[data-testid="product-picker-button"]').trigger("click");
-        await wrapper.get('[data-product-code="API-ONLY"]').trigger("click");
-        await wrapper.get('[data-testid="apply-product-selection"]').trigger("click");
         await wrapper.get('[data-testid="inventory-scope-select"] select').setValue("amazon");
         await flushPromises();
 
@@ -226,16 +267,11 @@ describe("InventoryTrendPage", () => {
         });
     });
 
-    it("changes the product and refreshes the displayed SKUs", async () => {
+    it("reloads the trend when the product of the route changes", async () => {
         const wrapper = mountPage();
         await flushPromises();
 
-        await wrapper.get('[data-testid="product-picker-button"]').trigger("click");
-        await wrapper.get('[data-testid="product-brand-filter"] select').setValue("FIELD NOTE");
-        await wrapper.get('input[placeholder="品番・ブランド・カテゴリを入力"]').setValue("バッグ");
-        expect(wrapper.findAll("[data-product-code]")).toHaveLength(1);
-        await wrapper.get('[data-product-code="ZS-2501-03"]').trigger("click");
-        await wrapper.get('[data-testid="apply-product-selection"]').trigger("click");
+        await wrapper.setProps({ productCode: "ZS-2501-03" });
         await flushPromises();
 
         expect(wrapper.text()).toContain("ZS-2501-03");

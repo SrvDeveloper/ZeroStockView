@@ -21,7 +21,7 @@ export const NAV_GROUPS: NavGroup[] = [
         items: [
             { name: "data-import", label: "データ取込", icon: "upload", roles: EDITOR_ROLES },
             { name: "survey-history", label: "在庫調査履歴", icon: "history", roles: ALL_ROLES, children: ["survey-result"] },
-            { name: "inventory-trends", label: "在庫推移", icon: "show_chart", roles: ALL_ROLES },
+            { name: "inventory-trends", label: "在庫推移", icon: "show_chart", roles: ALL_ROLES, children: ["inventory-trend"] },
         ],
     },
     {
