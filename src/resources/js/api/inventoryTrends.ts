@@ -40,8 +40,15 @@ export interface InventoryTrendSeries {
     points: InventoryTrendPoint[];
 }
 
+/** 詳細画面の品番。groups は期間内で最新の調査に保存された所属（なければ「グループなし」）、数は同じ調査の SKU で数える */
+export interface InventoryTrendDetailProduct extends Pick<InventoryTrendProduct, "productCode" | "brand" | "category" | "skuCount"> {
+    groups: InventoryTrendOverviewGroup[];
+    colorCount: number;
+    sizeCount: number;
+}
+
 export interface InventoryTrendData {
-    product: Pick<InventoryTrendProduct, "productCode" | "brand" | "category"> | null;
+    product: InventoryTrendDetailProduct | null;
     scope: InventoryScope;
     from: string;
     to: string;

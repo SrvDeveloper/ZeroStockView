@@ -23,10 +23,11 @@ import BasePagination from "@/components/ui/BasePagination.vue";
 import BaseSelect from "@/components/ui/BaseSelect.vue";
 import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import StatCard from "@/components/ui/StatCard.vue";
-import StatusLamp, { type LampState } from "@/components/ui/StatusLamp.vue";
+import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { useInventoryTrendListStore } from "@/stores/inventoryTrendList";
 import type { SelectOption } from "@/types";
 import { formatNumber } from "@/utils/format";
+import { changeRate, formatMonthDay, formatRate, latestSurveyLamp as toLatestSurveyLamp } from "@/utils/inventoryTrendMetrics";
 import {
     addDays,
     INVENTORY_SCOPE_OPTIONS,
@@ -55,7 +56,6 @@ const SORTS: readonly InventoryTrendOverviewSort[] = ["stockout", "delta", "late
 /** 「在庫が10%以上減った」と同じ境目で、前週比を強調する */
 const DECREASE_RATE = -0.1;
 const SEARCH_DELAY_MS = 300;
-const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
 function single(value: LocationQuery[string] | undefined): string {
     return typeof value === "string" ? value : "";
@@ -109,15 +109,7 @@ const rows = computed(() => overview.value?.data ?? []);
 const totalPages = computed(() => (overview.value ? Math.max(1, Math.ceil(overview.value.meta.total / overview.value.meta.perPage)) : 1));
 const hasFilters = computed(() => Boolean(group.value || brand.value || search.value || focus.value !== "all"));
 const latestSurvey = computed(() => overview.value?.latestSurvey ?? null);
-const latestSurveyLamp = computed<{ state: LampState; label: string; detail: string } | null>(() => {
-    const survey = latestSurvey.value;
-    if (!survey) return null;
-    const label = `最新の調査 ${formatMonthDay(survey.date)}`;
-    if (survey.amazonInventoryStatus === "complete") return { state: "ok", label, detail: survey.amazonBasisAt ? `Amazon 取込済み ${formatTime(survey.amazonBasisAt)}` : "Amazon 取込済み" };
-    if (survey.amazonInventoryStatus === "partial") return { state: "warn", label, detail: "Amazon 一部未取得" };
-    if (survey.amazonInventoryStatus === "pending") return { state: "warn", label, detail: "Amazon 取込待ち" };
-    return { state: "ok", label, detail: "" };
-});
+const latestSurveyLamp = computed(() => (latestSurvey.value ? toLatestSurveyLamp(latestSurvey.value) : null));
 const stockoutDifference = computed(() => {
     const value = summary.value;
     if (!value || value.stockoutSkuCountWeekAgo === null) return null;
@@ -125,7 +117,7 @@ const stockoutDifference = computed(() => {
 });
 const totalDelta = computed(() => {
     const value = summary.value;
-    return value ? rate(value.totalQuantity, value.totalQuantityWeekAgo) : null;
+    return value ? changeRate(value.totalQuantity, value.totalQuantityWeekAgo) : null;
 });
 
 /** 一覧の条件を URL のクエリにする。初期値は書かない */
@@ -259,20 +251,8 @@ function detailLink(product: InventoryTrendOverviewProduct) {
     return { name: "inventory-trend", params: { productCode: product.productCode }, query: listQuery() };
 }
 
-function rate(latest: number | null, weekAgo: number | null): number | null {
-    return latest === null || weekAgo === null || weekAgo === 0 ? null : (latest - weekAgo) / weekAgo;
-}
-
 function productDelta(product: InventoryTrendOverviewProduct): number | null {
-    return rate(product.latest.quantity, product.weekAgo?.quantity ?? null);
-}
-
-/** 例: ▲ 4.2%、▼ 28.1%、±0.0%。比べられないときは — */
-function formatRate(value: number | null): string {
-    if (value === null) return "—";
-    const percent = Math.abs(value * 100).toFixed(1);
-    if (percent === "0.0") return "±0.0%";
-    return `${value > 0 ? "▲" : "▼"} ${percent}%`;
+    return changeRate(product.latest.quantity, product.weekAgo?.quantity ?? null);
 }
 
 function formatQuantity(value: number | null): string {
@@ -281,16 +261,6 @@ function formatQuantity(value: number | null): string {
 
 function stockoutIncrease(product: InventoryTrendOverviewProduct): number {
     return product.stockoutSkuCountWeekAgo === null ? 0 : product.stockoutSkuCount - product.stockoutSkuCountWeekAgo;
-}
-
-function formatMonthDay(date: string): string {
-    const [year, month, day] = date.split("-").map(Number);
-    const weekday = WEEKDAYS[new Date(Date.UTC(year!, month! - 1, day!)).getUTCDay()];
-    return `${month}/${day}（${weekday}）`;
-}
-
-function formatTime(iso: string): string {
-    return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
 
 async function exportAll() {

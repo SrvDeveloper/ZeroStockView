@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
     exportInventoryTrend,
@@ -7,6 +7,7 @@ import {
     fetchInventoryTrendProducts,
     type InventoryScope,
     type InventoryTrendDailySource,
+    type InventoryTrendDetailProduct,
     type InventoryTrendProduct,
     type InventoryTrendSeries,
     type InventoryTrendWarehouseTotal,
@@ -18,10 +19,13 @@ import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
 import BaseEmpty from "@/components/ui/BaseEmpty.vue";
-import BaseSelect from "@/components/ui/BaseSelect.vue";
 import SegmentedControl from "@/components/ui/SegmentedControl.vue";
+import StatCard from "@/components/ui/StatCard.vue";
+import StatusLamp from "@/components/ui/StatusLamp.vue";
 import { warehousesOfScope } from "@/constants/warehouses";
-import type { SelectOption } from "@/types";
+import { useInventoryTrendListStore } from "@/stores/inventoryTrendList";
+import { formatNumber } from "@/utils/format";
+import { changeRate, formatMonthDay, formatRate, latestSurveyLamp, productMetrics } from "@/utils/inventoryTrendMetrics";
 import {
     addDays,
     INVENTORY_SCOPE_OPTIONS,
@@ -68,8 +72,11 @@ interface SkuCard {
 
 /** 欠品SKU数は日付の下に黄色の四角と件数で出す。品番全体の棒は倉庫色で積み上げる */
 const STOCKOUT_COLOR = "#f5c400";
+/** 一覧の条件のうち、在庫推移の条件（在庫区分・期間）以外のキー。一覧のストアの並びが今の一覧のものかを確かめるのに使う */
+const LIST_QUERY_KEYS = ["group", "brand", "search", "focus", "sort", "page"];
 const route = useRoute();
 const router = useRouter();
+const listStore = useInventoryTrendListStore();
 const products = ref<InventoryTrendProduct[]>([]);
 const productsLoaded = ref(false);
 const availableRange = ref<{ from: string; to: string } | null>(null);
@@ -82,6 +89,7 @@ const targetEnd = ref("");
 const rawSeries = ref<InventoryTrendSeries[]>([]);
 const dailySources = ref<InventoryTrendDailySource[]>([]);
 const warehouseTotals = ref<InventoryTrendWarehouseTotal[]>([]);
+const trendProduct = ref<InventoryTrendDetailProduct | null>(null);
 /** 表示中のデータを取得したときの在庫区分（選択を変えてから応答が届くまでの食い違いを防ぐ） */
 const loadedScope = ref<InventoryScope>("mallTotal");
 const productsLoading = ref(false);
@@ -89,17 +97,51 @@ const trendLoading = ref(false);
 const productsError = ref("");
 const trendError = ref("");
 const exportError = ref("");
-const exportLoading = ref<"selected" | "all" | null>(null);
-const exportMenuOpen = ref(false);
-const exportMenuRef = ref<HTMLElement | null>(null);
+const exportLoading = ref(false);
 let trendRequestId = 0;
 
 const selectedProduct = computed(() => products.value.find((product) => product.productCode === productCode.value));
 /** 品番の一覧を読み込めたのに、表示する品番の調査がない（存在しない品番を URL で開いたときなど） */
 const productMissing = computed(() => productsLoaded.value && !selectedProduct.value);
 const periodOptions = PERIOD_OPTIONS;
-const inventoryScopeOptions: SelectOption[] = INVENTORY_SCOPE_OPTIONS;
+const inventoryScopeOptions = INVENTORY_SCOPE_OPTIONS;
 const selectedInventoryScopeLabel = computed(() => inventoryScopeOptions.find((option) => option.value === inventoryScope.value)?.label ?? "");
+/** 見出しの品番の情報。在庫推移の応答が届くまでは、品番の一覧の情報を出す */
+const headerProduct = computed(() => {
+    const product = trendProduct.value?.productCode === productCode.value ? trendProduct.value : null;
+    return {
+        brand: product?.brand ?? selectedProduct.value?.brand ?? "",
+        category: product?.category ?? selectedProduct.value?.category ?? "",
+        skuCount: product?.skuCount ?? selectedProduct.value?.skuCount ?? null,
+        colorCount: product?.colorCount ?? null,
+        sizeCount: product?.sizeCount ?? null,
+        groups: product?.groups ?? [],
+    };
+});
+/** 前後の品番の順番。一覧から開いたときは、その一覧の並び（ストア）。URL を直接開いたときは品番コード順 */
+const neighborCodes = computed(() => {
+    const fromList = listStore.productCodes.includes(productCode.value) && LIST_QUERY_KEYS.every((key) => (listStore.query[key] ?? null) === (route.query[key] ?? null));
+    return fromList ? listStore.productCodes : products.value.map((product) => product.productCode);
+});
+const previousCode = computed(() => {
+    const index = neighborCodes.value.indexOf(productCode.value);
+    return index > 0 ? neighborCodes.value[index - 1]! : null;
+});
+const nextCode = computed(() => {
+    const index = neighborCodes.value.indexOf(productCode.value);
+    return index >= 0 && index < neighborCodes.value.length - 1 ? neighborCodes.value[index + 1]! : null;
+});
+const metrics = computed(() => productMetrics(loadedScope.value, dailySources.value, warehouseTotals.value, rawSeries.value));
+const totalRate = computed(() => changeRate(metrics.value.latestQuantity, metrics.value.weekAgoQuantity));
+const latestSurvey = computed(() => {
+    const source = dailySources.value.at(-1);
+    return source ? latestSurveyLamp(source) : null;
+});
+/** 例: 2026/09/24 〜 2026/10/23（30日） */
+const targetPeriodLabel = computed(() => {
+    if (!targetStart.value || !targetEnd.value) return "";
+    return `${targetStart.value.replaceAll("-", "/")} 〜 ${targetEnd.value.replaceAll("-", "/")}（${selectedDates.value.length}日）`;
+});
 const earliestTargetStart = computed(() => {
     const availableFrom = availableRange.value?.from ?? "";
     if (!targetEnd.value) return availableFrom;
@@ -213,23 +255,8 @@ const skuCards = computed<SkuCard[]>(() =>
     }),
 );
 onMounted(() => {
-    document.addEventListener("click", closeExportMenuOnOutsideClick);
-    document.addEventListener("keydown", closeExportMenuOnEscape);
     void loadProducts();
 });
-
-onBeforeUnmount(() => {
-    document.removeEventListener("click", closeExportMenuOnOutsideClick);
-    document.removeEventListener("keydown", closeExportMenuOnEscape);
-});
-
-function closeExportMenuOnOutsideClick(event: MouseEvent) {
-    if (exportMenuOpen.value && exportMenuRef.value && !exportMenuRef.value.contains(event.target as Node)) exportMenuOpen.value = false;
-}
-
-function closeExportMenuOnEscape(event: KeyboardEvent) {
-    if (event.key === "Escape") exportMenuOpen.value = false;
-}
 
 async function loadProducts() {
     productsLoading.value = true;
@@ -263,12 +290,14 @@ async function loadTrend() {
         });
         if (requestId !== trendRequestId) return;
         rawSeries.value = response.series;
+        trendProduct.value = response.product;
         dailySources.value = response.dailySources;
         warehouseTotals.value = response.warehouseTotals;
         loadedScope.value = response.scope;
     } catch {
         if (requestId !== trendRequestId) return;
         rawSeries.value = [];
+        trendProduct.value = null;
         dailySources.value = [];
         warehouseTotals.value = [];
         trendError.value = "在庫推移の読み込みに失敗しました。時間をおいて再度お試しください。";
@@ -319,6 +348,12 @@ function backToList() {
     void router.push({ name: "inventory-trends", query: replaceInventoryTrendQuery(route.query, currentQuery()) });
 }
 
+/** 前後の品番に移る。在庫区分と表示期間、一覧の条件はそのまま */
+function goToProduct(code: string | null) {
+    if (!code) return;
+    void router.push({ name: "inventory-trend", params: { productCode: code }, query: replaceInventoryTrendQuery(route.query, currentQuery()) });
+}
+
 watch(
     () => props.productCode,
     () => {
@@ -328,6 +363,7 @@ watch(
             return;
         }
         rawSeries.value = [];
+        trendProduct.value = null;
         dailySources.value = [];
         warehouseTotals.value = [];
     },
@@ -376,8 +412,7 @@ function updatePeriodPreset(value: PeriodPreset) {
     } else selectPreset(value);
 }
 
-function updateInventoryScope(value: string | number | null) {
-    if (value !== "mallTotal" && value !== "amazon" && value !== "boss" && value !== "free" && value !== "stock" && value !== "grandTotal") return;
+function updateInventoryScope(value: InventoryScope) {
     inventoryScope.value = value;
     syncQuery();
     void loadTrend();
@@ -419,77 +454,94 @@ function updateTargetEnd(event: Event) {
     void loadTrend();
 }
 
-async function exportCsv(scope: "selected" | "all") {
-    if (!targetStart.value || !targetEnd.value || (scope === "selected" && !productCode.value)) return;
-    exportMenuOpen.value = false;
-    exportLoading.value = scope;
+/** この品番の日次在庫CSV（対象期間の調査日の在庫と、調査がない日の Amazon 取得結果） */
+async function exportCsv() {
+    if (!targetStart.value || !targetEnd.value || !productCode.value) return;
+    exportLoading.value = true;
     exportError.value = "";
     try {
-        const blob = await exportInventoryTrend({
-            ...(scope === "selected" ? { productCode: productCode.value } : {}),
-            from: targetStart.value,
-            to: targetEnd.value,
-        });
+        const blob = await exportInventoryTrend({ productCode: productCode.value, from: targetStart.value, to: targetEnd.value });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        const filePrefix = scope === "selected" ? productCode.value : "全品番";
-        link.download = `${filePrefix}_${targetStart.value}_${targetEnd.value}_日次在庫.csv`;
+        link.download = `${productCode.value}_${targetStart.value}_${targetEnd.value}_日次在庫.csv`;
         link.click();
         URL.revokeObjectURL(url);
     } catch {
         exportError.value = "日次在庫のCSV出力に失敗しました。時間をおいて再度お試しください。";
     } finally {
-        exportLoading.value = null;
+        exportLoading.value = false;
     }
 }
 </script>
 
 <template>
     <div class="flex flex-col gap-4">
-        <BaseButton data-testid="back-to-list" class="self-start" variant="ghost" size="sm" icon="chevron_left" @click="backToList">品番一覧に戻る</BaseButton>
         <div class="flex flex-wrap items-center justify-between gap-3">
+            <BaseButton data-testid="back-to-list" variant="ghost" size="sm" icon="chevron_left" @click="backToList">品番一覧に戻る</BaseButton>
+            <StatusLamp v-if="latestSurvey" data-testid="latest-survey-status" class="text-[11.5px] text-ink-2" :state="latestSurvey.state" :label="latestSurvey.label" :detail="latestSurvey.detail" />
+        </div>
+        <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
-                <h1 class="font-mono text-[22px] leading-tight font-semibold uppercase">{{ productCode }}</h1>
-                <p v-if="selectedProduct" class="mt-1 text-[12.5px] text-ink-2">{{ selectedProduct.brand }} ・ {{ selectedProduct.category }} ・ {{ selectedProduct.skuCount }} SKU</p>
-            </div>
-            <div ref="exportMenuRef" class="relative">
-                <BaseButton
-                    data-testid="inventory-trend-export-button"
-                    variant="primary"
-                    icon="download"
-                    aria-haspopup="menu"
-                    :aria-expanded="exportMenuOpen"
-                    :loading="exportLoading !== null"
-                    :disabled="!targetStart || !targetEnd || trendLoading || exportLoading !== null"
-                    @click="exportMenuOpen = !exportMenuOpen"
-                >
-                    日次在庫をCSV出力
-                </BaseButton>
-                <div v-if="exportMenuOpen" class="absolute right-0 z-40 mt-1.5 w-72 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-float" role="menu">
-                    <button
-                        type="button"
-                        data-testid="inventory-trend-export"
-                        role="menuitem"
-                        class="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-faint disabled:hover:bg-transparent"
-                        :disabled="!productCode"
-                        @click="exportCsv('selected')"
-                    >
-                        選択品番の日次CSV<span v-if="productCode" class="ml-2 font-mono text-[11px] text-muted uppercase">{{ productCode }}</span>
-                    </button>
-                    <button
-                        type="button"
-                        data-testid="inventory-trend-export-all"
-                        role="menuitem"
-                        class="block w-full px-3.5 py-2 text-left text-[12.5px] text-ink hover:bg-surface-2"
-                        @click="exportCsv('all')"
-                    >
-                        全品番の日次CSV
-                    </button>
-                    <p class="mt-1 border-t border-line-2 px-3.5 pt-2 pb-1.5 text-[11px] leading-relaxed whitespace-normal text-muted">
-                        対象期間の調査日の在庫と、調査がない日のAmazon取得結果を出力します。Amazon取得だけの日は他の在庫区分が空欄です。
+                <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <h1 class="font-mono text-[26px] leading-tight font-semibold uppercase">{{ productCode }}</h1>
+                    <p v-if="selectedProduct || trendProduct" data-testid="product-detail" class="text-[12.5px] text-ink-2">
+                        {{ headerProduct.brand }} · {{ headerProduct.category }}<template v-if="headerProduct.skuCount !== null"> · {{ headerProduct.skuCount }} SKU</template
+                        ><template v-if="headerProduct.colorCount !== null && headerProduct.sizeCount !== null"
+                            >（{{ headerProduct.colorCount }}カラー × {{ headerProduct.sizeCount }}サイズ）</template
+                        >
                     </p>
                 </div>
+                <div v-if="headerProduct.groups.length > 0" class="mt-1.5 flex flex-wrap gap-1" aria-label="品番グループ">
+                    <span
+                        v-for="item in headerProduct.groups"
+                        :key="item.key"
+                        data-product-group
+                        class="rounded-chip border px-1.5 py-px text-[10.5px] leading-4"
+                        :class="item.key === 'ungrouped' ? 'border-dashed border-line-stronger text-muted' : 'border-transparent bg-tint text-ink-2'"
+                        >{{ item.name }}</span
+                    >
+                </div>
+            </div>
+            <div v-if="!productMissing" class="flex flex-wrap items-center gap-2">
+                <div class="inline-flex" role="group" aria-label="前後の品番">
+                    <BaseButton
+                        data-testid="previous-product"
+                        class="rounded-r-none"
+                        variant="secondary"
+                        size="sm"
+                        icon="chevron_left"
+                        :disabled="!previousCode"
+                        :title="previousCode ? `前の品番 ${previousCode}` : '前の品番はありません'"
+                        @click="goToProduct(previousCode)"
+                    >
+                        前の品番<span v-if="previousCode" class="ml-1 font-mono text-[11px] text-muted uppercase">{{ previousCode }}</span>
+                    </BaseButton>
+                    <BaseButton
+                        data-testid="next-product"
+                        class="-ml-px rounded-l-none"
+                        variant="secondary"
+                        size="sm"
+                        :disabled="!nextCode"
+                        :title="nextCode ? `次の品番 ${nextCode}` : '次の品番はありません'"
+                        @click="goToProduct(nextCode)"
+                    >
+                        次の品番<span v-if="nextCode" class="ml-1 font-mono text-[11px] text-muted uppercase">{{ nextCode }}</span
+                        ><AppIcon name="chevron_right" :size="16" class="ml-0.5" />
+                    </BaseButton>
+                </div>
+                <BaseButton
+                    data-testid="inventory-trend-export"
+                    variant="secondary"
+                    size="sm"
+                    icon="download"
+                    title="対象期間の調査日の在庫と、調査がない日のAmazon取得結果を出力します。Amazon取得だけの日は他の在庫区分が空欄です。"
+                    :loading="exportLoading"
+                    :disabled="!targetStart || !targetEnd || trendLoading || exportLoading"
+                    @click="exportCsv"
+                >
+                    この品番のCSV
+                </BaseButton>
             </div>
         </div>
 
@@ -507,23 +559,21 @@ async function exportCsv(scope: "selected" | "all") {
         </BaseEmpty>
 
         <BaseCard v-if="!productMissing">
-            <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1.2fr)] lg:items-end">
-                <BaseSelect
-                    :model-value="inventoryScope"
-                    data-testid="inventory-scope-select"
-                    :options="inventoryScopeOptions"
-                    label="在庫区分"
-                    :show-placeholder="false"
-                    @update:model-value="updateInventoryScope"
-                />
+            <div class="flex flex-wrap items-end gap-x-5 gap-y-3">
                 <div>
-                    <span class="mb-1 block text-[11px] font-medium text-ink-2">表示期間</span>
-                    <div class="flex h-8 items-center" data-testid="period-select">
-                        <SegmentedControl :model-value="activePreset" :options="periodOptions" label="表示期間" @update:model-value="updatePeriodPreset" />
+                    <span class="mb-1 block text-[11px] font-medium text-ink-2">在庫区分</span>
+                    <div class="flex h-8 items-center" data-testid="inventory-scope-select">
+                        <SegmentedControl :model-value="inventoryScope" :options="inventoryScopeOptions" label="在庫区分" @update:model-value="updateInventoryScope" />
                     </div>
                 </div>
-                <div class="min-w-0">
+                <div>
                     <span class="mb-1 block text-[11px] font-medium text-ink-2">期間</span>
+                    <div class="flex h-8 items-center" data-testid="period-select">
+                        <SegmentedControl :model-value="activePreset" :options="periodOptions" label="期間" @update:model-value="updatePeriodPreset" />
+                    </div>
+                </div>
+                <div v-if="activePreset === 'custom'" class="min-w-0">
+                    <span class="mb-1 block text-[11px] font-medium text-ink-2">対象期間</span>
                     <div
                         class="flex h-8 items-center gap-1.5 rounded-control border border-line-strong bg-surface px-1.5 font-mono text-[11.5px] text-ink shadow-field focus-within:border-ink-2 focus-within:ring-3 focus-within:ring-ink/10"
                         :title="`対象期間は最大${MAXIMUM_PERIOD_DAYS}日間です`"
@@ -535,7 +585,7 @@ async function exportCsv(scope: "selected" | "all") {
                             :max="availableRange?.to"
                             :disabled="!availableRange"
                             aria-label="対象期間の開始日"
-                            class="h-7 min-w-0 flex-1 bg-transparent px-1 focus:outline-none"
+                            class="h-7 min-w-0 bg-transparent px-1 focus:outline-none"
                             @change="updateTargetStart"
                         />
                         <span class="text-faint" aria-hidden="true">→</span>
@@ -546,13 +596,62 @@ async function exportCsv(scope: "selected" | "all") {
                             :max="latestTargetEnd"
                             :disabled="!availableRange"
                             aria-label="対象期間の終了日"
-                            class="h-7 min-w-0 flex-1 bg-transparent px-1 focus:outline-none"
+                            class="h-7 min-w-0 bg-transparent px-1 focus:outline-none"
                             @change="updateTargetEnd"
                         />
                     </div>
                 </div>
+                <p v-if="targetPeriodLabel" data-testid="target-period" class="flex h-8 items-center font-mono text-[11.5px] text-ink-2 sm:ml-auto">{{ targetPeriodLabel }}</p>
             </div>
         </BaseCard>
+
+        <section
+            v-if="!productMissing && !trendLoading && !trendError && metrics.latestDate"
+            aria-label="品番の数値"
+            class="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3"
+            data-testid="product-metrics"
+        >
+            <StatCard
+                data-metric="total"
+                :title="`在庫総数（${formatMonthDay(metrics.latestDate)}）`"
+                :value="metrics.latestQuantity === null ? null : formatNumber(metrics.latestQuantity)"
+                unit="点"
+                :note="
+                    metrics.latestQuantity === null
+                        ? '未確定の倉庫があります'
+                        : metrics.weekAgoQuantity === null
+                          ? '前週と比べられません'
+                          : `前週比 ${formatRate(totalRate)}（${formatNumber(metrics.weekAgoQuantity)}点から）`
+                "
+            />
+            <StatCard
+                data-metric="average"
+                title="期間の平均"
+                :value="metrics.average === null ? null : formatNumber(metrics.average)"
+                unit="点"
+                :note="metrics.average === null ? '未確定の倉庫があります' : `確定した ${metrics.confirmedDays}日の平均`"
+            />
+            <StatCard
+                data-metric="stockout"
+                :title="`欠品SKU（${formatMonthDay(metrics.latestDate)}）`"
+                unit="SKU"
+                :note="metrics.weekAgoStockoutSkuCount === null ? '1週間前と比べられません' : `1週間前は ${metrics.weekAgoStockoutSkuCount} SKU`"
+                :alert="metrics.stockoutSkuCount > 0"
+            >
+                <template #value>
+                    <span class="font-num text-[36px] leading-[1.05] font-semibold tabular-nums">{{ metrics.stockoutSkuCount }}</span>
+                    <span class="font-num text-[20px] font-semibold text-muted tabular-nums">/ {{ metrics.skuCount }}</span>
+                </template>
+            </StatCard>
+            <StatCard
+                data-metric="stockout-days"
+                title="期間中の欠品"
+                :value="formatNumber(metrics.stockoutSkuDays)"
+                unit="SKU・日"
+                :note="`欠品したSKU ${metrics.stockoutSkus}件`"
+                :alert="metrics.stockoutSkuDays > 0"
+            />
+        </section>
 
         <BaseCard v-if="!productMissing" :title="chartTitle" :description="chartDescription">
             <template #actions>
