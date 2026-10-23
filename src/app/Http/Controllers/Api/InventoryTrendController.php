@@ -101,6 +101,11 @@ class InventoryTrendController extends Controller
         $snapshotSurvey = null;
         $dailySources = [];
         $warehouseTotals = [];
+        $breakdownWarehouses = match ($scope) {
+            'mallTotal' => array_flip(['amazon', 'boss']),
+            'grandTotal' => array_flip(['amazon', 'boss', 'free', 'stock']),
+            default => null,
+        };
 
         foreach ($dates as $date) {
             $survey = $dailySurveys->get($date);
@@ -131,6 +136,7 @@ class InventoryTrendController extends Controller
                 }
                 $skuMetadata[$sku->sku_code] = [
                     'skuCode' => $sku->sku_code,
+                    'color' => $sku->tq_color_no,
                     'size' => $sku->tq_size,
                     'sortOrder' => $sku->sort_order,
                 ];
@@ -138,7 +144,10 @@ class InventoryTrendController extends Controller
                     'quantity' => $this->quantity($sku, $scope, $isSpApi),
                     'source' => 'survey',
                     'basisAt' => $basisAt,
-                ];
+                ] + ($breakdownWarehouses === null ? [] : [
+                    // 複数の倉庫を合わせる在庫区分では、ヒートマップのツールチップに倉庫別の内訳を出す
+                    'warehouses' => array_intersect_key($this->warehouseQuantities($sku, $isSpApi), $breakdownWarehouses),
+                ]);
             }
         }
 
@@ -170,6 +179,7 @@ class InventoryTrendController extends Controller
                 ]))->values(),
                 'series' => collect($skuMetadata)->map(fn (array $metadata, string $skuCode): array => [
                     'skuCode' => $metadata['skuCode'],
+                    'color' => $metadata['color'],
                     'size' => $metadata['size'],
                     'points' => $dates->map(fn (string $date): array => ['date' => $date] + ($quantities[$skuCode][$date] ?? [
                         'quantity' => null,

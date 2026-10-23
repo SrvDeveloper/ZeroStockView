@@ -56,6 +56,7 @@ function trendResponse(params: { productCode: string; from: string; to: string; 
         warehouseTotals: [],
         series: skuCodes.map((skuCode, skuIndex) => ({
             skuCode,
+            color: skuCode.split("-")[3]!,
             size: "M",
             points: dates.map((date, dateIndex) => ({
                 date,
@@ -84,6 +85,10 @@ function withDailyTotals(response: InventoryTrendData): InventoryTrendData {
         return row;
     });
     return { ...response, dailySources: response.dailySources.length > 0 ? response.dailySources : dailySources, warehouseTotals };
+}
+
+async function openSummaryTable(wrapper: ReturnType<typeof mountPage>) {
+    await wrapper.get('[data-testid="heatmap-table-toggle"]').trigger("click");
 }
 
 function mountPage(buildTrend: typeof trendResponse = trendResponse, productCode = "ZS-2408-01") {
@@ -238,6 +243,7 @@ describe("InventoryTrendPage", () => {
                 response.series = [
                     {
                         skuCode: "API-ONLY-M",
+                        color: "01",
                         size: "M",
                         points: response.dates.map((date) => ({
                             date,
@@ -263,6 +269,7 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
         expect(apiMocks.exportInventoryTrend).toHaveBeenCalledWith({ productCode: "API-ONLY", from: "2026-08-30", to: "2026-09-28" });
         expect(click).toHaveBeenCalledOnce();
+        await openSummaryTable(wrapper);
         expect(wrapper.get('[data-summary-sku="API-ONLY-M"] [data-summary-field="latest"]').text()).toBe("7");
         expect(wrapper.find('[data-testid="survey-scope-note"]').exists()).toBe(false);
     });
@@ -279,6 +286,7 @@ describe("InventoryTrendPage", () => {
         await flushPromises();
         await wrapper.get('[data-testid="inventory-scope-select"] [data-value="amazon"]').trigger("click");
         await flushPromises();
+        await openSummaryTable(wrapper);
 
         expect(wrapper.get('[data-summary-sku="ZS-2408-01-NV-S"] [data-summary-field="latest"]').text()).not.toBe("8");
         refreshed = true;
@@ -288,27 +296,25 @@ describe("InventoryTrendPage", () => {
         expect(wrapper.find('[data-testid="amazon-daily-sources"]').exists()).toBe(false);
     });
 
-    it("shows the daily inventory trends for every SKU", async () => {
+    it("shows the warehouse chart and the SKU heatmap without a view switch", async () => {
         const wrapper = mountPage();
         await flushPromises();
-        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
 
-        expect(wrapper.text()).toContain("SKU別 在庫数の推移");
-        expect(wrapper.text()).toContain("対象品番の全SKU");
-        expect(wrapper.text()).toContain("1日単位");
-        expect(wrapper.findAll("[data-sku-card]")).toHaveLength(4);
-        expect(wrapper.findAll("[data-sku-mini-chart]")).toHaveLength(4);
-        expect(wrapper.findAll("[data-mini-chart-area]")).toHaveLength(4);
-        expect(wrapper.findAll("[data-mini-chart-line]")).toHaveLength(4);
-        expect(wrapper.findAll("[data-mini-chart-point]")).toHaveLength(120);
-        expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-S"]').text()).toContain("最新 0点");
-        expect(wrapper.get('[data-sku-card="ZS-2408-01-NV-M"]').text()).toContain("期間平均 28.5点");
-        expect(wrapper.text()).toContain("SKU別サマリー");
+        expect(wrapper.text()).toContain("倉庫別の在庫（日別）");
+        expect(wrapper.text()).toContain("棒の高さが品番全体の在庫数。下の黄色の札は、その日に欠品していたSKUの数です。");
+        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
+        expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(29);
+        expect(wrapper.text()).toContain("SKU別の在庫（ヒートマップ）");
+        expect(wrapper.findAll("[data-heatmap-row]").map((row) => row.attributes("data-heatmap-row"))).toEqual(["ZS-2408-01-NV-S", "ZS-2408-01-NV-M", "ZS-2408-01-WH-M", "ZS-2408-01-WH-L"]);
+        expect(wrapper.findAll("[data-heat-cell]")).toHaveLength(120);
+        expect(wrapper.find('[data-testid="trend-view-product"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="trend-view-sku"]').exists()).toBe(false);
+        expect(wrapper.find('[data-testid="sku-chart-grid"]').exists()).toBe(false);
+        expect(wrapper.find("[data-sku-card]").exists()).toBe(false);
         expect(wrapper.findAll('[data-testid="inventory-scope-select"] [role="radio"]')).toHaveLength(6);
         expect(wrapper.findAll('[data-testid="period-select"] [role="radio"]').map((option) => option.text())).toEqual(["2週間", "1か月", "3か月", "期間指定"]);
         expect(wrapper.get('[data-testid="period-select"] [aria-checked="true"]').text()).toBe("1か月");
         expect(wrapper.text()).not.toContain("選択してください");
-        expect(wrapper.text()).not.toContain("期間を選択");
         expect(wrapper.text()).not.toContain("ダミーデータ");
         expect(apiMocks.fetchInventoryTrend).toHaveBeenCalledWith({
             productCode: "ZS-2408-01",
@@ -317,7 +323,6 @@ describe("InventoryTrendPage", () => {
             scope: "mallTotal",
         });
     });
-
     it("reloads the trend when the product of the route changes", async () => {
         const wrapper = mountPage();
         await flushPromises();
@@ -332,16 +337,18 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ productCode: "ZS-2501-03" }));
     });
 
-    it("keeps every SKU visible without requiring a SKU selection", async () => {
+    it("keeps the summary table open when the trend reloads", async () => {
         const wrapper = mountPage();
         await flushPromises();
-        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
+        await openSummaryTable(wrapper);
+        expect(wrapper.get('[data-testid="heatmap-table-toggle"]').attributes("aria-expanded")).toBe("true");
 
-        expect(wrapper.findAll("[data-sku-card]")).toHaveLength(4);
+        await wrapper.get('[data-testid="inventory-scope-select"] [data-value="boss"]').trigger("click");
+        await flushPromises();
+
+        expect(wrapper.find('[data-testid="sku-summary-table"]').exists()).toBe(true);
         expect(wrapper.find("[data-sku-code]").exists()).toBe(false);
-        expect(wrapper.find('svg[aria-label="ZS-2408-01-NV-Mの日次在庫推移"]').exists()).toBe(true);
     });
-
     it("summarizes each SKU and counts only zero-stock days as stockouts", async () => {
         const wrapper = mountPage((params) => {
             const response = trendResponse(params);
@@ -349,6 +356,8 @@ describe("InventoryTrendPage", () => {
             return response;
         });
         await flushPromises();
+        expect(wrapper.find('[data-testid="sku-summary-table"]').exists()).toBe(false);
+        await openSummaryTable(wrapper);
 
         expect(wrapper.findAll("[data-summary-sku]")).toHaveLength(4);
         expect(wrapper.get('[data-testid="sku-summary-table"]').text()).not.toContain("ステータス");
@@ -361,7 +370,7 @@ describe("InventoryTrendPage", () => {
         expect(firstSku.get('[data-summary-field="stockout-days"]').text()).toBe("1");
         expect(firstSku.get('[data-summary-field="latest"] span').classes()).toContain("bg-hazard-pale");
         expect(firstSku.get('[data-summary-field="stockout-days"] span').classes()).toContain("bg-signal");
-        expect(wrapper.text()).toContain("2026-08-30 → 09-28（30 日間）");
+        expect(wrapper.get('[data-testid="sku-summary-period"]').text()).toBe("SKU別サマリー（2026-08-30 → 09-28（30 日間））");
     });
 
     it("updates the daily chart when a custom target period is selected", async () => {
@@ -427,46 +436,10 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "boss" }));
     });
 
-    it("uses the product chart and switches to the all-SKU chart grid", async () => {
-        const wrapper = mountPage();
-        await flushPromises();
-
-        expect(wrapper.get('[data-testid="trend-view-product"]').attributes("aria-pressed")).toBe("true");
-        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-        expect(wrapper.findAll("[data-chart-bar-segment]")).toHaveLength(29);
-        expect(wrapper.findAll('[data-testid="trend-view-product"], [data-testid="trend-view-sku"]').map((button) => button.text())).toEqual(["品番全体", "SKU別"]);
-        expect(wrapper.find('[data-testid="chart-mode-bar"]').exists()).toBe(false);
-        expect(wrapper.find('[data-testid="chart-mode-line"]').exists()).toBe(false);
-
-        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
-
-        expect(wrapper.findAll("[data-sku-mini-chart]")).toHaveLength(4);
-        expect(wrapper.findAll("[data-mini-chart-line]")).toHaveLength(4);
-        expect(wrapper.find("[data-chart-bar]").exists()).toBe(false);
-
-        await wrapper.get('[data-testid="trend-view-product"]').trigger("click");
-
-        expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
-    });
-
-    it("labels each SKU mini chart and its daily inventory points", async () => {
-        const wrapper = mountPage();
-        await flushPromises();
-        await wrapper.get('[data-testid="trend-view-sku"]').trigger("click");
-
-        const firstChart = wrapper.get('svg[aria-label="ZS-2408-01-NV-Sの日次在庫推移"]');
-        expect(firstChart.get("desc").text()).toContain("日別在庫数");
-        expect(firstChart.findAll("[data-mini-chart-point]")).toHaveLength(30);
-        expect(firstChart.findAll("title").at(-1)?.text()).toBe("2026/09/28 在庫0点");
-    });
-
     it("shows total inventory and the number of out-of-stock SKUs in product view", async () => {
         const wrapper = mountPage();
         await flushPromises();
 
-        expect(wrapper.text()).toContain("ZS-2408-01 の倉庫別在庫");
-        expect(wrapper.text()).toContain("棒にマウスを置くと内訳を表示します");
-        expect(wrapper.get('[data-testid="trend-view-product"]').attributes("aria-pressed")).toBe("true");
         expect(wrapper.findAll("[data-chart-bar]")).toHaveLength(30);
         const stockoutMarks = wrapper.findAll("[data-stockout-point]");
         expect(stockoutMarks).toHaveLength(1);
@@ -550,6 +523,7 @@ describe("InventoryTrendPage", () => {
     it("sparks each SKU trend in the summary table and ends at a yellow point when the latest stock is zero", async () => {
         const wrapper = mountPage();
         await flushPromises();
+        await openSummaryTable(wrapper);
 
         const sparklines = wrapper.findAll('[data-summary-field="trend"] [data-sku-sparkline]');
         expect(sparklines).toHaveLength(4);

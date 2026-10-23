@@ -15,6 +15,8 @@ export interface InventoryTrendPoint {
     quantity: number | null;
     source: "survey" | "sp_api" | null;
     basisAt: string | null;
+    /** 複数の倉庫を合わせる在庫区分（モール全体・総数）のときだけ、調査のある日の倉庫別の数量。null は取込待ち・未取得 */
+    warehouses?: Partial<Record<"amazon" | "boss" | "free" | "stock", number | null>>;
 }
 
 export interface InventoryTrendDailySource {
@@ -36,6 +38,8 @@ export interface InventoryTrendWarehouseTotal {
 
 export interface InventoryTrendSeries {
     skuCode: string;
+    /** TQ のカラー番号 */
+    color: string | null;
     size: string;
     points: InventoryTrendPoint[];
 }
