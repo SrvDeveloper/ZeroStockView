@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
+import BossHistoryImportCard from "@/components/import/BossHistoryImportCard.vue";
 import BaseAlert from "@/components/ui/BaseAlert.vue";
 import BaseButton from "@/components/ui/BaseButton.vue";
 import BaseCard from "@/components/ui/BaseCard.vue";
@@ -174,8 +175,9 @@ async function runImport() {
             >
         </div>
 
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:items-start">
-            <div class="flex min-w-0 flex-col gap-4">
+        <!-- 狭い画面では、取込ファイル → BOSS在庫の補完 → Amazon 在庫の順。広い画面では、右の列に Amazon 在庫 → BOSS在庫の補完 -->
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:grid-rows-[auto_1fr] xl:items-start">
+            <div class="flex min-w-0 flex-col gap-4 xl:row-span-2">
                 <BaseCard title="ファイルを添付" description="CSVのヘッダーを確認して、BOSS・ECストック・フリー在庫を自動判定します。ファイル名は判定に使いません。" :padded="false">
                     <div class="flex flex-col gap-3 px-[18px] py-3.5">
                         <div
@@ -240,7 +242,12 @@ async function runImport() {
                 <BaseAlert v-if="errorMessage" tone="danger" title="取込に失敗しました">{{ errorMessage }}</BaseAlert>
             </div>
 
+            <div data-testid="boss-history-card" class="min-w-0 xl:col-start-2 xl:row-start-2">
+                <BossHistoryImportCard />
+            </div>
+
             <BaseCard
+                class="xl:col-start-2 xl:row-start-1"
                 title="Amazon 在庫"
                 :description="canManageAmazon ? '毎日 9:00 に自動で取得し、同じ日の調査結果に反映します。手動でも取得できます。' : '毎日 9:00 に自動で取得し、同じ日の調査結果に反映します。'"
                 :padded="false"
