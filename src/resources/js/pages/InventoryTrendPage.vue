@@ -12,6 +12,8 @@ import {
     type InventoryTrendSeries,
     type InventoryTrendWarehouseTotal,
 } from "@/api/inventoryTrends";
+import InventoryColorSizeMatrix from "@/components/inventory/InventoryColorSizeMatrix.vue";
+import InventoryStockoutList from "@/components/inventory/InventoryStockoutList.vue";
 import InventoryTrendChart from "@/components/inventory/InventoryTrendChart.vue";
 import InventoryTrendHeatmap from "@/components/inventory/InventoryTrendHeatmap.vue";
 import InventoryTrendMiniChart from "@/components/inventory/InventoryTrendMiniChart.vue";
@@ -732,5 +734,18 @@ async function exportCsv() {
                 </template>
             </InventoryTrendHeatmap>
         </BaseCard>
+
+        <section
+            v-if="!productMissing && rawSeries.length > 0 && !trendLoading && !trendError && metrics.latestDate"
+            class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-4"
+            data-testid="latest-sku-breakdown"
+        >
+            <BaseCard :title="`カラー × サイズの在庫（${formatMonthDay(metrics.latestDate)}時点）`" description="どのカラー・サイズが欠けているかを一目で確認します。小さい数字は1週間前との差です。">
+                <InventoryColorSizeMatrix :series="rawSeries" :latest-date="metrics.latestDate" :week-ago-date="metrics.weekAgoDate" />
+            </BaseCard>
+            <BaseCard title="欠品中のSKU" description="欠品が続いている日数の長い順です。欠品が始まった日と、その直前の在庫（最後に在庫があった日）を示します。">
+                <InventoryStockoutList :series="rawSeries" :latest-date="metrics.latestDate" />
+            </BaseCard>
+        </section>
     </div>
 </template>

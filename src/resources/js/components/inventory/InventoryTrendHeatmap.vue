@@ -202,9 +202,18 @@ function tooltipLeft(x: number): number {
                 </div>
                 <div class="pb-1 text-right text-[10.5px] font-semibold text-muted">最新</div>
                 <div class="pb-1 text-right text-[10.5px] font-semibold text-muted">欠品日数</div>
+                <!-- 日付の行の下の線。並び順に関係なく引く -->
+                <div class="col-span-full h-px bg-line-2" data-heatmap-header-rule aria-hidden="true"></div>
 
                 <template v-for="row in rows" :key="row.key">
-                    <div v-if="row.kind === 'color'" data-heatmap-color class="col-span-full pt-1.5 text-[11px] font-semibold text-ink-2">{{ row.label }}</div>
+                    <div
+                        v-if="row.kind === 'color'"
+                        data-heatmap-color
+                        class="col-span-full pt-1.5 pb-0.5 text-[11px] font-semibold text-ink-2"
+                        :class="row.key === rows[0]?.key ? '' : 'mt-1 border-t border-line-2 pt-2.5'"
+                    >
+                        {{ row.label }}
+                    </div>
                     <template v-else>
                         <div class="flex min-w-0 items-center gap-2 pr-2" :data-heatmap-row="row.series.skuCode">
                             <span class="truncate font-mono text-[11.5px] font-medium uppercase" :title="row.series.skuCode">{{ row.series.skuCode }}</span>
@@ -240,7 +249,7 @@ function tooltipLeft(x: number): number {
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[11px] text-ink-2" data-heatmap-legend>
+        <div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 border-t border-line-2 pt-3 text-[11px] text-ink-2" data-heatmap-legend>
             <span class="inline-flex items-center gap-1.5"
                 ><span class="h-3 w-3.5 rounded-[2px]" :class="LEVEL_CLASS.stockout"></span><span class="font-num text-[12px] font-semibold">0</span>（欠品）</span
             >

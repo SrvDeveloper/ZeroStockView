@@ -85,11 +85,15 @@ describe("InventoryTrendHeatmap", () => {
         const wrapper = mountHeatmap();
 
         expect(wrapper.findAll("[data-heatmap-color]").map((heading) => heading.text())).toEqual(["カラー 01", "カラー 02"]);
+        // 日付の行の下に線を引き、2つ目以降のカラーの見出しの上にも線を引く（1つ目は日付の行の線と重ねない）
+        expect(wrapper.find("[data-heatmap-header-rule]").exists()).toBe(true);
+        expect(wrapper.findAll("[data-heatmap-color]").map((heading) => heading.classes().includes("border-t"))).toEqual([false, true]);
         expect(rowOrder(wrapper)).toEqual(["1000-01-S", "1000-01-M", "1000-02-M", "1000-02-L"]);
 
         await wrapper.get('[data-testid="heatmap-sort"] select').setValue("stockoutDays");
         expect(rowOrder(wrapper)).toEqual(["1000-01-M", "1000-01-S", "1000-02-M", "1000-02-L"]);
         expect(wrapper.find("[data-heatmap-color]").exists()).toBe(false);
+        expect(wrapper.find("[data-heatmap-header-rule]").exists()).toBe(true);
 
         await wrapper.get('[data-testid="heatmap-sort"] select').setValue("latest");
         expect(rowOrder(wrapper)).toEqual(["1000-01-S", "1000-01-M", "1000-02-L", "1000-02-M"]);

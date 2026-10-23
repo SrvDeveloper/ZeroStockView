@@ -86,7 +86,15 @@ class InventoryTrendOverviewService
 
         $snapshots = $this->latestSnapshots($products, $surveys);
         $skuStates = $this->latestSkuStates($scope, $snapshots);
-        $streaks = $this->stockoutStreaks($scope, $surveys, $surveyDates, $latestDate, $lookbackStart);
+        $stockoutSkus = [];
+        foreach ($snapshots as $productCode => $snapshot) {
+            foreach ($skuStates->get($snapshot['id'], []) as $state) {
+                if ($state['state'] === 'stockout') {
+                    $stockoutSkus[$state['skuCode']] = $productCode;
+                }
+            }
+        }
+        $streaks = $this->stockoutStreaks($scope, $surveys, $surveyDates, $latestDate, $lookbackStart, $stockoutSkus);
         $groupKeysByName = $snapshots
             ->flatMap(fn (array $snapshot): array => $snapshot['memberships'] ?? [])
             ->filter(fn (array $membership): bool => str_starts_with($membership['key'], 'setting:'))
@@ -318,34 +326,51 @@ class InventoryTrendOverviewService
     }
 
     /**
-     * SKU ごとの、さかのぼれる範囲で最後に在庫（1以上）があった日と、最初に調査に出てきた日。
-     * 取込待ち（NULL）と調査のない日は、欠品の連続を切らない。
+     * 最新の調査で欠品している SKU ごとの、さかのぼれる範囲で最後に在庫（1以上）があった日と、その後で最初に欠品（確定した 0）と確定した日。
+     * 欠品はこの日から始まったとみなす（その前の調査のない日・取込待ち（NULL）の日は欠品に数えない）。
+     * 欠品と確定した日のあとの、調査のない日と取込待ちの日は、欠品の連続を切らない。
      * 同じ日に調査が複数ある古い期間では、その日のどれかの調査で在庫があれば在庫ありとみなす。
      *
      * @param  Collection<int, Survey>  $surveys
      * @param  array<int, string>  $surveyDates
-     * @return array<string, array<string, array{lastInStock: string|null, firstSeen: string}>>
+     * @param  array<string, string>  $stockoutSkus  最新の調査で欠品している SKU コード => 品番
+     * @return array<string, array<string, array{lastInStock: string|null, stockoutSince: string|null}>>
      */
-    private function stockoutStreaks(string $scope, Collection $surveys, array $surveyDates, CarbonImmutable $latestDate, CarbonImmutable $lookbackStart): array
+    private function stockoutStreaks(string $scope, Collection $surveys, array $surveyDates, CarbonImmutable $latestDate, CarbonImmutable $lookbackStart, array $stockoutSkus): array
     {
         $expression = $this->expression($scope);
         $ids = $surveys->filter(fn (Survey $survey): bool => $surveyDates[$survey->id] >= $lookbackStart->toDateString()
             && $surveyDates[$survey->id] <= $latestDate->toDateString())->pluck('id')->all();
+        /** @var array<string, array<string, array<string, bool>>> $days 品番 => SKU => 日 => 在庫ありか（欠品と確定した日は false） */
+        $days = [];
+        // SKU コードで絞ると索引の引き方が悪くなるので、品番で絞って SKU は PHP で選ぶ
+        foreach (array_chunk(array_values(array_unique($stockoutSkus)), 500) as $productCodes) {
+            foreach (array_chunk($ids, 500) as $chunk) {
+                // 調査 × SKU は1行なので、集計せずに取り出し、日ごとの判定は PHP で行う
+                $rows = $this->skuQuery($scope)
+                    ->whereIn('sp.survey_id', $chunk)
+                    ->whereIn('sp.product_code', $productCodes)
+                    ->whereRaw("{$expression} IS NOT NULL")
+                    ->selectRaw("sp.product_code, ss.sku_code, s.executed_at, CASE WHEN {$expression} > 0 THEN 1 ELSE 0 END AS in_stock")
+                    ->get();
+                foreach ($rows as $row) {
+                    if (($stockoutSkus[$row->sku_code] ?? null) !== $row->product_code) {
+                        continue;
+                    }
+                    $date = substr((string) $row->executed_at, 0, 10);
+                    $days[$row->product_code][$row->sku_code][$date] = (bool) $row->in_stock || ($days[$row->product_code][$row->sku_code][$date] ?? false);
+                }
+            }
+        }
+
         $streaks = [];
-        foreach (array_chunk($ids, 500) as $chunk) {
-            $rows = $this->skuQuery($scope)
-                ->whereIn('sp.survey_id', $chunk)
-                ->groupBy('sp.product_code', 'ss.sku_code')
-                ->selectRaw("sp.product_code, ss.sku_code, MAX(CASE WHEN {$expression} > 0 THEN s.executed_at END) AS last_in_stock, MIN(s.executed_at) AS first_seen")
-                ->get();
-            foreach ($rows as $row) {
-                $current = $streaks[$row->product_code][$row->sku_code] ?? ['lastInStock' => null, 'firstSeen' => null];
-                $lastInStock = $row->last_in_stock === null ? null : substr((string) $row->last_in_stock, 0, 10);
-                $firstSeen = substr((string) $row->first_seen, 0, 10);
-                $streaks[$row->product_code][$row->sku_code] = [
-                    'lastInStock' => max($current['lastInStock'], $lastInStock),
-                    'firstSeen' => $current['firstSeen'] === null ? $firstSeen : min($current['firstSeen'], $firstSeen),
-                ];
+        foreach ($days as $productCode => $skus) {
+            foreach ($skus as $skuCode => $states) {
+                ksort($states);
+                $inStockDates = array_keys(array_filter($states));
+                $lastInStock = $inStockDates === [] ? null : max($inStockDates);
+                $stockoutDates = array_keys(array_filter($states, fn (bool $inStock, string $date): bool => ! $inStock && ($lastInStock === null || $date > $lastInStock), ARRAY_FILTER_USE_BOTH));
+                $streaks[$productCode][$skuCode] = ['lastInStock' => $lastInStock, 'stockoutSince' => $stockoutDates === [] ? null : min($stockoutDates)];
             }
         }
 
@@ -353,22 +378,14 @@ class InventoryTrendOverviewService
     }
 
     /**
-     * 最新の調査日まで続いている欠品の日数。最後に在庫があった日の翌日から数え、
-     * さかのぼれる範囲に在庫のあった日がなければ、最初に調査に出てきた日から数える。
+     * 最新の調査日まで続いている欠品の日数。最後に在庫があった日の後で、最初に欠品と確定した日から数える
+     * （さかのぼれる範囲に在庫のあった日がなければ、範囲内で最初に欠品と確定した日から）。
      *
-     * @param  array{lastInStock: string|null, firstSeen: string}|null  $streak
+     * @param  array{lastInStock: string|null, stockoutSince: string|null}|null  $streak
      */
     private function streakDays(?array $streak, string $latestDate): int
     {
-        $latest = CarbonImmutable::parse($latestDate);
-        if ($streak === null) {
-            return 1;
-        }
-        if ($streak['lastInStock'] !== null) {
-            return (int) CarbonImmutable::parse($streak['lastInStock'])->diffInDays($latest);
-        }
-
-        return (int) CarbonImmutable::parse($streak['firstSeen'])->diffInDays($latest) + 1;
+        return (int) CarbonImmutable::parse($streak['stockoutSince'] ?? $latestDate)->diffInDays(CarbonImmutable::parse($latestDate)) + 1;
     }
 
     /**

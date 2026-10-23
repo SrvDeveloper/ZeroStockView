@@ -337,6 +337,20 @@ describe("InventoryTrendPage", () => {
         expect(apiMocks.fetchInventoryTrend).toHaveBeenLastCalledWith(expect.objectContaining({ productCode: "ZS-2501-03" }));
     });
 
+    it("shows the latest stock by color and size and the SKUs out of stock under the heatmap", async () => {
+        const wrapper = mountPage();
+        await flushPromises();
+
+        const cards = wrapper.get('[data-testid="latest-sku-breakdown"]');
+        expect(cards.text()).toContain("カラー × サイズの在庫（9/28（月）時点）");
+        expect(cards.findAll('th[scope="row"]').map((heading) => heading.text())).toEqual(["カラー NV", "カラー WH"]);
+        expect(cards.findAll("[data-matrix-total]").map((total) => total.text())).toEqual(["0", "0"]);
+        expect(cards.text()).toContain("欠品中のSKU");
+        // 最新の 9/28 に 4 SKU とも欠品。9/27 は在庫あり
+        expect(cards.findAll("[data-stockout-sku]")).toHaveLength(4);
+        expect(cards.get('[data-stockout-sku="ZS-2408-01-NV-S"] [data-stockout-since]').text()).toBe("9/28（月）から欠品 · 直前の在庫 38（9/27（日））");
+    });
+
     it("keeps the summary table open when the trend reloads", async () => {
         const wrapper = mountPage();
         await flushPromises();

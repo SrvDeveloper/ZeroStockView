@@ -138,7 +138,8 @@ class InventoryTrendOverviewApiTest extends TestCase
             ->assertJsonPath('summary.focusCounts', ['all' => 4, 'stockout' => 3, 'increased' => 1, 'decreasing' => 1, 'long' => 1])
             // 初期の並び順は欠品SKUの多い順。同じ数なら前週比の小さい順
             ->assertJsonPath('data.*.productCode', ['DOWN', 'LONG', 'FLAT', 'UP'])
-            ->assertJsonPath('data.1.longestStockoutStreak', 43)
+            // 9/10 は在庫あり、9/11 は調査なし。欠品と確定した 9/12 から数える
+            ->assertJsonPath('data.1.longestStockoutStreak', 42)
             ->assertJsonPath('data.0.stockoutSkuDays', 3)
             ->assertJsonPath('data.3.groups', [['key' => 'setting:1', 'name' => '売上TOP20']])
             ->assertJsonPath('data.0.groups', [['key' => 'ungrouped', 'name' => 'グループなし']])
@@ -193,11 +194,33 @@ class InventoryTrendOverviewApiTest extends TestCase
         $this->survey('2026-10-12', ['A' => ['A-1' => $this->sku(bossOwn: null, bossRfc: 0)]]);
         $this->survey(self::LATEST, ['A' => ['A-1' => $this->sku(bossOwn: 0, bossRfc: 0)]]);
 
-        // 表示期間（10/20〜）より前の、最後に在庫があった 10/03 から数える
+        // 表示期間（10/20〜）より前の、最後に在庫があった 10/03 の後で欠品と確定した 10/05 から数える
         $this->overview(['scope' => 'boss', 'from' => '2026-10-20'])
-            ->assertJsonPath('data.0.longestStockoutStreak', 20)
+            ->assertJsonPath('data.0.longestStockoutStreak', 19)
             ->assertJsonPath('data.0.stockoutSkuDays', 1)
             ->assertJsonPath('summary.longStockoutSkuCount', 0);
+    }
+
+    public function test_stockout_streak_does_not_count_days_without_a_survey_or_pending_values_before_the_first_stockout(): void
+    {
+        $this->survey('2026-10-20', ['A' => ['A-1' => $this->sku(bossOwn: 1, bossRfc: 0)]]);
+        $this->survey('2026-10-22', ['A' => ['A-1' => $this->sku(bossOwn: null, bossRfc: 0)]]);
+        $this->survey(self::LATEST, ['A' => ['A-1' => $this->sku(bossOwn: 0, bossRfc: 0)]]);
+
+        // 10/21 は調査なし、10/22 は取込待ち。欠品と確定したのは 10/23 だけ
+        $this->overview(['scope' => 'boss', 'from' => '2026-10-19'])
+            ->assertJsonPath('data.0.longestStockoutStreak', 1);
+    }
+
+    public function test_stockout_streak_without_an_in_stock_day_starts_on_the_first_confirmed_stockout(): void
+    {
+        $this->survey('2026-10-19', ['A' => ['A-1' => $this->sku(bossOwn: null, bossRfc: 0)]]);
+        $this->survey('2026-10-21', ['A' => ['A-1' => $this->sku(bossOwn: 0, bossRfc: 0)]]);
+        $this->survey(self::LATEST, ['A' => ['A-1' => $this->sku(bossOwn: 0, bossRfc: 0)]]);
+
+        // 未確定の 10/19 ではなく、欠品と確定した 10/21 から数える
+        $this->overview(['scope' => 'boss', 'from' => '2026-10-19'])
+            ->assertJsonPath('data.0.longestStockoutStreak', 3);
     }
 
     public function test_stockout_streak_looks_back_at_most_ninety_days(): void
