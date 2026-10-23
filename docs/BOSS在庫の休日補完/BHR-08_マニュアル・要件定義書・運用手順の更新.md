@@ -1,0 +1,48 @@
+# BHR-08 マニュアル・要件定義書・運用手順の更新
+
+**目的:** 休日の BOSS 在庫の補完を、操作マニュアル・要件定義書・運用手順に書く。
+
+**依存:** BHR-01〜07
+
+## 作業
+
+### 操作マニュアル
+
+- 「データ取込」の節に「休日のBOSS在庫を補完する」を足す。
+  - いつ使うか（休日明けの出勤日に、BOSS のレポートを取り込んだあと）
+  - BOSS で在庫変動履歴を出力するときの条件（期間は「休日前の最後の出勤日の 0:00 〜 休日明けにレポートを出力したあと」、処理種別は絞らない）
+  - 確認の表示の見方（基準の調査、補完する日、データなしになる SKU とその理由）と、実行の手順
+  - 再現するのは 9:00 時点の BOSS 在庫だけで、フリー在庫・ECストックは補完されないこと
+- 「在庫調査結果」「在庫調査履歴」「在庫推移」の節に、「履歴から再現」の印の意味を足す。
+- 「注意事項」に、補完した日にあとから BOSS のレポートを取り込むと実際の値で上書きされることを足す。
+- `constants/manual.ts` の要点・キーワード（在庫変動履歴、休日、補完、再現）と、関連するテストを更新する。
+
+### 要件定義書（`doc/要件定義書.md`）
+
+- 4章に「BOSS:自社／BOSS:RFC の休日補完」の節を足す（README の「再現の考え方」と前提 1〜4・6・9）。
+- 5章の在庫数の表示に、再現した値の印を足す。7章の保存するデータに、在庫変動履歴の取込記録と調査の BOSS の取得方式を足す。
+
+### 運用手順
+
+- `doc/` に「BOSS在庫の休日補完の運用」（新規）を足す。休日明けの作業の順番（BOSS のレポートを取り込む → 在庫変動履歴を出力して取り込む → 確認の表示で不一致がないかを見る）、不一致が多いときの確かめ方、ファイルの保存期間（30日）。
+- `doc/外部公開API仕様書.md` に、休日の BOSS の値が在庫変動履歴から再現した値の場合があることを注記する（列は増やさない）。
+
+## 対象ファイル
+
+- `src/resources/js/components/manual/sections/`（`DataImportSection.vue`、`SurveyResultSection.vue`、`SurveyHistorySection.vue`、`InventoryTrendSection.vue`、`NotesSection.vue`）
+- `src/resources/js/constants/manual.ts`、`src/resources/js/pages/ManualPage.test.ts`、`src/resources/js/utils/manualSearch.test.ts`
+- `doc/要件定義書.md`、`doc/外部公開API仕様書.md`、`doc/BOSS在庫の休日補完の運用.md`（新規）
+
+## 完了条件
+
+- マニュアル・要件定義書・運用手順・外部公開API仕様書が、実装（BHR-01〜07）と食い違わない。
+- `npm run check` と `npm run build` が通る。
+
+## 確認コマンド
+
+```sh
+cd src
+npx vitest run resources/js/pages/ManualPage.test.ts resources/js/utils/manualSearch.test.ts
+npm run check
+npm run build
+```
