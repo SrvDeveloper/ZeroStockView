@@ -105,3 +105,13 @@ php artisan test --compact tests/Feature/InventoryTrendApiTest.php
 vendor/bin/pint --dirty --format agent
 npm run typecheck
 ```
+
+**実装状況（2026-10-23）:** `GET /api/inventory-trends/overview` と `InventoryTrendOverviewService` を追加した。品番 × 日の合計と欠品 SKU 数は、調査 × 品番の `GROUP BY` で SQL で集計し、在庫区分の数量は `InventoryTrendController::quantity()` と同じ規則を SQL の式で書いた（全在庫区分で `GET /api/inventory-trends` の `warehouseTotals` と一致することをテストで固定）。Amazon の区分では、在庫推移の SKU 別と同じく、Amazon 取得の対象外の SKU（ASIN のない SP-API 調査の SKU で、Amazon の値がない）を SKU 数・SKU の状態・欠品から除く。連続欠品日数は「最後に在庫（1以上）があった日から最新の調査日までの日数」とし、さかのぼれる範囲（90日）に在庫のあった日がなければ、範囲内で最初に調査に出てきた日から数える。同じ日に調査が複数ある古い期間では、連続欠品日数だけ「その日のどれかの調査で在庫があれば在庫あり」とみなす（合計・欠品 SKU 数は品番ごとにその日の最後の調査を使う）。推移（`points`）は、表示するページの品番の分だけ作る。応答には、チケットの例に加えて `from`・`to` を入れた。TypeScript の型と `fetchInventoryTrendOverview()` を `resources/js/api/inventoryTrends.ts` に追加した。
+
+計測（`InventoryTrendOverviewBenchmarkTest`、200品番・2,000 SKU・毎日の調査、インメモリ SQLite、在庫区分は総数）:
+
+| 表示期間 | 所要時間 | SQL | SQLの時間 | 応答の大きさ | ピークメモリ |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 30日 | 528 ms | 8 | 279 ms | 0.04 MB | +20.0 MB |
+| 90日 | 432 ms | 8 | 269 ms | 0.10 MB | +18.8 MB |
+| 180日 | 602 ms | 8 | 361 ms | 0.18 MB | +34.9 MB |

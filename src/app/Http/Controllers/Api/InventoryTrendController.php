@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ListInventoryTrendOverviewRequest;
 use App\Http\Requests\ListInventoryTrendProductsRequest;
 use App\Http\Requests\ShowInventoryTrendRequest;
 use App\Models\Product;
@@ -12,6 +13,7 @@ use App\Models\SurveySku;
 use App\Rules\InventoryHistoryProductCode;
 use App\Rules\MaximumDateRange;
 use App\Services\InventoryTrendCsvExporter;
+use App\Services\InventoryTrendOverviewService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -60,6 +62,12 @@ class InventoryTrendController extends Controller
                 'to' => CarbonImmutable::parse($lastDate)->toDateString(),
             ] : null,
         ]);
+    }
+
+    /** 品番一覧。品番ごとの最新在庫・前週比・推移・SKUの状況・欠品と、上部の全体の数値を返す */
+    public function overview(ListInventoryTrendOverviewRequest $request, InventoryTrendOverviewService $overview): JsonResponse
+    {
+        return response()->json($overview->overview($request->validated()));
     }
 
     public function show(ShowInventoryTrendRequest $request): JsonResponse

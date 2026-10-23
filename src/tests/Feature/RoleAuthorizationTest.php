@@ -21,6 +21,7 @@ class RoleAuthorizationTest extends TestCase
 
     private const ROLE_MATRIX = [
         'GET api/inventory-trends/products' => 'role:admin,editor,viewer',
+        'GET api/inventory-trends/overview' => 'role:admin,editor,viewer',
         'GET api/inventory-trends/export' => 'role:admin,editor,viewer',
         'GET api/inventory-trends' => 'role:admin,editor,viewer',
         'GET api/surveys' => 'role:admin,editor,viewer',
