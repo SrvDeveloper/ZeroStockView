@@ -10,13 +10,18 @@ use App\Models\Survey;
 use App\Models\SurveyProduct;
 use App\Models\SurveySku;
 use App\Models\User;
+use App\Services\InventoryImportService;
+use App\Services\SurveyAmazonInventorySyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * 在庫変動履歴の確認と適用の API（docs/BOSS在庫の休日補完 BHR-04）。データはすべて架空。
+ * 在庫変動履歴の確認と適用の API（docs/BOSS在庫の休日補完 BHR-04）と、既存の取込・再照合との組み合わせ（BHR-05）。データはすべて架空。
  * 金曜（10/16）と月曜（10/19）に BOSS のレポートを取り込み、土日（10/17・10/18）を補完する。
  */
 class BossInventoryHistoryApiTest extends TestCase
@@ -43,6 +48,9 @@ class BossInventoryHistoryApiTest extends TestCase
 
     private const PRODUCTS = ['A' => ['A-1', 'A-2'], 'B' => ['B-1']];
 
+    /** SKUコード => TQ の品番・カラー・サイズ（KEEP一覧表との突き合わせに使う） */
+    private const TQ_KEYS = ['A-1' => ['TA', '01', 'M'], 'A-2' => ['TA', '01', 'L'], 'B-1' => ['TB', '01', 'M']];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -51,9 +59,23 @@ class BossInventoryHistoryApiTest extends TestCase
         foreach (self::PRODUCTS as $productCode => $skuCodes) {
             $product = Product::factory()->create(['product_code' => $productCode, 'status' => 'active']);
             foreach ($skuCodes as $index => $skuCode) {
-                Sku::factory()->for($product)->create(['sku_code' => $skuCode, 'child_asin' => 'BASIN'.str_replace('-', '', $skuCode), 'sort_order' => $index + 1]);
+                [$item, $color, $size] = self::TQ_KEYS[$skuCode];
+                Sku::factory()->for($product)->create([
+                    'sku_code' => $skuCode, 'child_asin' => 'BASIN'.str_replace('-', '', $skuCode), 'sort_order' => $index + 1,
+                    'tq_item_no' => $item, 'tq_color_no' => $color, 'tq_size' => $size,
+                ]);
             }
         }
+        // 取込（import()）で呼ぶ CrossWalker は、上と同じ品番・SKU を返す
+        config(['services.crosswalker.base_url' => 'https://crosswalker.test/api/v1', 'services.crosswalker.api_key' => 'test-api-key']);
+        Http::fake(fn (ClientRequest $request) => Http::response(['data' => $request->method() === 'GET' ? array_map(fn (string $productCode): array => [
+            'item_no' => $productCode, 'brand' => 'BRAND', 'category' => 'CATEGORY', 'parent_asin' => null, 'status' => 'active',
+            'skus' => array_map(fn (string $skuCode): array => [
+                'sku_code' => $skuCode, 'child_asin' => 'BASIN'.str_replace('-', '', $skuCode), 'status' => 'active',
+                'tq_item_no' => self::TQ_KEYS[$skuCode][0], 'tq_color_no' => self::TQ_KEYS[$skuCode][1], 'tq_size' => self::TQ_KEYS[$skuCode][2],
+            ], self::PRODUCTS[$productCode]),
+            'updated_at' => '2026-10-01T00:00:00.000000Z',
+        ], array_keys(self::PRODUCTS)) : []]));
     }
 
     public function test_preview_returns_the_plan_without_writing(): void
@@ -261,6 +283,107 @@ class BossInventoryHistoryApiTest extends TestCase
         $this->assertIsString($contents);
         $this->assertStringContainsString('A-1,', $contents);
         $this->assertStringContainsString(',4,5,11,2,,', $contents);
+    }
+
+    public function test_importing_a_boss_report_on_a_filled_day_overwrites_it_as_report(): void
+    {
+        $saturday = $this->applyToWeekend();
+
+        $survey = app(InventoryImportService::class)->import([
+            UploadedFile::fake()->createWithContent('倉庫毎の在庫数レポート.csv', "倉庫,SKUコード,実在庫 (倉庫毎),引当済 (倉庫毎)\n自社倉庫,A-1,30,1\nRFC倉庫,A-1,4,0\n"),
+        ], null, Carbon::parse('2026-10-17 15:00:00'));
+
+        $this->assertSame($saturday->id, $survey->id);
+        $this->assertSame(Survey::BOSS_SOURCE_REPORT, $survey->boss_source);
+        $this->assertNull($survey->boss_basis_at);
+        $this->assertNull($survey->boss_inventory_history_id);
+        $this->assertSame([29, 4], $this->bossStocks($survey, 'A-1'));
+        // レポートに載っていない SKU は、再現した値を残さず NULL（BOSS のレポートは全 SKU を載せる）
+        $this->assertSame([null, null], $this->bossStocks($survey, 'A-2'));
+    }
+
+    public function test_importing_only_tq_files_on_a_filled_day_keeps_the_reconstructed_boss_values(): void
+    {
+        $saturday = $this->applyToWeekend();
+
+        $survey = app(InventoryImportService::class)->import([$this->keepFile()], null, Carbon::parse('2026-10-17 15:00:00'));
+
+        $this->assertSame($saturday->id, $survey->id);
+        $this->assertSame(Survey::BOSS_SOURCE_HISTORY, $survey->boss_source);
+        $this->assertSame([12, 2], $this->bossStocks($survey, 'A-1'));
+        $this->assertSame([null, 1], $this->bossStocks($survey, 'B-1'));
+        $this->assertSame(2, $this->stock($survey, 'A-1')->ec_stock);
+    }
+
+    public function test_rerunning_a_filled_survey_reconstructs_again_from_the_history_file_and_keeps_the_values_after_it_expires(): void
+    {
+        $saturday = $this->applyToWeekend();
+        app(InventoryImportService::class)->import([$this->keepFile()], null, Carbon::parse('2026-10-17 15:00:00'));
+        $this->stock($saturday, 'A-1')->update(['boss_own_stock' => 99]);
+
+        $rerun = app(InventoryImportService::class)->reimport($saturday->refresh());
+
+        $this->assertSame(Survey::BOSS_SOURCE_HISTORY, $rerun->boss_source);
+        $this->assertSame([12, 2], $this->bossStocks($rerun, 'A-1'));
+        $this->assertSame(2, $this->stock($rerun, 'A-1')->ec_stock);
+
+        // 履歴ファイルの期限が過ぎたら、再照合の前の値を SKU コードで引き継ぐ
+        $this->stock($saturday, 'A-1')->update(['boss_own_stock' => 99]);
+        BossInventoryHistory::query()->update(['expires_at' => now()->subMinute()]);
+        $this->artisan('survey-files:prune')->assertSuccessful();
+        $this->assertNull(BossInventoryHistory::query()->sole()->stored_path);
+        $rerun = app(InventoryImportService::class)->reimport($saturday->refresh());
+
+        $this->assertSame(Survey::BOSS_SOURCE_HISTORY, $rerun->boss_source);
+        $this->assertSame([99, 2], $this->bossStocks($rerun, 'A-1'));
+        $this->assertSame([null, 1], $this->bossStocks($rerun, 'B-1'));
+    }
+
+    public function test_amazon_sync_leaves_the_reconstructed_boss_values_and_source(): void
+    {
+        $saturday = $this->applyToWeekend();
+        $this->amazonImport('2026-10-17', 'A-1', 7, 8);
+
+        app(SurveyAmazonInventorySyncService::class)->syncDate('2026-10-17');
+
+        $saturday->refresh();
+        $this->assertSame(Survey::BOSS_SOURCE_HISTORY, $saturday->boss_source);
+        $this->assertSame([12, 2], $this->bossStocks($saturday, 'A-1'));
+        $sku = $this->stock($saturday, 'A-1');
+        $this->assertSame([7, 8], [$sku->amazon_own_stock, $sku->amazon_fba_stock]);
+    }
+
+    public function test_survey_responses_include_the_boss_source_and_deleting_a_filled_survey_keeps_the_history_record(): void
+    {
+        $saturday = $this->applyToWeekend();
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_ADMIN]));
+
+        $this->getJson('/api/surveys/'.$saturday->id)->assertOk()
+            ->assertJsonPath('data.bossSource', Survey::BOSS_SOURCE_HISTORY)
+            ->assertJsonPath('data.bossBasisAt', '2026-10-17T00:00:00.000000Z');
+        $this->getJson('/api/surveys')->assertOk()
+            ->assertJsonPath('data.*.bossSource', [Survey::BOSS_SOURCE_REPORT, Survey::BOSS_SOURCE_HISTORY, Survey::BOSS_SOURCE_HISTORY, Survey::BOSS_SOURCE_REPORT])
+            ->assertJsonPath('data.0.bossBasisAt', null);
+
+        $this->deleteJson('/api/surveys/'.$saturday->id)->assertNoContent();
+        $this->assertSame(1, BossInventoryHistory::query()->count());
+        $this->assertSame(1, BossInventoryHistory::query()->sole()->surveys()->count());
+    }
+
+    /** 金曜・月曜にレポートを取り込み、土日を補完する。土曜の調査を返す */
+    private function applyToWeekend(): Survey
+    {
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_EDITOR]));
+        $this->survey('2026-10-16', self::FRIDAY, ['boss_source' => Survey::BOSS_SOURCE_REPORT]);
+        $this->survey('2026-10-19', self::MONDAY, ['boss_source' => Survey::BOSS_SOURCE_REPORT]);
+        $this->postJson('/api/boss-inventory-histories', ['file' => $this->historyFile()])->assertCreated();
+
+        return Survey::query()->where('survey_date', '2026-10-17')->sole();
+    }
+
+    private function keepFile(): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent('KEEP一覧表.csv', "品番,カラーNo,サイズ,キープ残数\nTA,01,M,2\n");
     }
 
     /**

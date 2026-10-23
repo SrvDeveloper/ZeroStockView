@@ -40,3 +40,9 @@ php artisan test --compact tests/Feature/BossInventoryHistoryApiTest.php tests/F
 vendor/bin/pint --dirty --format agent
 npm run typecheck
 ```
+
+**実装状況（2026-10-23）:** BOSS のファイルなしで `boss_source = history` の調査に取り込むと、取込の前の BOSS の値を SKU コードで引き継ぐ（`InventoryImportService::keepReconstructedBoss()`）。再照合（`reimport()`）では、そのあとに `BossInventoryHistoryImportService::reapply()` で、記録した履歴ファイルから BOSS を再現し直す。調査の応答に `bossSource`・`bossBasisAt` を足し、TypeScript の型も更新した。チケットから決めた点は次のとおり。
+
+- `reapply()` は、補完と同じ計算（期間内の調査を古い順にロックして、基準の調査と照合する）を行い、再照合した調査の BOSS の2列だけを書き直す。履歴ファイルの期限が過ぎたとき・ファイルがないときに加えて、今の調査では再現できない（基準の調査がなくなった、など）ときも、引き継いだ値を残す（再現できないときはログに残す）。取込記録の `summary` は書き換えない。
+- `InventoryImportService` は補完の処理（`BossInventoryHistoryImportService`）から使われるので、`reimport()` では補完の処理をコンストラクタで受け取らず、呼ぶときに解決する。
+- BOSS のレポートで上書きすると、レポートに載っていない SKU は、再現した値を残さず `NULL` にする（今までの取込と同じ。BOSS のレポートは全 SKU を載せる）。

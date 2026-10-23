@@ -77,7 +77,14 @@ class InventoryImportService
             );
         }
 
-        return $this->import($files, $setting, $source->executed_at, $source);
+        $survey = $this->import($files, $setting, $source->executed_at, $source);
+        if ($survey->boss_source === Survey::BOSS_SOURCE_HISTORY) {
+            // 補完の処理はこのサービスを使うので、コンストラクタでは受け取らずに呼ぶときに解決する
+            app(BossInventoryHistoryImportService::class)->reapply($survey);
+            $survey->load(['products.skus', 'files', 'amazonImport']);
+        }
+
+        return $survey;
     }
 
     /**
@@ -172,6 +179,8 @@ class InventoryImportService
                         $this->applyBoss($stocks, $skuLookup, $allFiles['boss']);
                         // BOSS のレポートの値にする（在庫変動履歴から再現した日でも、レポートで上書きする）
                         $survey->forceFill(['boss_source' => Survey::BOSS_SOURCE_REPORT, 'boss_basis_at' => null, 'boss_inventory_history_id' => null])->save();
+                    } elseif ($survey->boss_source === Survey::BOSS_SOURCE_HISTORY) {
+                        $this->keepReconstructedBoss($stocks, $survey);
                     }
                     if (isset($allFiles['ec_stock'])) {
                         $this->applyTq($stocks, $tqLookup, $allFiles['ec_stock'], 'キープ残数', 'ec_stock', true);
@@ -355,6 +364,26 @@ class InventoryImportService
         $survey->forceFill(['amazon_inventory_import_id' => $amazonImport?->id])->save();
 
         return $survey;
+    }
+
+    /**
+     * 在庫変動履歴から BOSS 在庫を再現した調査に、BOSS のファイルなしで取り込むときは、再現した値を SKU コードで引き継ぐ
+     * （docs/BOSS在庫の休日補完 BHR-05）。新しく入った SKU は null のまま。
+     *
+     * @param  array<string, array<string, int|null>>  $stocks
+     */
+    private function keepReconstructedBoss(array &$stocks, Survey $survey): void
+    {
+        $saved = DB::table('survey_skus AS k')
+            ->join('survey_products AS p', 'p.id', '=', 'k.survey_product_id')
+            ->where('p.survey_id', $survey->getKey())
+            ->get(['k.sku_code', 'k.boss_own_stock', 'k.boss_rfc_stock']);
+        foreach ($saved as $row) {
+            if (isset($stocks[$row->sku_code])) {
+                $stocks[$row->sku_code]['boss_own_stock'] = $row->boss_own_stock === null ? null : (int) $row->boss_own_stock;
+                $stocks[$row->sku_code]['boss_rfc_stock'] = $row->boss_rfc_stock === null ? null : (int) $row->boss_rfc_stock;
+            }
+        }
     }
 
     /**
