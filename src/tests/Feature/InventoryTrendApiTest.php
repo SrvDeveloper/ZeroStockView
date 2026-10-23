@@ -73,6 +73,40 @@ class InventoryTrendApiTest extends TestCase
         }
     }
 
+    public function test_inventory_trend_series_include_the_color_and_the_warehouse_breakdown_of_combined_scopes(): void
+    {
+        $this->actingAs(User::factory()->create());
+        Product::factory()->create(['product_code' => 'A-1001']);
+        $survey = Survey::factory()->create(['executed_at' => '2026-09-28 10:00:00']);
+        $product = SurveyProduct::factory()->for($survey)->create(['product_code' => 'A-1001']);
+        SurveySku::factory()->for($product, 'product')->create([
+            'sku_code' => 'A-1001-01-M',
+            'child_asin' => 'B000000001',
+            'tq_color_no' => '01',
+            'tq_size' => 'M',
+            'amazon_own_stock' => 1,
+            'amazon_fba_stock' => 2,
+            'boss_own_stock' => 3,
+            'boss_rfc_stock' => 4,
+            'free_stock' => 5,
+            'ec_stock' => 6,
+        ]);
+        $url = '/api/inventory-trends?product_code=A-1001&from=2026-09-27&to=2026-09-28&scope=';
+
+        $this->getJson($url.'mallTotal')
+            ->assertOk()
+            ->assertJsonPath('data.series.0.color', '01')
+            ->assertJsonPath('data.series.0.size', 'M')
+            ->assertJsonPath('data.series.0.points.1.warehouses', ['amazon' => 3, 'boss' => 7])
+            ->assertJsonMissingPath('data.series.0.points.0.warehouses');
+        $this->getJson($url.'grandTotal')
+            ->assertOk()
+            ->assertJsonPath('data.series.0.points.1.warehouses', ['amazon' => 3, 'boss' => 7, 'free' => 5, 'stock' => 6]);
+        $this->getJson($url.'boss')
+            ->assertOk()
+            ->assertJsonMissingPath('data.series.0.points.1.warehouses');
+    }
+
     public function test_inventory_trend_product_includes_the_latest_groups_and_sku_color_size_counts(): void
     {
         $this->actingAs(User::factory()->create());

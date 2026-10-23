@@ -13,6 +13,7 @@ function total(date: string, amazon: number | null, boss: number | null): Invent
 function sku(skuCode: string, quantities: Record<string, number | null>): InventoryTrendSeries {
     return {
         skuCode,
+        color: "01",
         size: "M",
         points: Object.entries(quantities).map(([date, quantity]) => ({ date, quantity, source: "survey", basisAt: `${date}T10:00:00+09:00` })),
     };

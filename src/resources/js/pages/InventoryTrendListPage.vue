@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
                                     >
                                 </td>
                                 <td class="px-2.5 py-1.5">
-                                    <InventoryTrendMiniChart :label="product.productCode" :points="product.points" variant="spark" />
+                                    <InventoryTrendMiniChart :points="product.points" />
                                 </td>
                                 <td class="px-2.5 py-2.5"><SkuStateStrip :states="product.skuStates" /></td>
                                 <td class="px-2.5 py-2.5 text-right whitespace-nowrap" data-overview-field="stockout">
