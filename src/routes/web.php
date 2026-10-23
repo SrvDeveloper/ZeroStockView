@@ -27,6 +27,7 @@ Route::prefix('api')->group(function (): void {
 
         Route::middleware('role:'.implode(',', User::ROLES))->group(function (): void {
             Route::get('/inventory-trends/products', [InventoryTrendController::class, 'products']);
+            Route::get('/inventory-trends/overview', [InventoryTrendController::class, 'overview']);
             Route::get('/inventory-trends/export', [InventoryTrendController::class, 'export']);
             Route::get('/inventory-trends', [InventoryTrendController::class, 'show']);
 

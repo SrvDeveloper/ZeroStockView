@@ -57,6 +57,89 @@ export interface InventoryTrendProductList {
     dateRange: { from: string; to: string } | null;
 }
 
+/** 品番一覧の注目の絞り込み。stockout: 欠品SKUあり／increased: 欠品が増えた／decreasing: 在庫が10%以上減った／long: 30日以上の欠品 */
+export type InventoryTrendOverviewFocus = "stockout" | "increased" | "decreasing" | "long";
+
+/** 品番一覧の並び順。stockout: 欠品SKUの多い順／delta: 前週比の小さい順／latest: 最新在庫の少ない順／code: 品番順 */
+export type InventoryTrendOverviewSort = "stockout" | "delta" | "latest" | "code";
+
+/** 最新の調査の SKU の状態。pending は取込待ち・未取得・データなし（未確定） */
+export type InventoryTrendSkuState = "inStock" | "stockout" | "pending";
+
+export interface InventoryTrendOverviewGroup {
+    key: string;
+    name: string;
+}
+
+/** 品番の、ある日の合計。quantity が null の日は未確定か、調査のない日 */
+export interface InventoryTrendOverviewQuantity {
+    date: string;
+    quantity: number | null;
+}
+
+export interface InventoryTrendOverviewProduct {
+    productCode: string;
+    brand: string;
+    category: string;
+    skuCount: number;
+    groups: InventoryTrendOverviewGroup[];
+    latest: InventoryTrendOverviewQuantity;
+    /** 前週比で比べる日。7日前（なければ14日前までで最も近い日）に調査がなければ null */
+    weekAgo: InventoryTrendOverviewQuantity | null;
+    points: InventoryTrendOverviewQuantity[];
+    skuStates: InventoryTrendSkuState[];
+    stockoutSkuCount: number;
+    stockoutSkuCountWeekAgo: number | null;
+    /** 期間内の、欠品した SKU × 日の合計 */
+    stockoutSkuDays: number;
+    /** 最新の調査日まで続いている欠品の、最も長い日数。欠品中の SKU がなければ null */
+    longestStockoutStreak: number | null;
+}
+
+export interface InventoryTrendOverviewSummary {
+    productCount: number;
+    skuCount: number;
+    stockoutSkuCount: number;
+    stockoutSkuCountWeekAgo: number | null;
+    longStockoutSkuCount: number;
+    longStockoutProductCount: number;
+    /** 未確定の品番を含むときは null */
+    totalQuantity: number | null;
+    totalQuantityWeekAgo: number | null;
+    focusCounts: Record<"all" | InventoryTrendOverviewFocus, number>;
+}
+
+export interface InventoryTrendOverview {
+    data: InventoryTrendOverviewProduct[];
+    summary: InventoryTrendOverviewSummary;
+    latestSurvey: (Pick<InventoryTrendDailySource, "amazonInventoryStatus"> & { date: string; amazonBasisAt: string | null }) | null;
+    meta: { page: number; perPage: number; total: number };
+    from: string;
+    to: string;
+    brands: string[];
+    groups: InventoryTrendOverviewGroup[];
+    dateRange: { from: string; to: string } | null;
+}
+
+export interface InventoryTrendOverviewParams {
+    from: string;
+    to: string;
+    scope: InventoryScope;
+    group?: string | null;
+    brand?: string | null;
+    search?: string | null;
+    focus?: InventoryTrendOverviewFocus | null;
+    sort?: InventoryTrendOverviewSort | null;
+    page?: number;
+}
+
+export async function fetchInventoryTrendOverview(params: InventoryTrendOverviewParams): Promise<InventoryTrendOverview> {
+    const { data } = await axios.get<InventoryTrendOverview>("/api/inventory-trends/overview", {
+        params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== null && value !== undefined && value !== "")),
+    });
+    return data;
+}
+
 export async function fetchInventoryTrendProducts(): Promise<InventoryTrendProductList> {
     const { data } = await axios.get<InventoryTrendProductList>("/api/inventory-trends/products");
     return data;
