@@ -124,6 +124,15 @@ describe("InventoryTrendPage", () => {
         expect(routerMocks.push).toHaveBeenCalledWith({ name: "inventory-trends", query: {} });
     });
 
+    it("goes back to the list with the list conditions it was opened with", async () => {
+        routerMocks.route.query = { focus: "stockout", sort: "delta", page: "2" };
+        const wrapper = mountPage();
+        await flushPromises();
+
+        await wrapper.get('[data-testid="back-to-list"]').trigger("click");
+        expect(routerMocks.push).toHaveBeenCalledWith({ name: "inventory-trends", query: { focus: "stockout", sort: "delta", page: "2" } });
+    });
+
     it("restores the scope and period from the URL and keeps changes in the URL", async () => {
         routerMocks.route.query = { scope: "boss", period: "custom", from: "2026-09-01", to: "2026-09-10" };
         const wrapper = mountPage();
