@@ -17,7 +17,7 @@ class RemoveTimestampOnUpdateMigrationTest extends TestCase
 
     private const MIGRATION = 'migrations/2026_10_26_113753_remove_on_update_from_timestamp_columns.php';
 
-    public function test_migration_redefines_the_timestamp_columns_with_an_explicit_default_on_mysql_and_mariadb(): void
+    public function test_migration_leaves_columns_without_on_update_untouched_on_mysql_and_mariadb(): void
     {
         $default = config('database.default');
         try {
@@ -26,12 +26,11 @@ class RemoveTimestampOnUpdateMigrationTest extends TestCase
                 config(['database.default' => $connection]);
                 $migration = require database_path(self::MIGRATION);
 
+                // pretend では information_schema の問い合わせが行を返さないので、自動の更新がない（本番の今の状態）とみなされる
                 $queries = array_column(DB::connection($connection)->pretend(fn () => $migration->up()), 'query');
 
                 $this->assertSame([
-                    'alter table `surveys` modify `executed_at` timestamp not null default CURRENT_TIMESTAMP',
-                    'alter table `survey_files` modify `uploaded_at` timestamp not null default CURRENT_TIMESTAMP',
-                    'alter table `amazon_inventory_snapshots` modify `basis_at` timestamp not null default CURRENT_TIMESTAMP',
+                    "select table_name as table_name, column_name as column_name from information_schema.columns where table_schema = database() and lower(extra) like '%on update%'",
                 ], $queries, $connection);
             }
         } finally {
