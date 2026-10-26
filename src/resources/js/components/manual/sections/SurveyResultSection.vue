@@ -34,6 +34,10 @@ const stockDisplays = [
                 見出しの下に、初回取込日時・結果作成日時・結果更新日時と、取込ファイル（保存期限内のファイルの種類の数）が表示されます。<ManualUi icon="folder_zip">一括ダウンロード</ManualUi
                 >で、保存中の取込ファイルをまとめてダウンロードできます。
             </li>
+            <li>
+                BOSS在庫を在庫変動履歴から再現した調査では、「BOSS: 履歴から再現（10/17 9:00時点）」と表示され、在庫表のBOSSの列の見出しに<ManualUi icon="history">印</ManualUi
+                >が付きます。数値は、その時点の自社倉庫・RFC倉庫の在庫を再現した値です。
+            </li>
             <li>「対象」は調査したSKU数と品番数、「全倉庫ゼロ」「一部の倉庫でゼロ」はそれぞれのSKU数です。「前回比」は、直前の調査との差です。</li>
             <li>
                 「Amazon 在庫」は、Amazon在庫の反映状況です（意味は「Amazon在庫の取得」の表を参照）。下の「基準 hh:mm ・ 照合
@@ -71,6 +75,7 @@ const stockDisplays = [
         <ul class="mt-3 list-disc space-y-1 pl-5">
             <li><ManualUi variant="primary" icon="download">全件をExcel出力</ManualUi>：調査のすべてのSKUを出力します。品番グループを選んでいるときは、そのグループのSKUを出力します。</li>
             <li><ManualUi icon="table_view">絞込結果をExcel出力</ManualUi>：絞り込みで該当したSKUだけを出力します。</li>
+            <li>BOSS在庫を在庫変動履歴から再現した調査では、BOSSの列の右に「BOSS取得元」（在庫変動履歴から再現）と「BOSS基準日時」の列が付きます。</li>
         </ul>
     </div>
 
@@ -116,5 +121,6 @@ const stockDisplays = [
             <li>Amazon在庫をファイルで取り込んでいた旧方式（5ファイル）の調査。保存されているAmazon在庫を守るため、再照合できません。</li>
             <li>保存期限が過ぎるなどして、再照合に使える取込ファイルが1件もない調査。</li>
         </ul>
+        BOSS在庫を在庫変動履歴から補完した調査を再照合すると、BOSS在庫は補完に使った在庫変動履歴で再現し直します。履歴の保存期限（30日）を過ぎていれば、再照合の前の値をそのまま残します。
     </ManualCallout>
 </template>

@@ -149,7 +149,7 @@ describe("ManualPage", () => {
     it("keeps every callout and the screenshots for the import instructions", () => {
         const callouts = MANUAL_SECTIONS.reduce((count, section) => count + mountManual(section.id).findAllComponents(ManualCallout).length, 0);
 
-        expect(callouts).toBe(16);
+        expect(callouts).toBe(18);
         expect(mountManual("basic-operation-boss").getComponent(ManualScreenshot).get("img").attributes("src")).toBe("/img/manual/02-1.png");
         expect(mountManual("basic-operation-free").get('[role="alert"]').text()).toContain("ゼロ在庫出力のチェックを外さない");
     });
@@ -175,6 +175,30 @@ describe("ManualPage", () => {
         expect(dataImport.text()).toContain("取込・調査を実行");
         expect(dataImport.text()).toContain("1〜3件");
         expect(dataImport.find('[role="alert"]').text()).toContain("取込に失敗しました");
+    });
+
+    it("explains how to fill the BOSS stock of holidays from the inventory history", () => {
+        const dataImport = mountManual("data-import").get("#data-import");
+
+        expect(dataImport.get("#boss-history").text()).toBe("休日のBOSS在庫を補完する");
+        expect(dataImport.text()).toContain("休日前の最後の出勤日の0:00から");
+        expect(dataImport.text()).toContain("フリー在庫・ECストックは補完されず");
+        expect(dataImport.findAll("[data-boss-history-preview-items] tbody td:first-child").map((cell) => cell.text())).toEqual([
+            "基準の調査",
+            "補完する日",
+            "データなしのSKU",
+            "合わないSKU",
+            "補完できない日",
+        ]);
+        expect(dataImport.findAll("[data-boss-history-errors] tbody td:first-child").map((cell) => cell.text())).toContain("補完する日がありません。");
+        expect(
+            mountManual("survey-history")
+                .findAll("[data-calendar-marks] tbody td:first-child")
+                .map((cell) => cell.text()),
+        ).toContain("BOSS 再現");
+        expect(mountManual("survey-result").get("#survey-result").text()).toContain("BOSS: 履歴から再現（10/17 9:00時点）");
+        expect(mountManual("inventory-trend").get("#inventory-trend").text()).toContain("（履歴から再現）");
+        expect(mountManual("notes").get("#boss-history-overwrite").text()).toContain("BOSS在庫はレポートの値になり");
     });
 
     it("explains the Amazon inventory fetch and its statuses", () => {
@@ -251,7 +275,8 @@ describe("ManualPage", () => {
         expect(wrapper.get('[data-ui-label="primary"]').text()).toContain("取込・調査を実行");
         expect(wrapper.get("[data-manual-result]").text()).toContain("在庫調査結果画面が開きます");
         expect(wrapper.findAll("[data-import-errors] tbody td:first-child").map((cell) => cell.text())).toContain("〜のファイルが複数あります。");
-        expect(wrapper.findAll("[data-manual-step]")).toHaveLength(3);
+        // 取込の手順 3つと、休日のBOSS在庫の補完の手順 3つ
+        expect(wrapper.findAll("[data-manual-step]")).toHaveLength(6);
     });
 
     it("links to the explained screen only for users who can open it", () => {

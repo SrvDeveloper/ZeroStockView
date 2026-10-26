@@ -18,6 +18,9 @@ const integrationStatuses = [
     <ManualCallout id="file-retention" class="scroll-mt-32 lg:scroll-mt-20" title="取込ファイルの保存期限は30日です" tone="warning"
         >アップロードから30日を過ぎたファイルは自動で削除され、ダウンロードと「保存ファイルで再照合」ができなくなります。調査結果・メモ・Excel出力は引き続き使えます。必要なファイルは、期限までにダウンロードしておいてください。</ManualCallout
     >
+    <ManualCallout id="boss-history-overwrite" class="scroll-mt-32 lg:scroll-mt-20" title="補完した日にBOSSのレポートを取り込むと、実際の値で上書きされます" tone="warning"
+        >在庫変動履歴で補完した日に、あとからその日のBOSSのレポートを取り込むと、BOSS在庫はレポートの値になり、「履歴から再現」の印は外れます。KEEP一覧表・在庫一覧照会表だけを取り込んだときは、再現したBOSS在庫が残ります。日次在庫CSVと外部公開APIでは、再現した値と実際の値を区別しません。</ManualCallout
+    >
     <ManualCallout id="login-lock" class="scroll-mt-32 lg:scroll-mt-20" title="ログインに5回失敗するとロックされます" tone="warning"
         >同じログインIDで、最初の失敗から15分以内にログインに5回失敗すると、そのログインIDは1時間ログインできなくなります。ロック中は、正しいパスワードを入力してもログインできません。1時間たってからもう一度ログインするか、特権管理者にロックの解除を依頼してください。ログインに成功すると、失敗の回数は数え直します。</ManualCallout
     >

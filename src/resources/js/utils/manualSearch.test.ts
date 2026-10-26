@@ -15,6 +15,9 @@ describe("searchManual", () => {
     it("finds subheadings and callouts, not only sections", () => {
         expect(keys("再照合")).toContain("survey-result#rerun");
         expect(keys("保存期限")).toContain("notes#file-retention");
+        expect(keys("在庫変動履歴")[0]).toBe("data-import#boss-history-errors");
+        expect(keys("休日 補完")[0]).toBe("data-import#boss-history");
+        expect(keys("補完 上書き")).toContain("notes#boss-history-overwrite");
         expect(searchManual("再照合", "admin").find((result) => result.key === "survey-result#rerun")!.path).toBe("結果を確認する › 在庫調査結果");
     });
 

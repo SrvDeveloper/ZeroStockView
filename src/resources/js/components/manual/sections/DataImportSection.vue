@@ -13,6 +13,26 @@ const importErrors = [
     { term: "〜のファイルが複数あります。", meaning: "同じ種類のファイルを2件以上添付しています。1件だけにしてください。" },
     { term: "〜行目の数量が…", meaning: "ファイルの数量の列に、数値でない値やマイナスの値があります。出力し直してください。" },
 ];
+
+/** 補完内容の確認で表示する項目（BossHistoryImportCard.vue の確認の表示） */
+const bossHistoryPreviewItems = [
+    { term: "基準の調査", meaning: "履歴の期間内で、BOSSのレポートを取り込んだ日です。推定したレポートの出力時刻と、履歴と合わなかったSKU・倉庫の件数が表示されます。" },
+    { term: "補完する日", meaning: "BOSSのレポートを取り込んでいない日です。調査がない日は「新しく作る」、ある日は「既存の調査を更新」と表示されます。" },
+    { term: "データなしのSKU", meaning: "値を再現できず「—」（データなし）になるSKUの数です。数字にマウスを重ねると、理由ごとの件数が表示されます。" },
+    { term: "合わないSKU", meaning: "基準の調査の値と履歴が合わない、または履歴のつながりが途切れている・マイナスになるSKU・倉庫です。補完する日すべてでデータなしになります。" },
+    { term: "補完できない日", meaning: "9:00が履歴の期間の外の日と、旧方式（5ファイル）の調査の日です。" },
+];
+
+/** 補完の実行前に出るメッセージと対処 */
+const bossHistoryErrors = [
+    {
+        term: "在庫変動履歴の期間に、BOSSのレポートを取り込んだ日が含まれていません。",
+        meaning: "休日前の最後の出勤日の0:00から出力し直すか、期間内の出勤日のBOSSのレポートを先に取り込んでください。",
+    },
+    { term: "在庫変動履歴が、BOSSのレポートを出力した時刻より後から始まっています。…", meaning: "レポートを出力した日の0:00から出力し直してください。" },
+    { term: "補完する日がありません。", meaning: "期間内のすべての日に、BOSSのレポートを取り込み済みです。補完は不要です。" },
+    { term: "BOSSの在庫変動履歴のファイルではありません。…", meaning: "BOSSから出力した在庫変動履歴のCSVを、手を加えずに選択してください。" },
+];
 </script>
 
 <template>
@@ -87,4 +107,40 @@ const importErrors = [
             >
         </ul>
     </div>
+
+    <div class="space-y-6">
+        <ManualHeading id="boss-history">休日のBOSS在庫を補完する</ManualHeading>
+        <p>
+            BOSSのレポート（倉庫毎の在庫数レポート）を出力しなかった休日の
+            BOSS在庫を、BOSSの「在庫変動履歴」から9:00時点の値で再現して、その日の調査に保存します。休日明けの出勤日に、その日のBOSSのレポートを取り込んだあとで行います。
+        </p>
+        <ul class="list-disc space-y-1 pl-5">
+            <li>補完するのはBOSS（自社倉庫・RFC倉庫）の在庫だけです。フリー在庫・ECストックは補完されず、取込待ちのままです。Amazon在庫は、毎朝の自動取得の結果がその日の調査に入ります。</li>
+            <li>その日の調査がなければ、新しく作ります。BOSSのレポートを取り込んだ日と、旧方式（5ファイル）の調査の日は変えません。</li>
+        </ul>
+        <ManualStep :number="1" title="BOSSで在庫変動履歴を出力します。">
+            <ul class="list-disc space-y-1 pl-5">
+                <li>期間は、休日前の最後の出勤日の0:00から、休日明けにBOSSのレポートを出力したあとまでにします（例: 金曜0:00〜月曜のレポートの出力後）。</li>
+                <li>処理種別や倉庫は絞らず、すべてを出力します。</li>
+            </ul>
+        </ManualStep>
+        <ManualStep :number="2" title="在庫変動履歴を選択します。">
+            <p>
+                データ取込画面の「休日のBOSS在庫を補完」で、<ManualUi icon="upload_file">在庫変動履歴を選択</ManualUi
+                >を押下し、出力したCSVを1件選びます。どの日をどう補完するかが表示されます（この時点では保存されません）。
+            </p>
+            <ManualTermTable class="mt-3" :rows="bossHistoryPreviewItems" term-label="項目" data-boss-history-preview-items />
+        </ManualStep>
+        <ManualStep :number="3" title="内容を確かめて、補完を実行します。">
+            <p>
+                合わないSKUがないか、補完する日が想定どおりかを確かめ、<ManualUi variant="primary" icon="play_arrow">補完を実行</ManualUi
+                >を押下します。やめるときは<ManualUi>キャンセル</ManualUi>を押下します。
+            </p>
+            <ManualResult>「◯日分のBOSS在庫を補完しました」と表示され、補完した日の一覧（調査結果へのリンク）が表示されます。</ManualResult>
+        </ManualStep>
+    </div>
+
+    <ManualCallout id="boss-history-errors" class="scroll-mt-32 lg:scroll-mt-20" title="在庫変動履歴を取り込めないとき" note="調査は変わりません" tone="warning">
+        <ManualTermTable :rows="bossHistoryErrors" term-label="表示されるメッセージ" meaning-label="どうするか" mono-term data-boss-history-errors />
+    </ManualCallout>
 </template>
