@@ -31,6 +31,12 @@ function formatDifference(value: number): string {
 
 /** カラーは SKU の並び（sort_order）での出現順、サイズも同じく出現順 */
 const sizes = computed(() => [...new Set(props.series.map((item) => item.size))]);
+/**
+ * 表の最小幅。これより狭いと横スクロールにする。サイズのマス 56px（min-w-14）、カラーの列 80px（w-20）、
+ * 計の列 48px（w-12）と、マスの間隔 4px（border-spacing-1）から求める。サイズが5つなら 440px で、
+ * 幅 1280px の画面で欠品中のSKUと横に並べても収まる。
+ */
+const tableMinWidth = computed(() => `${sizes.value.length * (56 + 4) + 80 + 48 + 3 * 4}px`);
 const rows = computed(() => {
     const colors = [...new Set(props.series.map((item) => item.color))];
     return colors.map((color) => {
@@ -64,9 +70,9 @@ const CELL_CLASS: Record<CellState, string> = {
 
 <template>
     <div class="overflow-x-auto">
-        <table class="w-full table-fixed border-separate border-spacing-1 tabular-nums" :style="{ minWidth: `${sizes.length * 96 + 176}px` }" data-color-size-matrix>
+        <table class="w-full table-fixed border-separate border-spacing-1 tabular-nums" :style="{ minWidth: tableMinWidth }" data-color-size-matrix>
             <colgroup>
-                <col class="w-28" />
+                <col class="w-20" />
                 <col v-for="size in sizes" :key="size" />
                 <col class="w-12" />
             </colgroup>
@@ -83,7 +89,7 @@ const CELL_CLASS: Record<CellState, string> = {
                     <td
                         v-for="cell in row.cells"
                         :key="cell.size"
-                        class="h-12 min-w-14 rounded-[4px] px-1 text-center align-middle"
+                        class="h-12 min-w-14 rounded-[4px] px-0.5 text-center align-middle"
                         :class="CELL_CLASS[cell.state]"
                         :data-matrix-cell="cell.size"
                         :data-cell-state="cell.state"
@@ -92,7 +98,7 @@ const CELL_CLASS: Record<CellState, string> = {
                             <span class="block font-num text-[22px] leading-none font-semibold" :class="cell.state === 'pending' ? 'text-muted' : ''">{{ cell.quantity ?? "—" }}</span>
                             <span
                                 v-if="cell.note"
-                                class="mt-0.5 block text-[10.5px] leading-tight whitespace-nowrap"
+                                class="mt-0.5 block text-[10.5px] leading-tight break-keep"
                                 :class="cell.state === 'stockout' ? 'font-semibold text-ink' : 'font-num text-muted'"
                                 data-cell-note
                                 >{{ cell.note }}</span
